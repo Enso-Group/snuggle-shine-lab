@@ -106,7 +106,6 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
     return (r.groups ?? []).map((g) => ({ id: g.id, name: g.name || g.subject || g.id }));
   } catch (e) {
     console.error("[whapi] listGroups failed", e);
-    if (isWhapiTrialLimitError(e)) throw e;
     return [];
   }
 }
