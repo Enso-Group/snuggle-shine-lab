@@ -137,14 +137,15 @@ function ParticipantsPage() {
         },
       )
       .subscribe();
-    // Lightweight polling fallback every 20s (Whapi live data isn't pushed via realtime)
-    const interval = setInterval(() => loadParticipants(groupId), 20000);
+    // Auto-refresh every 10s so the table updates in near real-time
+    const interval = setInterval(() => loadParticipants(groupId), 10000);
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, selected?.sender_id]);
+
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -264,27 +265,37 @@ function ParticipantsPage() {
         )}
       </div>
 
-      {fullHistory === false && (
-        <Alert>
-          <AlertTriangle className="size-4" />
-          <AlertTitle>החיבור לא מסנכרן היסטוריה מלאה</AlertTitle>
-          <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-            <span>
-              ספירת ההודעות כאן היא רק מה שמסונכרן במאגר החיבור, לא בהכרח כל מה שמופיע בטלפון.
-            </span>
-            <Button size="sm" onClick={enableFullHistory} disabled={enablingHistory}>
-              <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
-              הפעל היסטוריה מלאה
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      <Alert>
+        <AlertTriangle className="size-4" />
+        <AlertTitle>
+          {fullHistory === true
+            ? "היסטוריה מלאה פעילה"
+            : "סנכרון היסטוריה מלאה מ-WhatsApp"}
+        </AlertTitle>
+        <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <span>
+            {fullHistory === true
+              ? "החיבור מסונכרן עם כל היסטוריית WhatsApp. הקבוצה מתעדכנת אוטומטית כל 10 שניות."
+              : "כדי לראות את כל ההודעות מהטלפון (ולא רק את אלו שנשמרו במאגר), הפעל היסטוריה מלאה ואז חבר מחדש את WhatsApp."}
+          </span>
+          <Button
+            size="sm"
+            onClick={enableFullHistory}
+            disabled={enablingHistory}
+            variant={fullHistory === true ? "outline" : "default"}
+          >
+            <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
+            {fullHistory === true ? "הפעל שוב" : "הפעל היסטוריה מלאה"}
+          </Button>
+        </AlertDescription>
+      </Alert>
 
       {historyNotice && (
         <Alert>
           <AlertDescription>{historyNotice}</AlertDescription>
         </Alert>
       )}
+
 
       {groupId && (
         <>
