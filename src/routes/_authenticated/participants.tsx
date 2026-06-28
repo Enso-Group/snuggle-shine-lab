@@ -137,14 +137,15 @@ function ParticipantsPage() {
         },
       )
       .subscribe();
-    // Lightweight polling fallback every 20s (Whapi live data isn't pushed via realtime)
-    const interval = setInterval(() => loadParticipants(groupId), 20000);
+    // Auto-refresh every 10s so the table updates in near real-time
+    const interval = setInterval(() => loadParticipants(groupId), 10000);
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, selected?.sender_id]);
+
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
