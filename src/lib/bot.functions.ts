@@ -133,11 +133,6 @@ export const sendManualMessage = createServerFn({ method: "POST" })
         throw new Error(guard.reason);
       }
 
-      // Random 0-2 min jitter on top of the 3-min minimum (3-5 min effective)
-      if (guard.jitterMs > 0) {
-        await new Promise((r) => setTimeout(r, guard.jitterMs));
-      }
-
       const { sendTextMessage } = await import("./whapi.server");
       try {
         await sendTextMessage(data.target_chat_id, body);
