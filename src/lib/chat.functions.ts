@@ -373,12 +373,9 @@ export const sendChatMessage = createServerFn({ method: "POST" })
             .join("\n");
       };
 
-      if (shouldDoDirectMessageLookup(data.content, prior)) {
-        directAdminReply = await formatMessagesForConversation(
-          extractChatLookup(data.content),
-          requestedLimit(data.content),
-        );
-      }
+      // Let the LLM decide which tools to call — the heuristic shortcut was
+      // grabbing the entire user message as a group name and producing
+      // confusing "no group found" answers for complex requests.
 
       extraTools = [
         {
