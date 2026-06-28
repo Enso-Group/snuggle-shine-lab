@@ -18,7 +18,6 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listMessagesByChatId } = await import("./whapi.server");
     const { getGroup, listMessagesByChatId, listContacts } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
