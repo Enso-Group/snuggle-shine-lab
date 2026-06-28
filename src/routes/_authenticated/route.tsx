@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut } from "lucide-react";
+import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

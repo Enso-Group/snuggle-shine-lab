@@ -20,6 +20,7 @@ import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/c
 import { Route as AuthenticatedConversationsIndexRouteImport } from './routes/_authenticated/conversations.index'
 import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/whapi-webhook'
 import { Route as AuthenticatedConversationsIdRouteImport } from './routes/_authenticated/conversations.$id'
+import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -78,26 +79,34 @@ const AuthenticatedConversationsIdRoute =
     path: '/$id',
     getParentRoute: () => AuthenticatedConversationsRoute,
   } as any)
+const AuthenticatedChatThreadIdRoute =
+  AuthenticatedChatThreadIdRouteImport.update({
+    id: '/$threadId',
+    path: '/$threadId',
+    getParentRoute: () => AuthenticatedChatRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
-  '/chat': typeof AuthenticatedChatRoute
+  '/chat': typeof AuthenticatedChatRouteWithChildren
   '/conversations': typeof AuthenticatedConversationsRouteWithChildren
   '/logs': typeof AuthenticatedLogsRoute
   '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/conversations/': typeof AuthenticatedConversationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
-  '/chat': typeof AuthenticatedChatRoute
+  '/chat': typeof AuthenticatedChatRouteWithChildren
   '/logs': typeof AuthenticatedLogsRoute
   '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/': typeof AuthenticatedIndexRoute
+  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/conversations': typeof AuthenticatedConversationsIndexRoute
@@ -106,12 +115,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/_authenticated/chat': typeof AuthenticatedChatRoute
+  '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/conversations': typeof AuthenticatedConversationsRouteWithChildren
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/send': typeof AuthenticatedSendRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/_authenticated/conversations/': typeof AuthenticatedConversationsIndexRoute
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/send'
     | '/settings'
+    | '/chat/$threadId'
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
     | '/conversations/'
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '/send'
     | '/settings'
     | '/'
+    | '/chat/$threadId'
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
     | '/conversations'
@@ -150,6 +162,7 @@ export interface FileRouteTypes {
     | '/_authenticated/send'
     | '/_authenticated/settings'
     | '/_authenticated/'
+    | '/_authenticated/chat/$threadId'
     | '/_authenticated/conversations/$id'
     | '/api/public/whapi-webhook'
     | '/_authenticated/conversations/'
@@ -240,8 +253,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedConversationsIdRouteImport
       parentRoute: typeof AuthenticatedConversationsRoute
     }
+    '/_authenticated/chat/$threadId': {
+      id: '/_authenticated/chat/$threadId'
+      path: '/$threadId'
+      fullPath: '/chat/$threadId'
+      preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
+      parentRoute: typeof AuthenticatedChatRoute
+    }
   }
 }
+
+interface AuthenticatedChatRouteChildren {
+  AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
+}
+
+const AuthenticatedChatRouteChildren: AuthenticatedChatRouteChildren = {
+  AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
+}
+
+const AuthenticatedChatRouteWithChildren =
+  AuthenticatedChatRoute._addFileChildren(AuthenticatedChatRouteChildren)
 
 interface AuthenticatedConversationsRouteChildren {
   AuthenticatedConversationsIdRoute: typeof AuthenticatedConversationsIdRoute
@@ -260,7 +291,7 @@ const AuthenticatedConversationsRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedChatRoute: typeof AuthenticatedChatRoute
+  AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedConversationsRoute: typeof AuthenticatedConversationsRouteWithChildren
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedSendRoute: typeof AuthenticatedSendRoute
@@ -269,7 +300,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedChatRoute: AuthenticatedChatRoute,
+  AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedConversationsRoute: AuthenticatedConversationsRouteWithChildren,
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedSendRoute: AuthenticatedSendRoute,
