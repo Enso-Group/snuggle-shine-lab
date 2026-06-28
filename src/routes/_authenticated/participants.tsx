@@ -55,6 +55,7 @@ function ParticipantsPage() {
   const [groupId, setGroupId] = useState<string>("");
   const [groupName, setGroupName] = useState<string>("");
   const [participantsCount, setParticipantsCount] = useState(0);
+  const [messagesScanned, setMessagesScanned] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [loadingParts, setLoadingParts] = useState(false);
@@ -79,6 +80,7 @@ function ParticipantsPage() {
         setParticipants(r.rows as Participant[]);
         setGroupName(r.groupName);
         setParticipantsCount(r.participantsCount);
+        setMessagesScanned(r.messagesScanned ?? 0);
         setLastRefresh(new Date());
       })
       .finally(() => setLoadingParts(false));
@@ -248,7 +250,7 @@ function ParticipantsPage() {
         <>
 
           <div className="text-sm text-muted-foreground">
-            {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים
+            {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים · נסרקו {messagesScanned} הודעות
           </div>
           <div className="border rounded-lg overflow-hidden bg-card">
             {loadingParts && participants.length === 0 ? (
@@ -274,7 +276,7 @@ function ParticipantsPage() {
                     >
                       <TableCell className="font-medium">{p.sender_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground" dir="ltr">
-                        {p.sender_name && p.sender_name !== p.sender_id ? p.sender_name : p.sender_id}
+                        {p.sender_id}
                       </TableCell>
                       <TableCell>{p.message_count}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
