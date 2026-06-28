@@ -108,11 +108,22 @@ export async function runAI(input: AIRunInput): Promise<string> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
+  const humanize = `
+
+הנחיות סגנון קריטיות (חובה):
+- דבר/י כמו אדם אמיתי בוואטסאפ: קצר, ישיר, חם, בלי רשמיות מיותרת.
+- אסור להתחיל ב"נראה ש...", "סליחה, לא הצלחתי...", "כעוזר AI..." או כל פתיח שמסגיר שאתה בוט.
+- אם החיפוש לא החזיר משהו טוב, פשוט תגיד מה כן ידוע לך ותציע כיוון — בלי להתנצל ובלי "האם תרצה ש...".
+- אל תחזור על עצמך, אל תכפיל משפטים, ואל תוסיף "אם יש שאלות נוספות אני כאן".
+- כשמחפשים מידע ולא נמצא — תנסח/י שאלת חיפוש שונה (אנגלית, מילים אחרות) ותחפש/י שוב לפני שמוותרים.
+- תשובה ממוצעת: 1–4 משפטים. רק אם באמת מבקשים פירוט — תרחיב/י.`;
+
   const messages: ChatMessage[] = [
-    { role: "system", content: input.systemPrompt },
+    { role: "system", content: input.systemPrompt + humanize },
     ...input.history.map((h) => ({ role: h.role, content: h.content })),
     { role: "user", content: input.userMessage },
   ];
+
 
   // Up to 4 tool-call rounds
   for (let step = 0; step < 4; step++) {
