@@ -82,6 +82,20 @@ export async function getGroup(groupId: string): Promise<any | null> {
   }
 }
 
+export async function listContacts(): Promise<Array<{ id: string; name: string; pushname?: string }>> {
+  try {
+    const r = await whapi<{ contacts?: Array<{ id: string; name?: string; pushname?: string; first_name?: string; last_name?: string }> }>("/contacts?count=2000");
+    return (r.contacts ?? []).map((c) => ({
+      id: c.id,
+      name: c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || c.pushname || c.id,
+      pushname: c.pushname,
+    }));
+  } catch (e) {
+    console.error("[whapi] listContacts failed", e);
+    return [];
+  }
+}
+
 
 export async function listChats(): Promise<Array<{ id: string; name: string; type: string }>> {
   try {
