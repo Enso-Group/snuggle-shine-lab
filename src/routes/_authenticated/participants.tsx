@@ -82,12 +82,14 @@ function ParticipantsPage() {
     setLoadingGroups(true);
     listGroupConversations()
       .then((r) => setGroups(r as Group[]))
+      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי לטעון קבוצות.")))
       .finally(() => setLoadingGroups(false));
   }
 
   function loadParticipants(id: string) {
     if (!id) return;
     setLoadingParts(true);
+    setHistoryNotice("");
     listGroupParticipants({ data: { whapiChatId: id } })
       .then((r: any) => {
         setParticipants(r.rows as Participant[]);
@@ -96,6 +98,7 @@ function ParticipantsPage() {
         setMessagesScanned(r.messagesScanned ?? 0);
         setLastRefresh(new Date());
       })
+      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי לרענן את הקבוצה.")))
       .finally(() => setLoadingParts(false));
   }
 

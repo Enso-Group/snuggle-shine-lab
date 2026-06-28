@@ -2,6 +2,26 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+function normalizePhone(raw: unknown) {
+  return String(raw ?? "").replace(/@.*$/, "").replace(/\D/g, "");
+}
+
+function normalizeWhapiTs(raw: unknown) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return new Date().toISOString();
+  return new Date(n > 9_999_999_999 ? n : n * 1000).toISOString();
+}
+
+function getMessageBody(m: any) {
+  return String(
+    m?.text?.body ??
+      m?.body ??
+      m?.caption ??
+      (typeof m?.text === "string" ? m.text : "") ??
+      `[${m?.type ?? "media"}]`,
+  );
+}
+
 export const resetWhatsAppPipeline = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { webhookUrl: string }) =>
@@ -108,8 +128,8 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     const { getGroup, listAllMessagesByChatId, listContacts, listContactLids } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [group, liveMessages, contacts, conv] = await Promise.all([
-      getGroup(data.whapiChatId),
+    const [groupBase, liveMessages, contacts, conv] = await Promise.all([
+      getGroup(data.whapiChatId, true),
       listAllMessagesByChatId(data.whapiChatId),
       listContacts(),
       supabaseAdmin
@@ -119,15 +139,16 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         .maybeSingle()
         .then((r) => r.data),
     ]);
+    let group = groupBase;
 
     // Build a phone -> name lookup from the contact book
     const contactBook = new Map<string, string>();
-    const normalizeId = (raw: string) => raw.replace(/@.*$/, "").replace(/\D/g, "");
+    const normalizeId = normalizePhone;
     for (const c of contacts ?? []) {
       const phone = normalizeId(c.id);
       if (phone && c.name && c.name !== c.id) contactBook.set(phone, c.name);
     }
-    const participants: any[] = group?.participants ?? [];
+    let participants: any[] = Array.isArray(group?.participants) ? group.participants : [];
     const phoneToLid = await listContactLids(participants.map((p) => p.id ?? p.phone ?? ""));
     const lidToPhone = new Map<string, string>();
     for (const [phone, lid] of Object.entries(phoneToLid)) {
@@ -146,6 +167,63 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       if (fallback && fallback !== id && fallback !== phone) return fallback;
       return phone || id || "אנונימי";
     };
+
+    const upsertConversation = async () => {
+      if (conv?.id) return conv.id as string;
+      const { data: existing } = await supabaseAdmin
+        .from("conversations")
+        .select("id")
+        .eq("whapi_chat_id", data.whapiChatId)
+        .maybeSingle();
+      if (existing?.id) return existing.id as string;
+      const { data: inserted } = await supabaseAdmin
+        .from("conversations")
+        .insert({
+          whapi_chat_id: data.whapiChatId,
+          name: group?.name ?? group?.subject ?? data.whapiChatId,
+          is_group: String(data.whapiChatId).endsWith("@g.us"),
+          last_message_at: liveMessages[0]?.timestamp ? normalizeWhapiTs(liveMessages[0].timestamp) : null,
+        })
+        .select("id")
+        .single();
+      return inserted?.id as string | undefined;
+    };
+
+    async function persistLiveHistory() {
+      const convId = await upsertConversation();
+      if (!convId || !liveMessages.length) return;
+      const { data: existingRows } = await supabaseAdmin
+        .from("messages")
+        .select("whapi_message_id")
+        .eq("conversation_id", convId)
+        .not("whapi_message_id", "is", null)
+        .limit(10000);
+      const existing = new Set((existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean));
+      const rows = (liveMessages ?? [])
+        .filter((m: any) => !m.from_me)
+        .filter((m: any) => m.id && !existing.has(m.id))
+        .map((m: any) => ({
+          conversation_id: convId,
+          whapi_message_id: m.id,
+          direction: "inbound",
+          sender_name: m.from_name ?? m.author_name ?? m.pushname ?? null,
+          sender_id: resolveSenderKey(m.from ?? m.author ?? "") || m.from || m.author || data.whapiChatId,
+          body: getMessageBody(m),
+          raw: m,
+          created_at: normalizeWhapiTs(m.timestamp),
+        }));
+      for (let i = 0; i < rows.length; i += 500) {
+        const batch = rows.slice(i, i + 500);
+        if (batch.length) await supabaseAdmin.from("messages").insert(batch);
+      }
+      const latest = rows.map((r) => r.created_at).sort().at(-1);
+      if (latest) {
+        await supabaseAdmin
+          .from("conversations")
+          .update({ last_message_at: latest, name: group?.name ?? group?.subject ?? data.whapiChatId })
+          .eq("id", convId);
+      }
+    }
 
     const stats = new Map<
       string,
@@ -176,12 +254,20 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     };
 
     for (const m of liveMessages ?? []) {
+      if (m.from_me) continue;
       const senderId = m.from ?? m.author ?? "";
       const senderName = m.from_name ?? m.author_name ?? "";
-      const body = m.text?.body ?? m.body ?? m.caption ?? `[${m.type ?? "media"}]`;
-      const ts = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null;
+      const body = getMessageBody(m);
+      const ts = m.timestamp ? normalizeWhapiTs(m.timestamp) : null;
       addMessage(senderId, senderName, body, ts);
     }
+
+    if (participants.length === 0 && stats.size > 0) {
+      participants = [...stats.values()].map((p) => ({ id: p.sender_id, name: p.sender_name, rank: "member" }));
+      group = { ...(group ?? {}), participants, participants_count: participants.length };
+    }
+
+    await persistLiveHistory();
 
     if (conv?.id) {
       const { data: dbRows } = await supabaseAdmin
@@ -194,7 +280,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       for (const m of dbRows ?? []) {
         const senderId = m.sender_id ?? "";
         const normalized = resolveSenderKey(senderId) || normalizeId(senderId);
-        if (normalized && !participantPhones.has(normalized)) continue;
+        if (participantPhones.size > 0 && normalized && !participantPhones.has(normalized)) continue;
         addMessage(senderId, m.sender_name ?? "", m.body ?? "", m.created_at);
       }
     }
@@ -223,7 +309,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
 
     return {
       groupName: group?.name ?? group?.subject ?? data.whapiChatId,
-      participantsCount: participants.length,
+      participantsCount: group?.participants_count ?? participants.length,
       messagesScanned: liveMessages.length,
       rows: [...stats.values()].sort((a, b) => b.message_count - a.message_count),
     };
@@ -245,7 +331,7 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
 
     const seen = new Set<string>();
     const out: Array<{ id: string; body: string; created_at: string; source: "live" | "db" }> = [];
-    const normalizeId = (raw: string) => raw.replace(/@.*$/, "").replace(/\D/g, "");
+    const normalizeId = normalizePhone;
     const group = await getGroup(data.whapiChatId);
     const participants: any[] = group?.participants ?? [];
     const phoneToLid = await listContactLids(participants.map((p) => p.id ?? p.phone ?? ""));
@@ -268,6 +354,7 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
 
     const live = await listAllMessagesByChatId(data.whapiChatId);
     for (const m of live ?? []) {
+      if (m.from_me) continue;
       const senderId = m.from ?? m.author ?? "";
       const senderName = m.from_name ?? m.author_name ?? "";
       if (!isSelectedSender(senderId, senderName)) continue;
@@ -276,8 +363,8 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
       seen.add(id);
       out.push({
         id,
-        body: m.text?.body ?? m.body ?? m.caption ?? "",
-        created_at: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString(),
+        body: getMessageBody(m),
+        created_at: m.timestamp ? normalizeWhapiTs(m.timestamp) : new Date().toISOString(),
         source: "live",
       });
     }

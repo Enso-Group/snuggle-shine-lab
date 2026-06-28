@@ -17,11 +17,15 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible; Lovable WhatsApp sync)",
       ...(init?.headers ?? {}),
     },
   });
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 402 && text.includes("trial version limit exceeded")) {
+      throw new Error("Whapi חסם כרגע את משיכת הנתונים בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
+    }
     throw new Error(`Whapi ${res.status}: ${text.slice(0, 500)}`);
   }
   try {
@@ -29,6 +33,11 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     return text as any;
   }
+}
+
+function isWhapiTrialLimitError(e: unknown) {
+  const msg = String((e as any)?.message ?? e);
+  return msg.includes("trial version limit exceeded") || msg.includes("מגבלת Trial");
 }
 
 export async function sendTextMessage(chatId: string, body: string) {
@@ -71,6 +80,9 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
     }
   } catch (e) {
     console.error("[whapi] listAllMessagesByChatId failed", e);
+    if (isWhapiTrialLimitError(e)) {
+      throw new Error("Whapi חסם כרגע את משיכת ההודעות בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
+    }
   }
 
   return all;
@@ -94,15 +106,17 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
     return (r.groups ?? []).map((g) => ({ id: g.id, name: g.name || g.subject || g.id }));
   } catch (e) {
     console.error("[whapi] listGroups failed", e);
+    if (isWhapiTrialLimitError(e)) throw e;
     return [];
   }
 }
 
-export async function getGroup(groupId: string): Promise<any | null> {
+export async function getGroup(groupId: string, resync = false): Promise<any | null> {
   try {
-    return await whapi<any>(`/groups/${encodeURIComponent(groupId)}`);
+    return await whapi<any>(`/groups/${encodeURIComponent(groupId)}${resync ? "?resync=true" : ""}`);
   } catch (e) {
     console.error("[whapi] getGroup failed", e);
+    if (isWhapiTrialLimitError(e)) throw e;
     return null;
   }
 }
@@ -138,6 +152,7 @@ export async function listContacts(): Promise<Array<{ id: string; name: string; 
     }));
   } catch (e) {
     console.error("[whapi] listContacts failed", e);
+    if (isWhapiTrialLimitError(e)) throw e;
     return [];
   }
 }
@@ -201,6 +216,8 @@ export async function resetWhapiPipeline(webhookUrl: string): Promise<any> {
       },
     ],
     callback_persist: true,
+    callback_backoff_delay_ms: 3000,
+    max_callback_backoff_delay_ms: 900000,
   };
   return whapi("/settings", { method: "PATCH", body: JSON.stringify(body) });
 }
