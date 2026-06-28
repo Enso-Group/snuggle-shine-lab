@@ -200,15 +200,20 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
   let lastStatus = "";
   let lastError = "";
 
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  // Whapi needs time after logout for the channel to transition WAITING → QR.
+  // Poll up to ~60s and return as soon as base64 is available.
+  for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
       const qr = await whapi<{ status?: string; base64?: string; expire?: number }>(
         "/users/login?wakeup=true&size=360&width=360&height=360",
       );
       lastStatus = qr.status ?? "";
-      if (qr.base64 && qr.status === "OK") {
+      if (qr.base64) {
         const image = qr.base64.startsWith("data:image") ? qr.base64 : `data:image/png;base64,${qr.base64}`;
-        return { image, status: qr.status, expire: qr.expire };
+        return { image, status: qr.status ?? "QR", expire: qr.expire };
+      }
+      if (qr.status === "AUTH" || qr.status === "AUTHENTICATED") {
+        return { image: "", status: qr.status };
       }
     } catch (e: any) {
       lastError = String(e?.message ?? e);
@@ -219,7 +224,11 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  throw new Error(`לא נוצר QR אמיתי עדיין. סטטוס אחרון: ${lastStatus || lastError || "לא ידוע"}`);
+  // Don't throw on transient states — let UI keep polling via the status endpoint.
+  if (lastStatus) {
+    return { image: "", status: lastStatus };
+  }
+  throw new Error(`לא נוצר QR אמיתי עדיין. ${lastError || "נסה שוב בעוד מספר שניות."}`);
 }
 
 
