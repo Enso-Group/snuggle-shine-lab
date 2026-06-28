@@ -50,9 +50,15 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
           return new Response("bad json", { status: 400 });
         }
 
-        const messages: any[] = payload.messages ?? (payload.event === "messages" ? payload.data : []) ?? [];
-        if (!Array.isArray(messages) || messages.length === 0) {
-          return Response.json({ ok: true, skipped: "no messages" });
+        const messages: any[] =
+          (Array.isArray(payload.messages) && payload.messages) ||
+          (Array.isArray(payload.data) && payload.data) ||
+          (payload.message ? [payload.message] : []) ||
+          [];
+        console.log("[webhook] payload keys:", Object.keys(payload || {}), "messages:", messages.length);
+        if (messages.length === 0) {
+          console.log("[webhook] raw payload (no messages):", JSON.stringify(payload).slice(0, 800));
+          return Response.json({ ok: true, skipped: "no messages", keys: Object.keys(payload || {}) });
         }
 
         const enabled = settings?.enabled !== false;
