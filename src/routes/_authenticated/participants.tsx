@@ -4,7 +4,6 @@ import {
   listGroupConversations,
   listGroupParticipants,
   getParticipantMessages,
-  getHistorySyncStatus,
   enableHistorySync,
   getWhatsAppConnectionStatus,
   startWhatsAppReconnect,
