@@ -1,0 +1,54 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+export const Route = createFileRoute("/_authenticated/logs")({
+  head: () => ({ meta: [{ title: "לוגים — בוט WhatsApp" }] }),
+  component: LogsPage,
+});
+
+type Log = { id: string; prompt: string; target_chat_id: string; target_name: string | null; result: string | null; status: string; created_at: string };
+
+function LogsPage() {
+  const [logs, setLogs] = useState<Log[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from("commands_log")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100)
+      .then(({ data }) => setLogs((data ?? []) as Log[]));
+  }, []);
+
+  return (
+    <div className="p-8 max-w-4xl space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold">לוגים</h1>
+        <p className="text-muted-foreground mt-1">פקודות אחרונות שנשלחו מהדשבורד</p>
+      </div>
+      <div className="space-y-3">
+        {logs.length === 0 && <p className="text-muted-foreground">אין לוגים עדיין.</p>}
+        {logs.map((l) => (
+          <Card key={l.id}>
+            <CardContent className="p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">→ {l.target_name || l.target_chat_id}</span>
+                <div className="flex gap-2 items-center">
+                  <Badge variant={l.status === "sent" ? "default" : l.status === "error" ? "destructive" : "secondary"}>
+                    {l.status === "sent" ? "נשלח" : l.status === "error" ? "שגיאה" : "ממתין"}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">{new Date(l.created_at).toLocaleString("he-IL")}</span>
+                </div>
+              </div>
+              <p className="text-sm"><strong>בקשה:</strong> {l.prompt}</p>
+              {l.result && <p className="text-sm bg-muted p-2 rounded whitespace-pre-wrap"><strong>תוצאה:</strong> {l.result}</p>}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
