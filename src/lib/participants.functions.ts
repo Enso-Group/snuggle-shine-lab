@@ -4,80 +4,166 @@ import { z } from "zod";
 
 export const listGroupConversations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase } = context;
-    const { data, error } = await supabase
-      .from("conversations")
-      .select("id, name, whapi_chat_id, last_message_at, inbound_count")
-      .eq("is_group", true)
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .limit(500);
-    if (error) throw new Error(error.message);
-    return data ?? [];
+  .handler(async () => {
+    const { listGroups } = await import("./whapi.server");
+    const groups = await listGroups();
+    return groups
+      .map((g) => ({ whapi_chat_id: g.id, name: g.name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "he"));
   });
 
 export const listGroupParticipants = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { conversationId: string }) =>
-    z.object({ conversationId: z.string().uuid() }).parse(d),
+  .inputValidator((d: { whapiChatId: string }) =>
+    z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const { data: rows, error } = await supabase
-      .from("messages")
-      .select("sender_id, sender_name, body, created_at")
-      .eq("conversation_id", data.conversationId)
-      .eq("direction", "inbound")
-      .order("created_at", { ascending: false })
-      .limit(5000);
-    if (error) throw new Error(error.message);
+  .handler(async ({ data }) => {
+    const { getGroup, listMessagesByChatId } = await import("./whapi.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const map = new Map<
+    const [group, liveMessages, conv] = await Promise.all([
+      getGroup(data.whapiChatId),
+      listMessagesByChatId(data.whapiChatId, 200),
+      supabaseAdmin
+        .from("conversations")
+        .select("id")
+        .eq("whapi_chat_id", data.whapiChatId)
+        .maybeSingle()
+        .then((r) => r.data),
+    ]);
+
+    // Aggregate message stats by sender from Whapi live + DB
+    const stats = new Map<
       string,
-      { sender_id: string; sender_name: string; message_count: number; last_message_at: string; last_body: string }
+      { sender_id: string; sender_name: string; message_count: number; last_message_at: string | null; last_body: string }
     >();
-    for (const m of rows ?? []) {
-      const key = m.sender_id ?? m.sender_name ?? "anonymous";
-      const existing = map.get(key);
-      if (existing) {
-        existing.message_count += 1;
-        if (!existing.sender_name && m.sender_name) existing.sender_name = m.sender_name;
+
+    const addMessage = (senderId: string, senderName: string, body: string, ts: string | null) => {
+      const key = senderId || senderName;
+      if (!key) return;
+      const cur = stats.get(key);
+      if (cur) {
+        cur.message_count += 1;
+        if (!cur.sender_name && senderName) cur.sender_name = senderName;
+        if (ts && (!cur.last_message_at || ts > cur.last_message_at)) {
+          cur.last_message_at = ts;
+          cur.last_body = body;
+        }
       } else {
-        map.set(key, {
-          sender_id: m.sender_id ?? "",
-          sender_name: m.sender_name ?? m.sender_id ?? "אנונימי",
+        stats.set(key, {
+          sender_id: senderId,
+          sender_name: senderName || senderId || "אנונימי",
           message_count: 1,
-          last_message_at: m.created_at,
-          last_body: m.body ?? "",
+          last_message_at: ts,
+          last_body: body,
         });
       }
+    };
+
+    for (const m of liveMessages ?? []) {
+      if (m.from_me) continue;
+      const senderId = m.from ?? m.author ?? "";
+      const senderName = m.from_name ?? m.author_name ?? senderId;
+      const body = m.text?.body ?? m.body ?? m.caption ?? "";
+      const ts = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null;
+      addMessage(senderId, senderName, body, ts);
     }
-    return [...map.values()].sort((a, b) => b.message_count - a.message_count);
+
+    if (conv?.id) {
+      const { data: dbRows } = await supabaseAdmin
+        .from("messages")
+        .select("sender_id, sender_name, body, created_at")
+        .eq("conversation_id", conv.id)
+        .eq("direction", "inbound")
+        .order("created_at", { ascending: false })
+        .limit(5000);
+      for (const m of dbRows ?? []) {
+        addMessage(m.sender_id ?? "", m.sender_name ?? "", m.body ?? "", m.created_at);
+      }
+    }
+
+    // Merge with group roster (participants who haven't messaged)
+    const participants: any[] = group?.participants ?? [];
+    for (const p of participants) {
+      const id = p.id ?? p.phone ?? "";
+      const name = p.name ?? p.pushname ?? p.contact_name ?? id;
+      if (!stats.has(id)) {
+        stats.set(id, {
+          sender_id: id,
+          sender_name: name,
+          message_count: 0,
+          last_message_at: null,
+          last_body: "",
+        });
+      } else {
+        const cur = stats.get(id)!;
+        if (!cur.sender_name || cur.sender_name === id) cur.sender_name = name;
+      }
+    }
+
+    return {
+      groupName: group?.name ?? group?.subject ?? data.whapiChatId,
+      participantsCount: participants.length,
+      rows: [...stats.values()].sort((a, b) => b.message_count - a.message_count),
+    };
   });
 
 export const getParticipantMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { conversationId: string; senderId: string }) =>
+  .inputValidator((d: { whapiChatId: string; senderId: string }) =>
     z
       .object({
-        conversationId: z.string().uuid(),
+        whapiChatId: z.string().min(1),
         senderId: z.string().min(1),
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const query = supabase
-      .from("messages")
-      .select("id, body, created_at, sender_name, sender_id")
-      .eq("conversation_id", data.conversationId)
-      .eq("direction", "inbound")
-      .order("created_at", { ascending: false })
-      .limit(1000);
+  .handler(async ({ data }) => {
+    const { listMessagesByChatId } = await import("./whapi.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { data: rows, error } = data.senderId
-      ? await query.or(`sender_id.eq.${data.senderId},sender_name.eq.${data.senderId}`)
-      : await query;
-    if (error) throw new Error(error.message);
-    return rows ?? [];
+    const seen = new Set<string>();
+    const out: Array<{ id: string; body: string; created_at: string; source: "live" | "db" }> = [];
+
+    const live = await listMessagesByChatId(data.whapiChatId, 200);
+    for (const m of live ?? []) {
+      if (m.from_me) continue;
+      const senderId = m.from ?? m.author ?? "";
+      const senderName = m.from_name ?? m.author_name ?? "";
+      if (senderId !== data.senderId && senderName !== data.senderId) continue;
+      const id = String(m.id ?? `${m.timestamp}-${senderId}`);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({
+        id,
+        body: m.text?.body ?? m.body ?? m.caption ?? "",
+        created_at: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString(),
+        source: "live",
+      });
+    }
+
+    const { data: conv } = await supabaseAdmin
+      .from("conversations")
+      .select("id")
+      .eq("whapi_chat_id", data.whapiChatId)
+      .maybeSingle();
+
+    if (conv?.id) {
+      const { data: dbRows } = await supabaseAdmin
+        .from("messages")
+        .select("id, body, created_at, sender_id, sender_name, whapi_message_id")
+        .eq("conversation_id", conv.id)
+        .eq("direction", "inbound")
+        .or(`sender_id.eq.${data.senderId},sender_name.eq.${data.senderId}`)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      for (const m of dbRows ?? []) {
+        const key = m.whapi_message_id ?? m.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ id: m.id, body: m.body ?? "", created_at: m.created_at, source: "db" });
+      }
+    }
+
+    return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
   });
