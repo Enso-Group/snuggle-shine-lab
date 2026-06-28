@@ -76,7 +76,24 @@ export const sendManualMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await requireAdmin(context.supabase, context.userId);
 
-    // Log command
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const {
+      loadConversationByChatId,
+      checkOutboundAllowed,
+      recordOutbound,
+      isWhapiRestrictionError,
+      raiseAdminAlert,
+    } = await import("./anti-ban.server");
+
+    // Conversation MUST exist + have prior inbound (no cold contacts / broadcasts)
+    const conv = await loadConversationByChatId(supabaseAdmin, data.target_chat_id);
+    if (!conv) {
+      throw new Error(
+        "אסור לשלוח לאיש קשר שלא יזם שיחה. שלחי רק למי שכתב לבוט קודם.",
+      );
+    }
+
+    // Log command (pending)
     const { data: log } = await context.supabase
       .from("commands_log")
       .insert({
@@ -100,12 +117,54 @@ export const sendManualMessage = createServerFn({ method: "POST" })
         const { runCommand } = await import("./ai-brain.server");
         body = await runCommand(
           data.prompt,
-          settings?.system_prompt ??
-            "אתה עוזר חכם בעברית.",
+          settings?.system_prompt ?? "אתה עוזר חכם בעברית.",
         );
       }
+
+      // Enforce all anti-ban guards
+      const guard = await checkOutboundAllowed(supabaseAdmin, conv, body);
+      if (!guard.ok) {
+        if (log?.id) {
+          await context.supabase
+            .from("commands_log")
+            .update({ status: "blocked", result: `[${guard.code}] ${guard.reason}` })
+            .eq("id", log.id);
+        }
+        throw new Error(guard.reason);
+      }
+
+      // Random 0-2 min jitter on top of the 3-min minimum (3-5 min effective)
+      if (guard.jitterMs > 0) {
+        await new Promise((r) => setTimeout(r, guard.jitterMs));
+      }
+
       const { sendTextMessage } = await import("./whapi.server");
-      await sendTextMessage(data.target_chat_id, body);
+      try {
+        await sendTextMessage(data.target_chat_id, body);
+      } catch (e) {
+        if (isWhapiRestrictionError(e)) {
+          await supabaseAdmin
+            .from("bot_settings")
+            .update({ enabled: false })
+            .gte("created_at", "1970-01-01");
+          await raiseAdminAlert(
+            supabaseAdmin,
+            `WhatsApp restricted the account — bot disabled. ${String((e as any)?.message ?? e)}`,
+          );
+        }
+        throw e;
+      }
+
+      // Persist outbound message + bump counters
+      await supabaseAdmin.from("messages").insert({
+        conversation_id: conv.id,
+        direction: "outbound",
+        sender_name: "מנהל",
+        sender_id: "manual",
+        body,
+      });
+      await recordOutbound(supabaseAdmin, conv.id, body);
+
       if (log?.id) {
         await context.supabase
           .from("commands_log")
