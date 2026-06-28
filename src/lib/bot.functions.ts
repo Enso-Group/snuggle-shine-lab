@@ -1,0 +1,152 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
+
+async function requireAdmin(supabase: any, userId: string) {
+  const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Forbidden: admin only");
+}
+
+export const getBotSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("bot_settings")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data;
+  });
+
+export const updateBotSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      system_prompt: z.string().min(1).max(8000),
+      bot_name: z.string().min(1).max(80),
+      enabled: z.boolean(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const { error } = await context.supabase
+      .from("bot_settings")
+      .update({
+        system_prompt: data.system_prompt,
+        bot_name: data.bot_name,
+        enabled: data.enabled,
+      })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const checkWhapiConnection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const { checkHealth } = await import("./whapi.server");
+    return checkHealth();
+  });
+
+export const listWhapiGroups = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const { listGroups, listChats } = await import("./whapi.server");
+    const [groups, chats] = await Promise.all([listGroups(), listChats()]);
+    return { groups, chats };
+  });
+
+export const sendManualMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      target_chat_id: z.string().min(3),
+      target_name: z.string().optional(),
+      prompt: z.string().min(1).max(4000),
+      mode: z.enum(["direct", "ai"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context.supabase, context.userId);
+
+    // Log command
+    const { data: log } = await context.supabase
+      .from("commands_log")
+      .insert({
+        user_id: context.userId,
+        prompt: data.prompt,
+        target_chat_id: data.target_chat_id,
+        target_name: data.target_name ?? null,
+        status: "pending",
+      })
+      .select()
+      .single();
+
+    try {
+      let body = data.prompt;
+      if (data.mode === "ai") {
+        const { data: settings } = await context.supabase
+          .from("bot_settings")
+          .select("system_prompt")
+          .limit(1)
+          .maybeSingle();
+        const { runCommand } = await import("./ai-brain.server");
+        body = await runCommand(
+          data.prompt,
+          settings?.system_prompt ??
+            "אתה עוזר חכם בעברית.",
+        );
+      }
+      const { sendTextMessage } = await import("./whapi.server");
+      await sendTextMessage(data.target_chat_id, body);
+      if (log?.id) {
+        await context.supabase
+          .from("commands_log")
+          .update({ status: "sent", result: body.slice(0, 2000) })
+          .eq("id", log.id);
+      }
+      return { ok: true, body };
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      if (log?.id) {
+        await context.supabase
+          .from("commands_log")
+          .update({ status: "error", result: msg.slice(0, 2000) })
+          .eq("id", log.id);
+      }
+      throw new Error(msg);
+    }
+  });
+
+export const getDashboardStats = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const [conv, msg, cmd] = await Promise.all([
+      context.supabase.from("conversations").select("id", { count: "exact", head: true }),
+      context.supabase.from("messages").select("id", { count: "exact", head: true }),
+      context.supabase.from("commands_log").select("id", { count: "exact", head: true }),
+    ]);
+    return {
+      conversations: conv.count ?? 0,
+      messages: msg.count ?? 0,
+      commands: cmd.count ?? 0,
+    };
+  });
+
+export const checkIsAdmin = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    return { isAdmin: !!data, userId: context.userId };
+  });
