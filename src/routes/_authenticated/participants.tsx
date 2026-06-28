@@ -6,13 +6,15 @@ import {
   getParticipantMessages,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +32,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Users, MessageSquare, RefreshCw, Radio } from "lucide-react";
+import { Users, MessageSquare, RefreshCw, Radio, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/participants")({
   ssr: false,
@@ -173,21 +176,54 @@ function ParticipantsPage() {
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
-          <Select value={groupId} onValueChange={setGroupId} disabled={loadingGroups}>
-            <SelectTrigger>
-              <SelectValue placeholder={loadingGroups ? "טוען קבוצות מ-WhatsApp…" : `בחר קבוצה (${groups.length})`} />
-            </SelectTrigger>
-            <SelectContent>
-              {filteredGroups.map((g) => (
-                <SelectItem key={g.whapi_chat_id} value={g.whapi_chat_id}>
-                  {g.name}
-                </SelectItem>
-              ))}
-              {!loadingGroups && groups.length === 0 && (
-                <div className="px-2 py-3 text-sm text-muted-foreground">לא נמצאו קבוצות. ודא שה-WHAPI_TOKEN פעיל.</div>
-              )}
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                disabled={loadingGroups}
+                className="w-full justify-between font-normal"
+              >
+                <span className="truncate">
+                  {loadingGroups
+                    ? "טוען קבוצות מ-WhatsApp…"
+                    : groupId
+                    ? groups.find((g) => g.whapi_chat_id === groupId)?.name ?? "בחר קבוצה"
+                    : `בחר קבוצה (${groups.length})`}
+                </span>
+                <ChevronsUpDown className="size-4 opacity-50 shrink-0" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
+              <Command
+                filter={(value, search) =>
+                  value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+                }
+              >
+                <CommandInput placeholder="חפש קבוצה…" />
+                <CommandList>
+                  <CommandEmpty>לא נמצאו קבוצות.</CommandEmpty>
+                  <CommandGroup>
+                    {groups.map((g) => (
+                      <CommandItem
+                        key={g.whapi_chat_id}
+                        value={`${g.name} ${g.whapi_chat_id}`}
+                        onSelect={() => setGroupId(g.whapi_chat_id)}
+                      >
+                        <Check
+                          className={cn(
+                            "size-4 ms-2",
+                            groupId === g.whapi_chat_id ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        {g.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
         <Input
           placeholder="סנן משתתפים…"
@@ -196,9 +232,17 @@ function ParticipantsPage() {
           className="sm:max-w-xs"
           disabled={!groupId}
         />
+        {groupId && (
+          <Button
+            variant="default"
+            onClick={() => loadParticipants(groupId)}
+            disabled={loadingParts}
+          >
+            <RefreshCw className={`size-4 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
+            רענן קבוצה
+          </Button>
+        )}
       </div>
-
-      {groupId && (
         <>
           <div className="text-sm text-muted-foreground">
             {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים
