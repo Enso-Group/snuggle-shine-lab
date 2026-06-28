@@ -8,6 +8,7 @@ import {
   getWhatsAppConnectionStatus,
   startWhatsAppReconnect,
   fetchWhatsAppQr,
+  resetWhatsAppPipeline,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -75,6 +76,7 @@ function ParticipantsPage() {
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
   const [qrImage, setQrImage] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   function loadGroups() {
     setLoadingGroups(true);
@@ -149,6 +151,26 @@ function ParticipantsPage() {
       })
       .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי ליצור QR אמיתי. נסה שוב בעוד רגע.")))
       .finally(() => setReconnecting(false));
+  }
+
+  function resetPipeline() {
+    if (!window.confirm("זה יאפס את כל זרימת הנתונים: יפעיל היסטוריה מלאה ויחבר את ה-Webhook ל-Whapi כך שכל הודעה חדשה תיכנס אוטומטית לאתר. להמשיך?")) return;
+    setResetting(true);
+    setHistoryNotice("");
+    const webhookUrl = `${window.location.origin}/api/public/whapi-webhook`;
+    resetWhatsAppPipeline({ data: { webhookUrl } })
+      .then((r: any) => {
+        setFullHistory(r.fullHistory);
+        setConnectionStatus(r.status);
+        const parts: string[] = [];
+        parts.push(r.fullHistory ? "✓ היסטוריה מלאה פעילה" : "✗ היסטוריה מלאה לא הופעלה");
+        parts.push(r.webhookUrl ? `✓ Webhook רשום: ${r.webhookUrl}` : "✗ Webhook לא נרשם");
+        parts.push(r.connected ? `✓ מחובר${r.userName ? ` כ-${r.userName}` : ""}` : `סטטוס: ${r.status ?? "לא מחובר"} — סרוק QR או חבר מחדש`);
+        parts.push("מעכשיו כל הודעה חדשה תזרום אוטומטית לאתר. אם תרצה גם היסטוריה ישנה — נתק את הטלפון וחבר מחדש.");
+        setHistoryNotice(parts.join("\n"));
+      })
+      .catch((e: any) => setHistoryNotice(`איפוס נכשל: ${e?.message ?? e}`))
+      .finally(() => setResetting(false));
   }
 
   // Poll for QR while waiting (after reconnect started but QR not yet available)
@@ -341,9 +363,18 @@ function ParticipantsPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
+              onClick={resetPipeline}
+              disabled={resetting || reconnecting || enablingHistory}
+              variant="default"
+            >
+              <RefreshCw className={`size-3 ms-1 ${resetting ? "animate-spin" : ""}`} />
+              אפס את כל זרימת הנתונים
+            </Button>
+            <Button
+              size="sm"
               onClick={enableFullHistory}
-              disabled={enablingHistory || reconnecting}
-              variant={fullHistory === true ? "outline" : "default"}
+              disabled={enablingHistory || reconnecting || resetting}
+              variant="outline"
             >
               <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
               {fullHistory === true ? "הפעל שוב" : "הפעל היסטוריה מלאה"}
@@ -351,7 +382,7 @@ function ParticipantsPage() {
             <Button
               size="sm"
               onClick={reconnectWhatsApp}
-              disabled={reconnecting || enablingHistory}
+              disabled={reconnecting || enablingHistory || resetting}
               variant="outline"
             >
               <RefreshCw className={`size-3 ms-1 ${reconnecting ? "animate-spin" : ""}`} />
@@ -373,7 +404,7 @@ function ParticipantsPage() {
 
       {historyNotice && (
         <Alert>
-          <AlertDescription>{historyNotice}</AlertDescription>
+          <AlertDescription className="whitespace-pre-line">{historyNotice}</AlertDescription>
         </Alert>
       )}
 

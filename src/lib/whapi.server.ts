@@ -164,9 +164,9 @@ export async function listContactLids(contactIds: string[]): Promise<Record<stri
   return out;
 }
 
-export async function getWhapiSettings(): Promise<{ full_history?: boolean } | null> {
+export async function getWhapiSettings(): Promise<any | null> {
   try {
-    return await whapi<{ full_history?: boolean }>("/settings");
+    return await whapi<any>("/settings");
   } catch (e) {
     console.error("[whapi] getWhapiSettings failed", e);
     return null;
@@ -183,6 +183,26 @@ export async function enableWhapiFullHistory(): Promise<{ full_history?: boolean
     console.error("[whapi] enableWhapiFullHistory failed", e);
     throw e;
   }
+}
+
+export async function resetWhapiPipeline(webhookUrl: string): Promise<any> {
+  // Single PATCH: enable full history + register our webhook so every
+  // incoming message is POSTed to the app automatically.
+  const body = {
+    full_history: true,
+    webhooks: [
+      {
+        url: webhookUrl,
+        events: [
+          { type: "messages", method: "post" },
+          { type: "statuses", method: "post" },
+        ],
+        mode: "body",
+      },
+    ],
+    callback_persist: true,
+  };
+  return whapi("/settings", { method: "PATCH", body: JSON.stringify(body) });
 }
 
 export async function logoutWhapiUser(): Promise<{ ok: boolean; alreadyLoggedOut?: boolean }> {

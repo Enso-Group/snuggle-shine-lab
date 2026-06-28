@@ -2,6 +2,27 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+export const resetWhatsAppPipeline = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { webhookUrl: string }) =>
+    z.object({ webhookUrl: z.string().url() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { resetWhapiPipeline, getWhapiSettings, checkHealth } = await import("./whapi.server");
+    await resetWhapiPipeline(data.webhookUrl);
+    const [settings, health] = await Promise.all([getWhapiSettings(), checkHealth()]);
+    const webhooks = (settings as any)?.webhooks ?? [];
+    return {
+      fullHistory: (settings as any)?.full_history === true,
+      webhookUrl: webhooks[0]?.url ?? null,
+      webhookEvents: webhooks[0]?.events ?? [],
+      connected: health.status === "AUTH",
+      status: health.status ?? null,
+      userName: health.userName ?? null,
+    };
+  });
+
+
 export const listGroupConversations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
