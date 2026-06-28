@@ -98,11 +98,23 @@ const TOOLS = [
   },
 ];
 
+export type AIToolDef = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
 export type AIRunInput = {
   systemPrompt: string;
   history: Array<{ role: "user" | "assistant"; content: string }>;
   userMessage: string;
+  extraTools?: AIToolDef[];
+  toolExecutor?: (name: string, args: Record<string, unknown>) => Promise<string>;
 };
+
 
 export async function runAI(input: AIRunInput): Promise<string> {
   const apiKey = process.env.LOVABLE_API_KEY;
