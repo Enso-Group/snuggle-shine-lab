@@ -218,7 +218,12 @@ export async function getWhapiLoginQrImage(): Promise<string> {
   const res = await whapiRaw("/users/login/image?size=360&width=360&height=360&wakeup=true");
   const contentType = res.headers.get("content-type") || "image/png";
   const buffer = await res.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString("base64");
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(i, i + 0x8000));
+  }
+  const base64 = btoa(binary);
   return `data:${contentType};base64,${base64}`;
 }
 
