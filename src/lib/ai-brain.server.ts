@@ -16,34 +16,70 @@ type ChatMessage = {
   }>;
 };
 
-// Simple web search via DuckDuckGo HTML scrape (no API key needed)
+// Web search via DuckDuckGo HTML, with content fetch for top results
+async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
+    });
+    clearTimeout(t);
+    const html = await res.text();
+    // Strip scripts/styles, then tags
+    const cleaned = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned.slice(0, maxChars);
+  } catch {
+    return "";
+  }
+}
+
 async function webSearch(query: string): Promise<string> {
   try {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)",
-      },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
     });
     const html = await res.text();
-    // Extract results: <a class="result__a" href="...">title</a> ... <a class="result__snippet">snippet</a>
     const results: Array<{ title: string; url: string; snippet: string }> = [];
     const blockRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
     let m;
-    while ((m = blockRe.exec(html)) !== null && results.length < 6) {
+    while ((m = blockRe.exec(html)) !== null && results.length < 5) {
       const stripped = (s: string) => s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
       let href = m[1];
-      // DDG wraps urls: /l/?uddg=ENCODED
       const um = href.match(/uddg=([^&]+)/);
       if (um) href = decodeURIComponent(um[1]);
+      if (href.startsWith("//")) href = "https:" + href;
       results.push({ url: href, title: stripped(m[2]), snippet: stripped(m[3]) });
     }
-    if (results.length === 0) return "לא נמצאו תוצאות.";
-    return results.map((r, i) => `${i + 1}. ${r.title}\n${r.snippet}\nקישור: ${r.url}`).join("\n\n");
+    if (results.length === 0) return "לא נמצאו תוצאות. נסה ניסוח אחר של השאילתה.";
+
+    // Fetch content of top 2 results in parallel for real substance
+    const top = results.slice(0, 2);
+    const pages = await Promise.all(top.map((r) => fetchPageText(r.url)));
+
+    const out = results.map((r, i) => {
+      const content = pages[i] ? `\nתוכן: ${pages[i]}` : "";
+      return `[${i + 1}] ${r.title}\n${r.snippet}${content}\nמקור: ${r.url}`;
+    }).join("\n\n---\n\n");
+    return out;
   } catch (e: any) {
     return `שגיאה בחיפוש: ${String(e?.message ?? e)}`;
   }
 }
+
 
 const TOOLS = [
   {
@@ -72,11 +108,22 @@ export async function runAI(input: AIRunInput): Promise<string> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
+  const humanize = `
+
+הנחיות סגנון קריטיות (חובה):
+- דבר/י כמו אדם אמיתי בוואטסאפ: קצר, ישיר, חם, בלי רשמיות מיותרת.
+- אסור להתחיל ב"נראה ש...", "סליחה, לא הצלחתי...", "כעוזר AI..." או כל פתיח שמסגיר שאתה בוט.
+- אם החיפוש לא החזיר משהו טוב, פשוט תגיד מה כן ידוע לך ותציע כיוון — בלי להתנצל ובלי "האם תרצה ש...".
+- אל תחזור על עצמך, אל תכפיל משפטים, ואל תוסיף "אם יש שאלות נוספות אני כאן".
+- כשמחפשים מידע ולא נמצא — תנסח/י שאלת חיפוש שונה (אנגלית, מילים אחרות) ותחפש/י שוב לפני שמוותרים.
+- תשובה ממוצעת: 1–4 משפטים. רק אם באמת מבקשים פירוט — תרחיב/י.`;
+
   const messages: ChatMessage[] = [
-    { role: "system", content: input.systemPrompt },
+    { role: "system", content: input.systemPrompt + humanize },
     ...input.history.map((h) => ({ role: h.role, content: h.content })),
     { role: "user", content: input.userMessage },
   ];
+
 
   // Up to 4 tool-call rounds
   for (let step = 0; step < 4; step++) {

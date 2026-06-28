@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Per-chat in-memory dedupe (best-effort; the durable rules live in DB via anti-ban.server)
+// Per-chat in-memory state (best-effort; durable rules live in DB via anti-ban.server)
 const lastReplyAt = new Map<string, number>();
-const MIN_GAP_MS = 4000;
+const latestInboundAt = new Map<string, number>();
+const MIN_GAP_MS = 800;
+
 
 function pickJid(m: any): { chatId: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
   if (!m) return null;
@@ -143,7 +145,11 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               if (!mentioned) continue;
             }
 
-            // Cheap in-memory burst limit
+            // Track latest inbound for this chat so a newer message cancels this reply
+            const myInboundTs = m.ts || Date.now();
+            latestInboundAt.set(m.chatId, Math.max(latestInboundAt.get(m.chatId) ?? 0, myInboundTs));
+
+            // Tiny burst guard (avoid double-processing same payload)
             const last = lastReplyAt.get(m.chatId) ?? 0;
             if (Date.now() - last < MIN_GAP_MS) continue;
             lastReplyAt.set(m.chatId, Date.now());
@@ -167,8 +173,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             }
 
             const { sendPresence, sendTextMessage } = await import("@/lib/whapi.server");
-            const thinkMs = 1500 + Math.floor(Math.random() * 3500);
-            sendPresence(m.chatId, "typing", Math.ceil(thinkMs / 1000)).catch(() => {});
+            sendPresence(m.chatId, "typing", 3).catch(() => {});
 
             const { runAI } = await import("@/lib/ai-brain.server");
             let reply: string;
@@ -179,8 +184,13 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               continue;
             }
 
-            // Re-check anti-ban guards immediately before sending (covers
-            // consecutive_outbound limit + duplicate-body for organic replies).
+            // If a newer inbound arrived while we were thinking, abort — the newer one will be handled
+            if ((latestInboundAt.get(m.chatId) ?? 0) > myInboundTs) {
+              console.log("[bot] superseded by newer inbound, skipping send");
+              continue;
+            }
+
+            // Re-check anti-ban guards immediately before sending
             const conv = await loadConversationByChatId(supabaseAdmin, m.chatId);
             if (conv) {
               const guard = await checkOutboundAllowed(supabaseAdmin, conv, reply);
@@ -190,7 +200,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               }
             }
 
-            await new Promise((r) => setTimeout(r, thinkMs));
+
 
             try {
               const sendRes: any = await sendTextMessage(m.chatId, reply);
