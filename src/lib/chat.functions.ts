@@ -205,6 +205,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     // Admin tools (DB access via service role) — only enabled for admin mode
     let extraTools: any[] | undefined;
     let toolExecutor: ((name: string, args: Record<string, unknown>) => Promise<string>) | undefined;
+    let directAdminReply: string | undefined;
     if (thread.mode === "admin") {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       type ConversationCandidate = {
@@ -347,6 +348,13 @@ export const sendChatMessage = createServerFn({ method: "POST" })
             .join("\n");
       };
 
+      if (shouldDoDirectMessageLookup(data.content, prior)) {
+        directAdminReply = await formatMessagesForConversation(
+          extractChatLookup(data.content),
+          requestedLimit(data.content),
+        );
+      }
+
       extraTools = [
         {
           type: "function",
@@ -433,13 +441,14 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     let replyText: string;
     try {
-      replyText = await runAI({
-        systemPrompt,
-        history: prior,
-        userMessage: data.content,
-        extraTools,
-        toolExecutor,
-      });
+      replyText = directAdminReply ??
+        await runAI({
+          systemPrompt,
+          history: prior,
+          userMessage: data.content,
+          extraTools,
+          toolExecutor,
+        });
     } catch (e: any) {
       replyText = `שגיאה: ${String(e?.message ?? e)}`;
     }
