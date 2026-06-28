@@ -79,28 +79,52 @@ export type Database = {
       }
       conversations: {
         Row: {
+          blocked: boolean
+          blocked_at: string | null
+          blocked_reason: string | null
+          consecutive_outbound: number
           created_at: string
+          first_inbound_at: string | null
           id: string
+          inbound_count: number
           is_group: boolean
           last_message_at: string | null
+          last_outbound_at: string | null
+          last_outbound_body: string | null
           name: string | null
           updated_at: string
           whapi_chat_id: string
         }
         Insert: {
+          blocked?: boolean
+          blocked_at?: string | null
+          blocked_reason?: string | null
+          consecutive_outbound?: number
           created_at?: string
+          first_inbound_at?: string | null
           id?: string
+          inbound_count?: number
           is_group?: boolean
           last_message_at?: string | null
+          last_outbound_at?: string | null
+          last_outbound_body?: string | null
           name?: string | null
           updated_at?: string
           whapi_chat_id: string
         }
         Update: {
+          blocked?: boolean
+          blocked_at?: string | null
+          blocked_reason?: string | null
+          consecutive_outbound?: number
           created_at?: string
+          first_inbound_at?: string | null
           id?: string
+          inbound_count?: number
           is_group?: boolean
           last_message_at?: string | null
+          last_outbound_at?: string | null
+          last_outbound_body?: string | null
           name?: string | null
           updated_at?: string
           whapi_chat_id?: string
@@ -177,6 +201,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      distinct_outbound_chats_last_hour: { Args: never; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
