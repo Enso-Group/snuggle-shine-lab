@@ -23,6 +23,9 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   });
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 402 && text.includes("trial version limit exceeded")) {
+      throw new Error("Whapi חסם כרגע את משיכת הנתונים בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
+    }
     throw new Error(`Whapi ${res.status}: ${text.slice(0, 500)}`);
   }
   try {
