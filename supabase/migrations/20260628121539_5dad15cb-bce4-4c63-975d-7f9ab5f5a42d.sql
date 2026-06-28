@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.distinct_outbound_chats_last_hour() FROM authenticated;
