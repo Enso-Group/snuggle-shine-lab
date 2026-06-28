@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Per-chat in-memory dedupe (best-effort; the durable rules live in DB via anti-ban.server)
+// Per-chat in-memory state (best-effort; durable rules live in DB via anti-ban.server)
 const lastReplyAt = new Map<string, number>();
-const MIN_GAP_MS = 4000;
+const latestInboundAt = new Map<string, number>();
+const MIN_GAP_MS = 800;
+
 
 function pickJid(m: any): { chatId: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
   if (!m) return null;
