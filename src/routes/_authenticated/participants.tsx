@@ -4,6 +4,8 @@ import {
   listGroupConversations,
   listGroupParticipants,
   getParticipantMessages,
+  getHistorySyncStatus,
+  enableHistorySync,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,6 +19,7 @@ import {
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -32,7 +35,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Users, MessageSquare, RefreshCw, Radio, Check, ChevronsUpDown } from "lucide-react";
+import { Users, MessageSquare, RefreshCw, Radio, Check, ChevronsUpDown, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/participants")({
@@ -64,6 +67,9 @@ function ParticipantsPage() {
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [fullHistory, setFullHistory] = useState<boolean | null>(null);
+  const [enablingHistory, setEnablingHistory] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState("");
 
   function loadGroups() {
     setLoadingGroups(true);
@@ -98,7 +104,19 @@ function ParticipantsPage() {
 
   useEffect(() => {
     loadGroups();
+    getHistorySyncStatus().then((r: any) => setFullHistory(r.fullHistory));
   }, []);
+
+  function enableFullHistory() {
+    setEnablingHistory(true);
+    enableHistorySync()
+      .then((r: any) => {
+        setFullHistory(r.fullHistory);
+        setHistoryNotice("היסטוריה מלאה הופעלה. כדי שהודעות ישנות מהטלפון ייכנסו למאגר, צריך לחבר מחדש/לאשר מחדש את חשבון WhatsApp ואז לרענן את הקבוצה.");
+      })
+      .catch(() => setHistoryNotice("לא הצלחתי להפעיל היסטוריה מלאה. נסה שוב בעוד רגע."))
+      .finally(() => setEnablingHistory(false));
+  }
 
   useEffect(() => {
     setParticipants([]);
@@ -246,11 +264,33 @@ function ParticipantsPage() {
         )}
       </div>
 
+      {fullHistory === false && (
+        <Alert>
+          <AlertTriangle className="size-4" />
+          <AlertTitle>החיבור לא מסנכרן היסטוריה מלאה</AlertTitle>
+          <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+            <span>
+              ספירת ההודעות כאן היא רק מה שמסונכרן במאגר החיבור, לא בהכרח כל מה שמופיע בטלפון.
+            </span>
+            <Button size="sm" onClick={enableFullHistory} disabled={enablingHistory}>
+              <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
+              הפעל היסטוריה מלאה
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {historyNotice && (
+        <Alert>
+          <AlertDescription>{historyNotice}</AlertDescription>
+        </Alert>
+      )}
+
       {groupId && (
         <>
 
           <div className="text-sm text-muted-foreground">
-            {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים · נסרקו {messagesScanned} הודעות
+            {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים · נמצאו {messagesScanned} הודעות זמינות בחיבור
           </div>
           <div className="border rounded-lg overflow-hidden bg-card">
             {loadingParts && participants.length === 0 ? (
