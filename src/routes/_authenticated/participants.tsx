@@ -153,6 +153,26 @@ function ParticipantsPage() {
       .finally(() => setReconnecting(false));
   }
 
+  function resetPipeline() {
+    if (!window.confirm("זה יאפס את כל זרימת הנתונים: יפעיל היסטוריה מלאה ויחבר את ה-Webhook ל-Whapi כך שכל הודעה חדשה תיכנס אוטומטית לאתר. להמשיך?")) return;
+    setResetting(true);
+    setHistoryNotice("");
+    const webhookUrl = `${window.location.origin}/api/public/whapi-webhook`;
+    resetWhatsAppPipeline({ data: { webhookUrl } })
+      .then((r: any) => {
+        setFullHistory(r.fullHistory);
+        setConnectionStatus(r.status);
+        const parts: string[] = [];
+        parts.push(r.fullHistory ? "✓ היסטוריה מלאה פעילה" : "✗ היסטוריה מלאה לא הופעלה");
+        parts.push(r.webhookUrl ? `✓ Webhook רשום: ${r.webhookUrl}` : "✗ Webhook לא נרשם");
+        parts.push(r.connected ? `✓ מחובר${r.userName ? ` כ-${r.userName}` : ""}` : `סטטוס: ${r.status ?? "לא מחובר"} — סרוק QR או חבר מחדש`);
+        parts.push("מעכשיו כל הודעה חדשה תזרום אוטומטית לאתר. אם תרצה גם היסטוריה ישנה — נתק את הטלפון וחבר מחדש.");
+        setHistoryNotice(parts.join("\n"));
+      })
+      .catch((e: any) => setHistoryNotice(`איפוס נכשל: ${e?.message ?? e}`))
+      .finally(() => setResetting(false));
+  }
+
   // Poll for QR while waiting (after reconnect started but QR not yet available)
   useEffect(() => {
     if (qrImage || !historyNotice.includes("ממתין ל-QR")) return;
