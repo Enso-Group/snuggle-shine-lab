@@ -404,7 +404,7 @@ function ParticipantsPage() {
 
       {historyNotice && (
         <Alert>
-          <AlertDescription>{historyNotice}</AlertDescription>
+          <AlertDescription className="whitespace-pre-line">{historyNotice}</AlertDescription>
         </Alert>
       )}
 
