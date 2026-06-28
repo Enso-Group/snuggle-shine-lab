@@ -76,6 +76,7 @@ function ParticipantsPage() {
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
   const [qrImage, setQrImage] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   function loadGroups() {
     setLoadingGroups(true);
