@@ -38,6 +38,19 @@ export async function sendTextMessage(chatId: string, body: string) {
   });
 }
 
+export async function listMessagesByChatId(chatId: string, count = 30): Promise<any[]> {
+  try {
+    const safeCount = Math.min(Math.max(Math.floor(count) || 30, 1), 200);
+    const r = await whapi<{ messages?: any[] }>(
+      `/messages/list/${encodeURIComponent(chatId)}?count=${safeCount}&sort=desc`,
+    );
+    return r.messages ?? [];
+  } catch (e) {
+    console.error("[whapi] listMessagesByChatId failed", e);
+    return [];
+  }
+}
+
 export async function sendPresence(chatId: string, presence: "typing" | "recording" | "paused" = "typing", delaySec = 3) {
   try {
     await whapi(`/presences/${encodeURIComponent(chatId)}`, {
