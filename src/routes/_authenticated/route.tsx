@@ -18,6 +18,7 @@ export const Route = createFileRoute("/_authenticated")({
 const NAV = [
   { to: "/", label: "סקירה", icon: LayoutDashboard },
   { to: "/conversations", label: "שיחות", icon: MessageSquare },
+  { to: "/chat", label: "צ'אט AI", icon: Bot },
   { to: "/send", label: "שלח הודעה", icon: Send },
   { to: "/settings", label: "הגדרות", icon: SettingsIcon },
   { to: "/logs", label: "לוגים", icon: ScrollText },
