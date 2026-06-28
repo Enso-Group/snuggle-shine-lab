@@ -8,6 +8,7 @@ import {
   getWhatsAppConnectionStatus,
   startWhatsAppReconnect,
   fetchWhatsAppQr,
+  resetWhatsAppPipeline,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
