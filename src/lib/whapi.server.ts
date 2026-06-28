@@ -72,6 +72,9 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
     }
   } catch (e) {
     console.error("[whapi] listAllMessagesByChatId failed", e);
+    if (String((e as any)?.message ?? e).includes("trial version limit exceeded")) {
+      throw new Error("Whapi חסם כרגע את משיכת ההודעות בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
+    }
   }
 
   return all;
