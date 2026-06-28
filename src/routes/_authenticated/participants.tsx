@@ -243,7 +243,10 @@ function ParticipantsPage() {
           </Button>
         )}
       </div>
+
+      {groupId && (
         <>
+
           <div className="text-sm text-muted-foreground">
             {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים
           </div>
