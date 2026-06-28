@@ -65,7 +65,7 @@ export async function sendPresence(chatId: string, presence: "typing" | "recordi
 
 export async function listGroups(): Promise<Array<{ id: string; name: string }>> {
   try {
-    const r = await whapi<{ groups?: Array<{ id: string; name?: string; subject?: string }> }>("/groups?count=200");
+    const r = await whapi<{ groups?: Array<{ id: string; name?: string; subject?: string }> }>("/groups?count=500");
     return (r.groups ?? []).map((g) => ({ id: g.id, name: g.name || g.subject || g.id }));
   } catch (e) {
     console.error("[whapi] listGroups failed", e);
@@ -75,7 +75,7 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
 
 export async function listChats(): Promise<Array<{ id: string; name: string; type: string }>> {
   try {
-    const r = await whapi<{ chats?: Array<{ id: string; name?: string; type?: string }> }>("/chats?count=100");
+    const r = await whapi<{ chats?: Array<{ id: string; name?: string; type?: string }> }>("/chats?count=500");
     return (r.chats ?? []).map((c) => ({ id: c.id, name: c.name || c.id, type: c.type || "contact" }));
   } catch (e) {
     console.error("[whapi] listChats failed", e);
