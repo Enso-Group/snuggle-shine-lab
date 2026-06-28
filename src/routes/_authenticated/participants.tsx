@@ -227,7 +227,7 @@ function ParticipantsPage() {
                     >
                       <TableCell className="font-medium">{p.sender_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground" dir="ltr">
-                        {p.sender_id}
+                        {p.sender_name && p.sender_name !== p.sender_id ? p.sender_name : p.sender_id}
                       </TableCell>
                       <TableCell>{p.message_count}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
