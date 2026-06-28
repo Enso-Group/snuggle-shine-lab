@@ -73,6 +73,16 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
   }
 }
 
+export async function getGroup(groupId: string): Promise<any | null> {
+  try {
+    return await whapi<any>(`/groups/${encodeURIComponent(groupId)}`);
+  } catch (e) {
+    console.error("[whapi] getGroup failed", e);
+    return null;
+  }
+}
+
+
 export async function listChats(): Promise<Array<{ id: string; name: string; type: string }>> {
   try {
     const r = await whapi<{ chats?: Array<{ id: string; name?: string; type?: string }> }>("/chats?count=500");
