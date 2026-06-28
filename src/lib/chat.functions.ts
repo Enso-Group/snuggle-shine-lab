@@ -134,30 +134,15 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           "אתה עוזר חכם וידידותי שעונה בעברית בצורה טבעית כמו בן אדם.") +
         `\n\n[מצב בדיקה: ענה בדיוק כפי שהיית עונה ל-WhatsApp בתור "${settings?.bot_name ?? "הבוט"}".]`;
     } else if (thread.mode === "admin") {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const [{ count: convCount }, { count: msgCount }, recent] = await Promise.all([
-        supabaseAdmin.from("conversations").select("*", { count: "exact", head: true }),
-        supabaseAdmin.from("messages").select("*", { count: "exact", head: true }),
-        supabaseAdmin
-          .from("conversations")
-          .select("name, whapi_chat_id, last_message_at, inbound_count, blocked")
-          .order("last_message_at", { ascending: false, nullsFirst: false })
-          .limit(15),
-      ]);
-      const list = (recent.data ?? [])
-        .map(
-          (c) =>
-            `- ${c.name ?? c.whapi_chat_id} | last: ${c.last_message_at ?? "—"} | inbound: ${c.inbound_count} | blocked: ${c.blocked}`,
-        )
-        .join("\n");
       systemPrompt = `אתה עוזר ניהול לאדמין של בוט WhatsApp. ענה בעברית, קצר ולעניין.
-נתונים נוכחיים:
-- סה"כ שיחות: ${convCount ?? 0}
-- סה"כ הודעות: ${msgCount ?? 0}
-שיחות אחרונות:
-${list || "אין נתונים"}
+יש לך גישה מלאה למסד הנתונים של הבוט דרך כלים:
+- search_conversations(query): חפש שיחות/קבוצות לפי שם או חלק משם.
+- list_conversations(limit): רשימת השיחות האחרונות לפי פעילות.
+- get_messages(chat_id_or_name, limit): קבל הודעות אחרונות משיחה מסוימת (אפשר להעביר whapi_chat_id או שם). ברירת מחדל 30, מקסימום 200.
+- stats(): סטטיסטיקות כלליות (כמה שיחות, כמה הודעות, וכו').
 
-ענה על שאלות ניהול לפי הנתונים הללו. אם צריך מידע נוסף, אמור שהאדמין יכול לראות בלשונית "שיחות".`;
+כשהמשתמש מבקש הודעות מקבוצה מסוימת — קודם תקרא search_conversations כדי למצוא את ה-id, אחר כך get_messages.
+החזר את ההודעות בפורמט קריא: זמן · שם השולח · תוכן. אל תמציא נתונים.`;
     } else {
       systemPrompt =
         "אתה עוזר AI כללי, חכם וידידותי. ענה בעברית בצורה ברורה ולעניין. השתמש בכלי החיפוש כשצריך מידע עדכני.";
@@ -169,16 +154,150 @@ ${list || "אין נתונים"}
       content: h.content,
     }));
 
+    // Admin tools (DB access via service role) — only enabled for admin mode
+    let extraTools: any[] | undefined;
+    let toolExecutor: ((name: string, args: Record<string, unknown>) => Promise<string>) | undefined;
+    if (thread.mode === "admin") {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      extraTools = [
+        {
+          type: "function",
+          function: {
+            name: "search_conversations",
+            description: "חפש שיחות לפי שם (חלקי, case-insensitive). מחזיר id, שם, whapi_chat_id, האם קבוצה, וזמן הודעה אחרון.",
+            parameters: {
+              type: "object",
+              properties: { query: { type: "string" } },
+              required: ["query"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "list_conversations",
+            description: "רשימת שיחות אחרונות לפי last_message_at.",
+            parameters: {
+              type: "object",
+              properties: { limit: { type: "number", description: "ברירת מחדל 20, מקסימום 100" } },
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "get_messages",
+            description: "ההודעות האחרונות בשיחה. מקבל whapi_chat_id מדויק או שם (חלקי).",
+            parameters: {
+              type: "object",
+              properties: {
+                chat: { type: "string", description: "whapi_chat_id או שם השיחה/קבוצה" },
+                limit: { type: "number", description: "ברירת מחדל 30, מקסימום 200" },
+              },
+              required: ["chat"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "stats",
+            description: "סטטיסטיקות כלליות על הבוט.",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ];
+      toolExecutor = async (name, args) => {
+        if (name === "search_conversations") {
+          const q = String(args.query ?? "").trim();
+          if (!q) return "חסר query";
+          const { data, error } = await supabaseAdmin
+            .from("conversations")
+            .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
+            .ilike("name", `%${q}%`)
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .limit(15);
+          if (error) return `שגיאה: ${error.message}`;
+          if (!data?.length) return "לא נמצאו שיחות תואמות.";
+          return JSON.stringify(data, null, 2);
+        }
+        if (name === "list_conversations") {
+          const limit = Math.min(Number(args.limit ?? 20) || 20, 100);
+          const { data, error } = await supabaseAdmin
+            .from("conversations")
+            .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count, blocked")
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .limit(limit);
+          if (error) return `שגיאה: ${error.message}`;
+          return JSON.stringify(data ?? [], null, 2);
+        }
+        if (name === "get_messages") {
+          const chat = String(args.chat ?? "").trim();
+          if (!chat) return "חסר chat";
+          const limit = Math.min(Number(args.limit ?? 30) || 30, 200);
+          // resolve conversation_id
+          let convId: string | null = null;
+          let convName = "";
+          const byId = await supabaseAdmin
+            .from("conversations")
+            .select("id, name, whapi_chat_id")
+            .eq("whapi_chat_id", chat)
+            .maybeSingle();
+          if (byId.data) {
+            convId = byId.data.id;
+            convName = byId.data.name ?? byId.data.whapi_chat_id;
+          } else {
+            const byName = await supabaseAdmin
+              .from("conversations")
+              .select("id, name, whapi_chat_id")
+              .ilike("name", `%${chat}%`)
+              .order("last_message_at", { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle();
+            if (byName.data) {
+              convId = byName.data.id;
+              convName = byName.data.name ?? byName.data.whapi_chat_id;
+            }
+          }
+          if (!convId) return `לא נמצאה שיחה התואמת ל-"${chat}". נסה search_conversations.`;
+          const { data, error } = await supabaseAdmin
+            .from("messages")
+            .select("created_at, direction, sender_name, sender_id, body")
+            .eq("conversation_id", convId)
+            .order("created_at", { ascending: false })
+            .limit(limit);
+          if (error) return `שגיאה: ${error.message}`;
+          const ordered = (data ?? []).reverse();
+          return `שיחה: ${convName}\nסה"כ הודעות שהוחזרו: ${ordered.length}\n\n` +
+            ordered
+              .map((m) => `[${m.created_at}] ${m.direction === "outbound" ? "🤖 הבוט" : m.sender_name ?? m.sender_id ?? "אנונימי"}: ${m.body ?? ""}`)
+              .join("\n");
+        }
+        if (name === "stats") {
+          const [{ count: convCount }, { count: msgCount }, { count: blockedCount }] = await Promise.all([
+            supabaseAdmin.from("conversations").select("*", { count: "exact", head: true }),
+            supabaseAdmin.from("messages").select("*", { count: "exact", head: true }),
+            supabaseAdmin.from("conversations").select("*", { count: "exact", head: true }).eq("blocked", true),
+          ]);
+          return JSON.stringify({ conversations: convCount, messages: msgCount, blocked: blockedCount }, null, 2);
+        }
+        return `כלי לא ידוע: ${name}`;
+      };
+    }
+
     let replyText: string;
     try {
       replyText = await runAI({
         systemPrompt,
         history: prior,
         userMessage: data.content,
+        extraTools,
+        toolExecutor,
       });
     } catch (e: any) {
       replyText = `שגיאה: ${String(e?.message ?? e)}`;
     }
+
 
     await supabase.from("chat_messages").insert({
       thread_id: thread.id,
