@@ -4,6 +4,54 @@ import { z } from "zod";
 
 const MODE = z.enum(["test-bot", "admin", "general"]);
 
+function normalizeLookup(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[״"׳']/g, "")
+    .replace(/[^\p{L}\p{N}@.+-]+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function fuzzyMatches(haystack: string, needle: string) {
+  const hay = normalizeLookup(haystack);
+  const q = normalizeLookup(needle);
+  if (!q) return false;
+  if (hay.includes(q) || q.includes(hay)) return true;
+  const tokens = q.split(" ").filter((token) => token.length > 1);
+  return tokens.length > 0 && tokens.every((token) => hay.includes(token));
+}
+
+function extractChatLookup(content: string) {
+  const quoted = content.match(/["“”']([^"“”']{2,})["“”']/)?.[1];
+  if (quoted) return quoted.trim();
+
+  const marker = content.match(/(?:מהקבוצה|מקבוצה|מהצ[׳']?אט|מצ[׳']?אט|בשם)\s+(.+)$/i)?.[1];
+  const base = marker ?? content;
+  const cleaned = base
+    .replace(/\b\d{1,3}\b/g, " ")
+    .replace(/הודעות|הודעה|אחרונות|האחרונות|אחרונים|תביא|תן|לי|אפשר|בבקשה|קבוצה|צ[׳']?אט|chat|group|last|messages/gi, " ")
+    .replace(/[?:.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || content.trim();
+}
+
+function requestedLimit(content: string) {
+  const parsed = Number(content.match(/\b(\d{1,3})\b/)?.[1] ?? 30);
+  return Math.min(Math.max(parsed || 30, 1), 200);
+}
+
+function shouldDoDirectMessageLookup(
+  content: string,
+  prior: Array<{ role: "user" | "assistant"; content: string }>,
+) {
+  const lookupWords = /הודעות|הודעה|אחרונות|האחרונות|קבוצה|צ[׳']?אט|chat|group|messages/i.test(content);
+  const previousAssistant = [...prior].reverse().find((msg) => msg.role === "assistant")?.content ?? "";
+  const answeringMissingName = /לא מוצא|לא נמצאה|שם המדויק|איזה שם/.test(previousAssistant) && content.trim().length <= 120;
+  return lookupWords || answeringMissingName;
+}
+
 export const listThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
