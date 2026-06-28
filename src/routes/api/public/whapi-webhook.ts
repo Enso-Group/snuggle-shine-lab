@@ -202,10 +202,12 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               console.error("[bot] send failed", e);
               if (isWhapiRestrictionError(e)) {
                 // Halt + alert admin
-                await supabaseAdmin
-                  .from("bot_settings")
-                  .update({ enabled: false })
-                  .eq("id", settings?.id);
+                if (settings?.id) {
+                  await supabaseAdmin
+                    .from("bot_settings")
+                    .update({ enabled: false })
+                    .eq("id", settings.id);
+                }
                 await raiseAdminAlert(
                   supabaseAdmin,
                   `WhatsApp restricted the account — bot disabled. Error: ${String(e?.message ?? e)}`,
