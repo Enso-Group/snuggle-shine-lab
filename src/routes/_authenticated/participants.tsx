@@ -7,6 +7,7 @@ import {
   enableHistorySync,
   getWhatsAppConnectionStatus,
   startWhatsAppReconnect,
+  fetchWhatsAppQr,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
