@@ -20,6 +20,21 @@ export const getHistorySyncStatus = createServerFn({ method: "GET" })
     return { fullHistory: settings?.full_history === true };
   });
 
+export const getWhatsAppConnectionStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { checkHealth, getWhapiSettings } = await import("./whapi.server");
+    const [health, settings] = await Promise.all([checkHealth(), getWhapiSettings()]);
+    return {
+      ok: health.ok,
+      status: health.status ?? null,
+      connected: health.status === "AUTH",
+      userName: health.userName ?? null,
+      fullHistory: settings?.full_history === true,
+      error: health.error ?? null,
+    };
+  });
+
 export const enableHistorySync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
@@ -29,6 +44,21 @@ export const enableHistorySync = createServerFn({ method: "POST" })
     return {
       fullHistory: settings?.full_history === true,
       needsReconnect: true,
+    };
+  });
+
+export const startWhatsAppReconnect = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { enableWhapiFullHistory, getWhapiLoginQrImage, getWhapiSettings, logoutWhapiUser, checkHealth } = await import("./whapi.server");
+    await enableWhapiFullHistory();
+    await logoutWhapiUser();
+    const qrImage = await getWhapiLoginQrImage();
+    const [settings, health] = await Promise.all([getWhapiSettings(), checkHealth()]);
+    return {
+      qrImage,
+      status: health.status ?? "QR",
+      fullHistory: settings?.full_history === true,
     };
   });
 
