@@ -8,7 +8,7 @@ function normalizeLookup(value: string) {
   return value
     .normalize("NFKC")
     .replace(/[״"׳']/g, "")
-    .replace(/[^\p{L}\p{N}@.+-]+/gu, " ")
+    .replace(/[^\p{L}\p{N}@.-]+/gu, " ")
     .trim()
     .toLowerCase();
 }
@@ -19,14 +19,17 @@ function fuzzyMatches(haystack: string, needle: string) {
   if (!q) return false;
   if (hay.includes(q) || q.includes(hay)) return true;
   const tokens = q.split(" ").filter((token) => token.length > 1);
-  return tokens.length > 0 && tokens.every((token) => hay.includes(token));
+  return tokens.length > 0 && tokens.every((token) => {
+    const withoutHebrewPrefix = token.startsWith("ה") ? token.slice(1) : token;
+    return hay.includes(token) || (withoutHebrewPrefix.length > 1 && hay.includes(withoutHebrewPrefix));
+  });
 }
 
 function extractChatLookup(content: string) {
   const quoted = content.match(/["“”']([^"“”']{2,})["“”']/)?.[1];
   if (quoted) return quoted.trim();
 
-  const marker = content.match(/(?:מהקבוצה|מקבוצה|מהצ[׳']?אט|מצ[׳']?אט|בשם)\s+(.+)$/i)?.[1];
+  const marker = content.match(/(?:מהקבוצה|מקבוצה|מהצ[׳']?אט|מצ[׳']?אט|בשם)\s+([^\n\r]+)/i)?.[1];
   const base = marker ?? content;
   const cleaned = base
     .replace(/\b\d{1,3}\b/g, " ")
