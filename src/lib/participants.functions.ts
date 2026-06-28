@@ -64,6 +64,20 @@ export const startWhatsAppReconnect = createServerFn({ method: "POST" })
     };
   });
 
+export const fetchWhatsAppQr = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { getWhapiLoginQrImage, checkHealth } = await import("./whapi.server");
+    const qr = await getWhapiLoginQrImage();
+    const health = await checkHealth();
+    return {
+      qrImage: qr.image,
+      qrStatus: qr.status,
+      qrExpire: qr.expire ?? null,
+      status: health.status ?? qr.status,
+    };
+  });
+
 export const listGroupParticipants = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { whapiChatId: string }) =>
