@@ -31,6 +31,24 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+async function whapiRaw(path: string, init?: RequestInit): Promise<Response> {
+  const token = getToken();
+  const res = await fetch(`${WHAPI_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/json,image/*,*/*",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Whapi ${res.status}: ${text.slice(0, 500)}`);
+  }
+  return res;
+}
+
 export async function sendTextMessage(chatId: string, body: string) {
   return whapi("/messages/text", {
     method: "POST",
@@ -185,6 +203,30 @@ export async function enableWhapiFullHistory(): Promise<{ full_history?: boolean
   }
 }
 
+export async function logoutWhapiUser(): Promise<{ ok: boolean; alreadyLoggedOut?: boolean }> {
+  try {
+    await whapi("/users/logout", { method: "POST" });
+    return { ok: true };
+  } catch (e: any) {
+    if (String(e?.message ?? e).includes("Whapi 409")) return { ok: true, alreadyLoggedOut: true };
+    console.error("[whapi] logoutWhapiUser failed", e);
+    throw e;
+  }
+}
+
+export async function getWhapiLoginQrImage(): Promise<string> {
+  const res = await whapiRaw("/users/login/image?size=360&width=360&height=360&wakeup=true");
+  const contentType = res.headers.get("content-type") || "image/png";
+  const buffer = await res.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(i, i + 0x8000));
+  }
+  const base64 = btoa(binary);
+  return `data:${contentType};base64,${base64}`;
+}
+
 
 export async function listChats(): Promise<Array<{ id: string; name: string; type: string }>> {
   try {
@@ -196,10 +238,10 @@ export async function listChats(): Promise<Array<{ id: string; name: string; typ
   }
 }
 
-export async function checkHealth(): Promise<{ ok: boolean; status?: string; error?: string }> {
+export async function checkHealth(): Promise<{ ok: boolean; status?: string; userName?: string; error?: string }> {
   try {
-    const r = await whapi<{ status?: { text?: string } }>("/health");
-    return { ok: true, status: r.status?.text };
+    const r = await whapi<{ status?: { text?: string }; user?: { name?: string; pushname?: string; id?: string } }>("/health");
+    return { ok: true, status: r.status?.text, userName: r.user?.name || r.user?.pushname || r.user?.id };
   } catch (e: any) {
     return { ok: false, error: String(e?.message ?? e) };
   }

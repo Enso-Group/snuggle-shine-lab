@@ -4,8 +4,9 @@ import {
   listGroupConversations,
   listGroupParticipants,
   getParticipantMessages,
-  getHistorySyncStatus,
   enableHistorySync,
+  getWhatsAppConnectionStatus,
+  startWhatsAppReconnect,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -70,6 +71,9 @@ function ParticipantsPage() {
   const [fullHistory, setFullHistory] = useState<boolean | null>(null);
   const [enablingHistory, setEnablingHistory] = useState(false);
   const [historyNotice, setHistoryNotice] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState("");
+  const [reconnecting, setReconnecting] = useState(false);
 
   function loadGroups() {
     setLoadingGroups(true);
@@ -102,9 +106,17 @@ function ParticipantsPage() {
       .finally(() => setLoadingMsgs(false));
   }
 
+  function loadConnectionStatus() {
+    getWhatsAppConnectionStatus().then((r: any) => {
+      setFullHistory(r.fullHistory);
+      setConnectionStatus(r.status);
+      if (r.connected) setQrImage("");
+    });
+  }
+
   useEffect(() => {
     loadGroups();
-    getHistorySyncStatus().then((r: any) => setFullHistory(r.fullHistory));
+    loadConnectionStatus();
   }, []);
 
   function enableFullHistory() {
@@ -112,10 +124,25 @@ function ParticipantsPage() {
     enableHistorySync()
       .then((r: any) => {
         setFullHistory(r.fullHistory);
-        setHistoryNotice("היסטוריה מלאה הופעלה. כדי שהודעות ישנות מהטלפון ייכנסו למאגר, צריך לחבר מחדש/לאשר מחדש את חשבון WhatsApp ואז לרענן את הקבוצה.");
+        setHistoryNotice("ההגדרה הופעלה. עכשיו חייבים לחבר מחדש את WhatsApp כדי שההיסטוריה הישנה תיכנס לחיבור.");
       })
       .catch(() => setHistoryNotice("לא הצלחתי להפעיל היסטוריה מלאה. נסה שוב בעוד רגע."))
       .finally(() => setEnablingHistory(false));
+  }
+
+  function reconnectWhatsApp() {
+    if (!window.confirm("זה ינתק לרגע את חיבור WhatsApp ויציג QR חדש לסריקה. להמשיך?")) return;
+    setReconnecting(true);
+    setHistoryNotice("");
+    startWhatsAppReconnect()
+      .then((r: any) => {
+        setFullHistory(r.fullHistory);
+        setConnectionStatus(r.status);
+        setQrImage(r.qrImage);
+        setHistoryNotice("סרוק את ה-QR מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+      })
+      .catch(() => setHistoryNotice("לא הצלחתי להתחיל חיבור מחדש. נסה שוב בעוד רגע."))
+      .finally(() => setReconnecting(false));
   }
 
   useEffect(() => {
@@ -145,6 +172,12 @@ function ParticipantsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, selected?.sender_id]);
+
+  useEffect(() => {
+    if (!qrImage) return;
+    const interval = setInterval(loadConnectionStatus, 5000);
+    return () => clearInterval(interval);
+  }, [qrImage]);
 
 
   const filtered = useMemo(() => {
@@ -275,20 +308,42 @@ function ParticipantsPage() {
         <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
           <span>
             {fullHistory === true
-              ? "החיבור מסונכרן עם כל היסטוריית WhatsApp. הקבוצה מתעדכנת אוטומטית כל 10 שניות."
+              ? "האפשרות פעילה, אבל היא מתחילה להביא הודעות ישנות רק אחרי חיבור מחדש של WhatsApp. הקבוצה מתעדכנת אוטומטית כל 10 שניות."
               : "כדי לראות את כל ההודעות מהטלפון (ולא רק את אלו שנשמרו במאגר), הפעל היסטוריה מלאה ואז חבר מחדש את WhatsApp."}
+            {connectionStatus && <span className="block mt-1 text-xs">סטטוס חיבור: {connectionStatus}</span>}
           </span>
-          <Button
-            size="sm"
-            onClick={enableFullHistory}
-            disabled={enablingHistory}
-            variant={fullHistory === true ? "outline" : "default"}
-          >
-            <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
-            {fullHistory === true ? "הפעל שוב" : "הפעל היסטוריה מלאה"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={enableFullHistory}
+              disabled={enablingHistory || reconnecting}
+              variant={fullHistory === true ? "outline" : "default"}
+            >
+              <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
+              {fullHistory === true ? "הפעל שוב" : "הפעל היסטוריה מלאה"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={reconnectWhatsApp}
+              disabled={reconnecting || enablingHistory}
+              variant="outline"
+            >
+              <RefreshCw className={`size-3 ms-1 ${reconnecting ? "animate-spin" : ""}`} />
+              חבר מחדש עם QR
+            </Button>
+          </div>
         </AlertDescription>
       </Alert>
+
+      {qrImage && (
+        <Alert>
+          <AlertTitle>סרוק QR כדי לאשר מחדש את החיבור</AlertTitle>
+          <AlertDescription className="space-y-3">
+            <p>פתח WhatsApp בטלפון ← מכשירים מקושרים ← קישור מכשיר, וסרוק את הקוד. לאחר החיבור ההיסטוריה תתחיל להסתנכרן.</p>
+            <img src={qrImage} alt="QR לחיבור WhatsApp" className="w-64 max-w-full rounded-lg border bg-background p-2" />
+          </AlertDescription>
+        </Alert>
+      )}
 
       {historyNotice && (
         <Alert>
