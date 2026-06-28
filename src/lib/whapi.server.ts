@@ -36,7 +36,8 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function isWhapiTrialLimitError(e: unknown) {
-  return String((e as any)?.message ?? e).includes("trial version limit exceeded");
+  const msg = String((e as any)?.message ?? e);
+  return msg.includes("trial version limit exceeded") || msg.includes("מגבלת Trial");
 }
 
 export async function sendTextMessage(chatId: string, body: string) {
