@@ -32,6 +32,10 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+function isWhapiTrialLimitError(e: unknown) {
+  return String((e as any)?.message ?? e).includes("trial version limit exceeded");
+}
+
 export async function sendTextMessage(chatId: string, body: string) {
   return whapi("/messages/text", {
     method: "POST",
@@ -72,7 +76,7 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
     }
   } catch (e) {
     console.error("[whapi] listAllMessagesByChatId failed", e);
-    if (String((e as any)?.message ?? e).includes("trial version limit exceeded")) {
+    if (isWhapiTrialLimitError(e)) {
       throw new Error("Whapi חסם כרגע את משיכת ההודעות בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
     }
   }
@@ -98,6 +102,7 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
     return (r.groups ?? []).map((g) => ({ id: g.id, name: g.name || g.subject || g.id }));
   } catch (e) {
     console.error("[whapi] listGroups failed", e);
+    if (isWhapiTrialLimitError(e)) throw e;
     return [];
   }
 }
@@ -107,6 +112,7 @@ export async function getGroup(groupId: string, resync = false): Promise<any | n
     return await whapi<any>(`/groups/${encodeURIComponent(groupId)}${resync ? "?resync=true" : ""}`);
   } catch (e) {
     console.error("[whapi] getGroup failed", e);
+    if (isWhapiTrialLimitError(e)) throw e;
     return null;
   }
 }
@@ -142,6 +148,7 @@ export async function listContacts(): Promise<Array<{ id: string; name: string; 
     }));
   } catch (e) {
     console.error("[whapi] listContacts failed", e);
+    if (isWhapiTrialLimitError(e)) throw e;
     return [];
   }
 }
