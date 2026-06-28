@@ -18,12 +18,12 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listMessagesByChatId, listContacts } = await import("./whapi.server");
+    const { getGroup, listAllMessagesByChatId, listContacts, listContactLids } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [group, liveMessages, contacts, conv] = await Promise.all([
       getGroup(data.whapiChatId),
-      listMessagesByChatId(data.whapiChatId, 500),
+      listAllMessagesByChatId(data.whapiChatId),
       listContacts(),
       supabaseAdmin
         .from("conversations")
@@ -40,8 +40,20 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       const phone = normalizeId(c.id);
       if (phone && c.name && c.name !== c.id) contactBook.set(phone, c.name);
     }
+    const participants: any[] = group?.participants ?? [];
+    const phoneToLid = await listContactLids(participants.map((p) => p.id ?? p.phone ?? ""));
+    const lidToPhone = new Map<string, string>();
+    for (const [phone, lid] of Object.entries(phoneToLid)) {
+      if (phone && lid) lidToPhone.set(lid, phone);
+    }
+    const participantPhones = new Set(participants.map((p) => normalizeId(p.id ?? p.phone ?? "")).filter(Boolean));
+    const resolveSenderKey = (raw: string) => {
+      const id = normalizeId(raw);
+      if (!id) return "";
+      return lidToPhone.get(id) ?? id;
+    };
     const resolveName = (id: string, fallback?: string) => {
-      const phone = normalizeId(id);
+      const phone = resolveSenderKey(id) || normalizeId(id);
       const fromBook = contactBook.get(phone);
       if (fromBook) return fromBook;
       if (fallback && fallback !== id && fallback !== phone) return fallback;
@@ -54,7 +66,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     >();
 
     const addMessage = (senderId: string, senderName: string, body: string, ts: string | null) => {
-      const phone = normalizeId(senderId) || senderId;
+      const phone = resolveSenderKey(senderId) || normalizeId(senderId) || senderId;
       if (!phone) return;
       const cur = stats.get(phone);
       const resolved = resolveName(senderId, senderName);
@@ -77,7 +89,6 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     };
 
     for (const m of liveMessages ?? []) {
-      if (m.from_me) continue;
       const senderId = m.from ?? m.author ?? "";
       const senderName = m.from_name ?? m.author_name ?? "";
       const body = m.text?.body ?? m.body ?? m.caption ?? `[${m.type ?? "media"}]`;
@@ -94,12 +105,14 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         .order("created_at", { ascending: false })
         .limit(5000);
       for (const m of dbRows ?? []) {
-        addMessage(m.sender_id ?? "", m.sender_name ?? "", m.body ?? "", m.created_at);
+        const senderId = m.sender_id ?? "";
+        const normalized = resolveSenderKey(senderId) || normalizeId(senderId);
+        if (normalized && !participantPhones.has(normalized)) continue;
+        addMessage(senderId, m.sender_name ?? "", m.body ?? "", m.created_at);
       }
     }
 
     // Merge with group roster (participants who haven't messaged)
-    const participants: any[] = group?.participants ?? [];
     for (const p of participants) {
       const id = p.id ?? p.phone ?? "";
       const phone = normalizeId(id) || id;
@@ -124,6 +137,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     return {
       groupName: group?.name ?? group?.subject ?? data.whapiChatId,
       participantsCount: participants.length,
+      messagesScanned: liveMessages.length,
       rows: [...stats.values()].sort((a, b) => b.message_count - a.message_count),
     };
   });
@@ -139,18 +153,37 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { listMessagesByChatId } = await import("./whapi.server");
+    const { getGroup, listAllMessagesByChatId, listContactLids } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const seen = new Set<string>();
     const out: Array<{ id: string; body: string; created_at: string; source: "live" | "db" }> = [];
+    const normalizeId = (raw: string) => raw.replace(/@.*$/, "").replace(/\D/g, "");
+    const group = await getGroup(data.whapiChatId);
+    const participants: any[] = group?.participants ?? [];
+    const phoneToLid = await listContactLids(participants.map((p) => p.id ?? p.phone ?? ""));
+    const lidToPhone = new Map<string, string>();
+    for (const [phone, lid] of Object.entries(phoneToLid)) {
+      if (phone && lid) lidToPhone.set(lid, phone);
+    }
+    const selectedId = normalizeId(data.senderId);
+    const selectedLid = phoneToLid[selectedId];
+    const resolveSenderKey = (raw: string) => {
+      const id = normalizeId(raw);
+      if (!id) return "";
+      return lidToPhone.get(id) ?? id;
+    };
+    const isSelectedSender = (rawId: string, rawName?: string | null) => {
+      const id = normalizeId(rawId);
+      const resolved = resolveSenderKey(rawId);
+      return resolved === selectedId || id === selectedId || id === selectedLid || rawName === data.senderId;
+    };
 
-    const live = await listMessagesByChatId(data.whapiChatId, 200);
+    const live = await listAllMessagesByChatId(data.whapiChatId);
     for (const m of live ?? []) {
-      if (m.from_me) continue;
       const senderId = m.from ?? m.author ?? "";
       const senderName = m.from_name ?? m.author_name ?? "";
-      if (senderId !== data.senderId && senderName !== data.senderId) continue;
+      if (!isSelectedSender(senderId, senderName)) continue;
       const id = String(m.id ?? `${m.timestamp}-${senderId}`);
       if (seen.has(id)) continue;
       seen.add(id);
@@ -174,10 +207,10 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
         .select("id, body, created_at, sender_id, sender_name, whapi_message_id")
         .eq("conversation_id", conv.id)
         .eq("direction", "inbound")
-        .or(`sender_id.eq.${data.senderId},sender_name.eq.${data.senderId}`)
         .order("created_at", { ascending: false })
-        .limit(1000);
+        .limit(10000);
       for (const m of dbRows ?? []) {
+        if (!isSelectedSender(m.sender_id ?? "", m.sender_name)) continue;
         const key = m.whapi_message_id ?? m.id;
         if (seen.has(key)) continue;
         seen.add(key);
