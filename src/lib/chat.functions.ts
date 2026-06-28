@@ -339,7 +339,29 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         const ordered = (data ?? []).reverse();
         const conversationName = conversation.name ?? conversation.whapi_chat_id;
         if (!ordered.length) {
-          return `מצאתי את ${conversation.is_group ? "הקבוצה" : "השיחה"} "${conversationName}" (${conversation.whapi_chat_id}), אבל עדיין אין לה הודעות שמורות במערכת. הודעות יופיעו כאן אחרי שהבוט יקבל אותן דרך הוובהוק.`;
+          try {
+            const { listMessagesByChatId } = await import("./whapi.server");
+            const liveMessages = await listMessagesByChatId(conversation.whapi_chat_id, limit);
+            const liveOrdered = liveMessages.reverse();
+            if (liveOrdered.length) {
+              return `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${liveOrdered.length}\n\n` +
+                liveOrdered
+                  .map((message: any) => {
+                    const createdAt = message.timestamp
+                      ? new Date(Number(message.timestamp) * 1000).toISOString()
+                      : "זמן לא ידוע";
+                    const body = message.text?.body ?? message.body ?? message.caption ?? "";
+                    const sender = message.from_me
+                      ? "🤖 הבוט"
+                      : message.from_name ?? message.author_name ?? message.from ?? "אנונימי";
+                    return `[${createdAt}] ${sender}: ${body}`;
+                  })
+                  .join("\n");
+            }
+          } catch (e) {
+            console.warn("[admin-chat] live message lookup failed", e);
+          }
+          return `מצאתי את ${conversation.is_group ? "הקבוצה" : "השיחה"} "${conversationName}" (${conversation.whapi_chat_id}), אבל עדיין אין לה הודעות שמורות במערכת וגם לא הצלחתי למשוך היסטוריה חיה מהחיבור.`;
         }
 
         return `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${ordered.length}\n\n` +
