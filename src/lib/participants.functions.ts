@@ -12,6 +12,26 @@ export const listGroupConversations = createServerFn({ method: "GET" })
       .sort((a, b) => a.name.localeCompare(b.name, "he"));
   });
 
+export const getHistorySyncStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { getWhapiSettings } = await import("./whapi.server");
+    const settings = await getWhapiSettings();
+    return { fullHistory: settings?.full_history === true };
+  });
+
+export const enableHistorySync = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { enableWhapiFullHistory, getWhapiSettings } = await import("./whapi.server");
+    await enableWhapiFullHistory();
+    const settings = await getWhapiSettings();
+    return {
+      fullHistory: settings?.full_history === true,
+      needsReconnect: true,
+    };
+  });
+
 export const listGroupParticipants = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { whapiChatId: string }) =>
