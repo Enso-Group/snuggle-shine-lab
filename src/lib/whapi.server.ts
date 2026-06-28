@@ -17,6 +17,7 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible; Lovable WhatsApp sync)",
       ...(init?.headers ?? {}),
     },
   });
@@ -98,9 +99,9 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
   }
 }
 
-export async function getGroup(groupId: string): Promise<any | null> {
+export async function getGroup(groupId: string, resync = false): Promise<any | null> {
   try {
-    return await whapi<any>(`/groups/${encodeURIComponent(groupId)}`);
+    return await whapi<any>(`/groups/${encodeURIComponent(groupId)}${resync ? "?resync=true" : ""}`);
   } catch (e) {
     console.error("[whapi] getGroup failed", e);
     return null;
@@ -201,6 +202,8 @@ export async function resetWhapiPipeline(webhookUrl: string): Promise<any> {
       },
     ],
     callback_persist: true,
+    callback_backoff_delay_ms: 3000,
+    max_callback_backoff_delay_ms: 900000,
   };
   return whapi("/settings", { method: "PATCH", body: JSON.stringify(body) });
 }
