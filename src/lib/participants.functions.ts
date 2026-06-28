@@ -18,12 +18,13 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listMessagesByChatId } = await import("./whapi.server");
+    const { getGroup, listMessagesByChatId, listContacts } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [group, liveMessages, conv] = await Promise.all([
+    const [group, liveMessages, contacts, conv] = await Promise.all([
       getGroup(data.whapiChatId),
-      listMessagesByChatId(data.whapiChatId, 200),
+      listMessagesByChatId(data.whapiChatId, 500),
+      listContacts(),
       supabaseAdmin
         .from("conversations")
         .select("id")
@@ -32,27 +33,42 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         .then((r) => r.data),
     ]);
 
-    // Aggregate message stats by sender from Whapi live + DB
+    // Build a phone -> name lookup from the contact book
+    const contactBook = new Map<string, string>();
+    const normalizeId = (raw: string) => raw.replace(/@.*$/, "").replace(/\D/g, "");
+    for (const c of contacts ?? []) {
+      const phone = normalizeId(c.id);
+      if (phone && c.name && c.name !== c.id) contactBook.set(phone, c.name);
+    }
+    const resolveName = (id: string, fallback?: string) => {
+      const phone = normalizeId(id);
+      const fromBook = contactBook.get(phone);
+      if (fromBook) return fromBook;
+      if (fallback && fallback !== id && fallback !== phone) return fallback;
+      return phone || id || "אנונימי";
+    };
+
     const stats = new Map<
       string,
       { sender_id: string; sender_name: string; message_count: number; last_message_at: string | null; last_body: string }
     >();
 
     const addMessage = (senderId: string, senderName: string, body: string, ts: string | null) => {
-      const key = senderId || senderName;
-      if (!key) return;
-      const cur = stats.get(key);
+      const phone = normalizeId(senderId) || senderId;
+      if (!phone) return;
+      const cur = stats.get(phone);
+      const resolved = resolveName(senderId, senderName);
       if (cur) {
         cur.message_count += 1;
-        if (!cur.sender_name && senderName) cur.sender_name = senderName;
+        if ((!cur.sender_name || cur.sender_name === cur.sender_id) && resolved) cur.sender_name = resolved;
         if (ts && (!cur.last_message_at || ts > cur.last_message_at)) {
           cur.last_message_at = ts;
           cur.last_body = body;
         }
       } else {
-        stats.set(key, {
-          sender_id: senderId,
-          sender_name: senderName || senderId || "אנונימי",
+        stats.set(phone, {
+          sender_id: phone,
+          sender_name: resolved,
           message_count: 1,
           last_message_at: ts,
           last_body: body,
@@ -63,8 +79,8 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     for (const m of liveMessages ?? []) {
       if (m.from_me) continue;
       const senderId = m.from ?? m.author ?? "";
-      const senderName = m.from_name ?? m.author_name ?? senderId;
-      const body = m.text?.body ?? m.body ?? m.caption ?? "";
+      const senderName = m.from_name ?? m.author_name ?? "";
+      const body = m.text?.body ?? m.body ?? m.caption ?? `[${m.type ?? "media"}]`;
       const ts = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null;
       addMessage(senderId, senderName, body, ts);
     }
@@ -86,18 +102,22 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     const participants: any[] = group?.participants ?? [];
     for (const p of participants) {
       const id = p.id ?? p.phone ?? "";
-      const name = p.name ?? p.pushname ?? p.contact_name ?? id;
-      if (!stats.has(id)) {
-        stats.set(id, {
-          sender_id: id,
+      const phone = normalizeId(id) || id;
+      const name = resolveName(id, p.name ?? p.pushname ?? p.contact_name);
+      const rank = p.rank ?? (p.is_admin ? "admin" : p.is_super_admin ? "creator" : undefined);
+      const existing = stats.get(phone);
+      if (existing) {
+        if (!existing.sender_name || existing.sender_name === existing.sender_id) existing.sender_name = name;
+        (existing as any).rank = rank;
+      } else {
+        stats.set(phone, {
+          sender_id: phone,
           sender_name: name,
           message_count: 0,
           last_message_at: null,
           last_body: "",
-        });
-      } else {
-        const cur = stats.get(id)!;
-        if (!cur.sender_name || cur.sender_name === id) cur.sender_name = name;
+          ...(rank ? { rank } : {}),
+        } as any);
       }
     }
 
