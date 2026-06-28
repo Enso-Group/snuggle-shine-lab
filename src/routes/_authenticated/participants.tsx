@@ -82,6 +82,7 @@ function ParticipantsPage() {
     setLoadingGroups(true);
     listGroupConversations()
       .then((r) => setGroups(r as Group[]))
+      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי לטעון קבוצות.")))
       .finally(() => setLoadingGroups(false));
   }
 
