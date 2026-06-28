@@ -135,16 +135,41 @@ function ParticipantsPage() {
     if (!window.confirm("זה ינתק לרגע את חיבור WhatsApp ויציג QR חדש לסריקה. להמשיך?")) return;
     setReconnecting(true);
     setHistoryNotice("");
+    setQrImage("");
     startWhatsAppReconnect()
       .then((r: any) => {
         setFullHistory(r.fullHistory);
         setConnectionStatus(r.status);
-        setQrImage(r.qrImage);
-        setHistoryNotice("נוצר QR אמיתי. סרוק אותו מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+        if (r.qrImage) {
+          setQrImage(r.qrImage);
+          setHistoryNotice("נוצר QR. סרוק אותו מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+        } else {
+          setHistoryNotice(`ממתין ל-QR (סטטוס: ${r.qrStatus || "WAITING"})... ינסה שוב אוטומטית.`);
+        }
       })
       .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי ליצור QR אמיתי. נסה שוב בעוד רגע.")))
       .finally(() => setReconnecting(false));
   }
+
+  // Poll for QR while waiting (after reconnect started but QR not yet available)
+  useEffect(() => {
+    if (qrImage || !historyNotice.includes("ממתין ל-QR")) return;
+    const interval = setInterval(() => {
+      fetchWhatsAppQr()
+        .then((r: any) => {
+          setConnectionStatus(r.status);
+          if (r.qrImage) {
+            setQrImage(r.qrImage);
+            setHistoryNotice("נוצר QR. סרוק אותו מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+          } else {
+            setHistoryNotice(`ממתין ל-QR (סטטוס: ${r.qrStatus || "WAITING"})... ינסה שוב אוטומטית.`);
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [qrImage, historyNotice]);
+
 
   useEffect(() => {
     setParticipants([]);
