@@ -164,6 +164,27 @@ export async function listContactLids(contactIds: string[]): Promise<Record<stri
   return out;
 }
 
+export async function getWhapiSettings(): Promise<{ full_history?: boolean } | null> {
+  try {
+    return await whapi<{ full_history?: boolean }>("/settings");
+  } catch (e) {
+    console.error("[whapi] getWhapiSettings failed", e);
+    return null;
+  }
+}
+
+export async function enableWhapiFullHistory(): Promise<{ full_history?: boolean } | null> {
+  try {
+    return await whapi<{ full_history?: boolean }>("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ full_history: true }),
+    });
+  } catch (e) {
+    console.error("[whapi] enableWhapiFullHistory failed", e);
+    throw e;
+  }
+}
+
 
 export async function listChats(): Promise<Array<{ id: string; name: string; type: string }>> {
   try {
