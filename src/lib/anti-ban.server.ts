@@ -73,7 +73,9 @@ export async function checkOutboundAllowed(
       reason: `כבר נשלחו ${MAX_CONSECUTIVE_OUTBOUND} הודעות ברצף ללא תשובה. ממתינים לתגובה.`,
     };
   }
-  if (conv.last_outbound_at) {
+  // Min-gap only applies when we're piling outbound on top of outbound.
+  // If the user just replied (consecutive_outbound was reset to 0), respond immediately.
+  if (conv.last_outbound_at && (conv.consecutive_outbound ?? 0) > 0) {
     const since = Date.now() - new Date(conv.last_outbound_at).getTime();
     if (since < MIN_GAP_BETWEEN_OUTBOUND_MS) {
       const wait = Math.ceil((MIN_GAP_BETWEEN_OUTBOUND_MS - since) / 1000);
@@ -84,6 +86,7 @@ export async function checkOutboundAllowed(
       };
     }
   }
+
   if (conv.last_outbound_body && normalizeForCompare(conv.last_outbound_body) === normalizeForCompare(body)) {
     return {
       ok: false,
