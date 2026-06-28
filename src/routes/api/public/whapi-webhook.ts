@@ -5,6 +5,11 @@ const lastReplyAt = new Map<string, number>();
 const latestInboundAt = new Map<string, number>();
 const MIN_GAP_MS = 800;
 
+function normalizeTimestampMs(raw: unknown) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return Date.now();
+  return n > 9_999_999_999 ? n : n * 1000;
+}
 
 function pickJid(m: any): { chatId: string; chatName: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
   if (!m) return null;
@@ -21,7 +26,7 @@ function pickJid(m: any): { chatId: string; chatName: string; senderId: string; 
   const senderId = m.from || m.author || chatId;
   const senderName = m.from_name || m.author_name || m.pushname || "";
   const chatName = m.chat_name || m.chat?.name || m.group_name || "";
-  const ts = (m.timestamp ?? Math.floor(Date.now() / 1000)) * 1000;
+  const ts = normalizeTimestampMs(m.timestamp);
   return { chatId, chatName, senderId, senderName, body: String(body || ""), isGroup, fromMe, messageId: m.id || "", ts };
 }
 
@@ -84,7 +89,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
             if (m.fromMe) continue;
             if (!m.body || !m.body.trim()) continue;
-            if (Date.now() - m.ts > 2 * 60 * 1000) continue;
+            const isFreshMessage = Math.abs(Date.now() - m.ts) <= 2 * 60 * 1000;
 
             // Upsert conversation
             const { data: convExisting } = await supabaseAdmin
@@ -117,6 +122,16 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             }
             if (!convId) continue;
 
+            if (m.messageId) {
+              const { data: existingMessage } = await supabaseAdmin
+                .from("messages")
+                .select("id")
+                .eq("conversation_id", convId)
+                .eq("whapi_message_id", m.messageId)
+                .maybeSingle();
+              if (existingMessage?.id) continue;
+            }
+
             // Save inbound message row
             await supabaseAdmin.from("messages").insert({
               conversation_id: convId,
@@ -126,7 +141,11 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               sender_id: m.senderId,
               body: m.body,
               raw: raw,
+              created_at: new Date(m.ts).toISOString(),
             });
+
+            // Historical replay should be stored, but must never trigger old bot replies.
+            if (!isFreshMessage) continue;
 
             // Update inbound counters + auto-block if stop request
             const { blockedNow } = await recordInbound(supabaseAdmin, convId, m.body);
