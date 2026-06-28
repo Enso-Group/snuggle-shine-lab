@@ -196,6 +196,32 @@ export async function logoutWhapiUser(): Promise<{ ok: boolean; alreadyLoggedOut
   }
 }
 
+function normalizeQrImage(raw: unknown): string {
+  if (!raw || typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("data:image")) return trimmed;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  return `data:image/png;base64,${trimmed}`;
+}
+
+function extractQrImage(payload: any): string {
+  const direct = normalizeQrImage(payload?.base64 ?? payload?.image ?? payload?.qr ?? payload?.qrcode ?? payload?.qr_code);
+  if (direct) return direct;
+
+  const nested = normalizeQrImage(
+    payload?.login?.base64 ??
+      payload?.login?.image ??
+      payload?.login?.qr ??
+      payload?.qrCode?.base64 ??
+      payload?.qrCode?.image ??
+      payload?.data?.base64 ??
+      payload?.data?.image ??
+      payload?.data?.qr,
+  );
+  return nested;
+}
+
 export async function getWhapiLoginQrImage(): Promise<{ image: string; status: string; expire?: number }> {
   let lastStatus = "";
   let lastError = "";
@@ -204,12 +230,12 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
   // Poll up to ~60s and return as soon as base64 is available.
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
-      const qr = await whapi<{ status?: string; base64?: string; expire?: number }>(
+      const qr = await whapi<any>(
         "/users/login?wakeup=true&size=360&width=360&height=360",
       );
       lastStatus = qr.status ?? "";
-      if (qr.base64) {
-        const image = qr.base64.startsWith("data:image") ? qr.base64 : `data:image/png;base64,${qr.base64}`;
+      const image = extractQrImage(qr);
+      if (image) {
         return { image, status: qr.status ?? "QR", expire: qr.expire };
       }
       if (qr.status === "AUTH" || qr.status === "AUTHENTICATED") {
