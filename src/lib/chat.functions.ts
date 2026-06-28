@@ -4,6 +4,57 @@ import { z } from "zod";
 
 const MODE = z.enum(["test-bot", "admin", "general"]);
 
+function normalizeLookup(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[״"׳']/g, "")
+    .replace(/[^\p{L}\p{N}@.-]+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function fuzzyMatches(haystack: string, needle: string) {
+  const hay = normalizeLookup(haystack);
+  const q = normalizeLookup(needle);
+  if (!q) return false;
+  if (hay.includes(q) || q.includes(hay)) return true;
+  const tokens = q.split(" ").filter((token) => token.length > 1);
+  return tokens.length > 0 && tokens.every((token) => {
+    const withoutHebrewPrefix = token.startsWith("ה") ? token.slice(1) : token;
+    return hay.includes(token) || (withoutHebrewPrefix.length > 1 && hay.includes(withoutHebrewPrefix));
+  });
+}
+
+function extractChatLookup(content: string) {
+  const quoted = content.match(/["“”']([^"“”']{2,})["“”']/)?.[1];
+  if (quoted) return quoted.trim();
+
+  const marker = content.match(/(?:מהקבוצה|מקבוצה|מהצ[׳']?אט|מצ[׳']?אט|בשם)\s+([^\n\r]+)/i)?.[1];
+  const base = marker ?? content;
+  const cleaned = base
+    .replace(/\b\d{1,3}\b/g, " ")
+    .replace(/הודעות|הודעה|אחרונות|האחרונות|אחרונים|תביא|תן|לי|אפשר|בבקשה|קבוצה|צ[׳']?אט|chat|group|last|messages/gi, " ")
+    .replace(/[?:.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || content.trim();
+}
+
+function requestedLimit(content: string) {
+  const parsed = Number(content.match(/\b(\d{1,3})\b/)?.[1] ?? 30);
+  return Math.min(Math.max(parsed || 30, 1), 200);
+}
+
+function shouldDoDirectMessageLookup(
+  content: string,
+  prior: Array<{ role: "user" | "assistant"; content: string }>,
+) {
+  const lookupWords = /הודעות|הודעה|אחרונות|האחרונות|קבוצה|צ[׳']?אט|chat|group|messages/i.test(content);
+  const previousAssistant = [...prior].reverse().find((msg) => msg.role === "assistant")?.content ?? "";
+  const answeringMissingName = /לא מוצא|לא נמצאה|שם המדויק|איזה שם/.test(previousAssistant) && content.trim().length <= 120;
+  return lookupWords || answeringMissingName;
+}
+
 export const listThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -157,8 +208,178 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     // Admin tools (DB access via service role) — only enabled for admin mode
     let extraTools: any[] | undefined;
     let toolExecutor: ((name: string, args: Record<string, unknown>) => Promise<string>) | undefined;
+    let directAdminReply: string | undefined;
     if (thread.mode === "admin") {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      type ConversationCandidate = {
+        id: string | null;
+        name: string | null;
+        whapi_chat_id: string;
+        is_group: boolean;
+        last_message_at: string | null;
+        inbound_count: number | null;
+        source: "database" | "whapi";
+      };
+
+      const syncLiveConversation = async (candidate: ConversationCandidate) => {
+        if (candidate.id) return candidate;
+        const { data: synced } = await supabaseAdmin
+          .from("conversations")
+          .upsert(
+            {
+              whapi_chat_id: candidate.whapi_chat_id,
+              name: candidate.name ?? candidate.whapi_chat_id,
+              is_group: candidate.is_group,
+            },
+            { onConflict: "whapi_chat_id" },
+          )
+          .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
+          .single();
+        return synced
+          ? ({ ...synced, source: "database" as const })
+          : candidate;
+      };
+
+      const searchConversationCandidates = async (query: string) => {
+        const q = query.trim();
+        const candidateMap = new Map<string, ConversationCandidate>();
+        const addCandidate = (candidate: ConversationCandidate) => {
+          const key = candidate.whapi_chat_id;
+          const existing = candidateMap.get(key);
+          if (!existing || existing.source === "whapi") {
+            candidateMap.set(key, candidate);
+          }
+        };
+
+        const { data: dbRows, error } = await supabaseAdmin
+          .from("conversations")
+          .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .limit(200);
+        if (error) throw new Error(error.message);
+
+        for (const row of dbRows ?? []) {
+          const rawName = row.name ?? "";
+          const rawId = row.whapi_chat_id ?? "";
+          if (!q || fuzzyMatches(`${rawName} ${rawId}`, q)) {
+            addCandidate({ ...row, source: "database" });
+          }
+        }
+
+        if (q) {
+          try {
+            const { listGroups, listChats } = await import("./whapi.server");
+            const [groups, chats] = await Promise.all([listGroups(), listChats()]);
+            for (const group of groups) {
+              if (fuzzyMatches(`${group.name} ${group.id}`, q)) {
+                addCandidate({
+                  id: null,
+                  name: group.name,
+                  whapi_chat_id: group.id,
+                  is_group: true,
+                  last_message_at: null,
+                  inbound_count: null,
+                  source: "whapi",
+                });
+              }
+            }
+            for (const chat of chats) {
+              if (fuzzyMatches(`${chat.name} ${chat.id}`, q)) {
+                addCandidate({
+                  id: null,
+                  name: chat.name,
+                  whapi_chat_id: chat.id,
+                  is_group: chat.type === "group" || chat.id.endsWith("@g.us"),
+                  last_message_at: null,
+                  inbound_count: null,
+                  source: "whapi",
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("[admin-chat] live Whapi lookup failed", e);
+          }
+        }
+
+        return [...candidateMap.values()].slice(0, 25);
+      };
+
+      const resolveConversation = async (chat: string) => {
+        const byId = await supabaseAdmin
+          .from("conversations")
+          .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
+          .eq("whapi_chat_id", chat)
+          .maybeSingle();
+        if (byId.data) return { ...byId.data, source: "database" as const };
+
+        const matches = await searchConversationCandidates(chat);
+        if (!matches.length) return null;
+        return syncLiveConversation(matches[0]);
+      };
+
+      const formatMessagesForConversation = async (chat: string, limit: number) => {
+        const conversation = await resolveConversation(chat);
+        if (!conversation?.id) {
+          const suggestions = await searchConversationCandidates(chat);
+          if (suggestions.length) {
+            return `לא נמצאה שיחה שמורה בשם "${chat}", אבל מצאתי אפשרויות דומות:\n` +
+              suggestions
+                .slice(0, 8)
+                .map((item, index) => `${index + 1}. ${item.name ?? item.whapi_chat_id} (${item.whapi_chat_id})`)
+                .join("\n");
+          }
+          return `לא נמצאה שיחה או קבוצה בשם "${chat}" גם במסד הנתונים וגם ברשימת הצ׳אטים החיה.`;
+        }
+
+        const { data, error } = await supabaseAdmin
+          .from("messages")
+          .select("created_at, direction, sender_name, sender_id, body")
+          .eq("conversation_id", conversation.id)
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (error) return `שגיאה: ${error.message}`;
+
+        const ordered = (data ?? []).reverse();
+        const conversationName = conversation.name ?? conversation.whapi_chat_id;
+        if (!ordered.length) {
+          try {
+            const { listMessagesByChatId } = await import("./whapi.server");
+            const liveMessages = await listMessagesByChatId(conversation.whapi_chat_id, limit);
+            const liveOrdered = liveMessages.reverse();
+            if (liveOrdered.length) {
+              return `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${liveOrdered.length}\n\n` +
+                liveOrdered
+                  .map((message: any) => {
+                    const createdAt = message.timestamp
+                      ? new Date(Number(message.timestamp) * 1000).toISOString()
+                      : "זמן לא ידוע";
+                    const body = message.text?.body ?? message.body ?? message.caption ?? "";
+                    const sender = message.from_me
+                      ? "🤖 הבוט"
+                      : message.from_name ?? message.author_name ?? message.from ?? "אנונימי";
+                    return `[${createdAt}] ${sender}: ${body}`;
+                  })
+                  .join("\n");
+            }
+          } catch (e) {
+            console.warn("[admin-chat] live message lookup failed", e);
+          }
+          return `מצאתי את ${conversation.is_group ? "הקבוצה" : "השיחה"} "${conversationName}" (${conversation.whapi_chat_id}), אבל עדיין אין לה הודעות שמורות במערכת וגם לא הצלחתי למשוך היסטוריה חיה מהחיבור.`;
+        }
+
+        return `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${ordered.length}\n\n` +
+          ordered
+            .map((m) => `[${m.created_at}] ${m.direction === "outbound" ? "🤖 הבוט" : m.sender_name ?? m.sender_id ?? "אנונימי"}: ${m.body ?? ""}`)
+            .join("\n");
+      };
+
+      if (shouldDoDirectMessageLookup(data.content, prior)) {
+        directAdminReply = await formatMessagesForConversation(
+          extractChatLookup(data.content),
+          requestedLimit(data.content),
+        );
+      }
+
       extraTools = [
         {
           type: "function",
@@ -211,13 +432,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         if (name === "search_conversations") {
           const q = String(args.query ?? "").trim();
           if (!q) return "חסר query";
-          const { data, error } = await supabaseAdmin
-            .from("conversations")
-            .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
-            .ilike("name", `%${q}%`)
-            .order("last_message_at", { ascending: false, nullsFirst: false })
-            .limit(15);
-          if (error) return `שגיאה: ${error.message}`;
+          const data = await searchConversationCandidates(q);
           if (!data?.length) return "לא נמצאו שיחות תואמות.";
           return JSON.stringify(data, null, 2);
         }
@@ -235,43 +450,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           const chat = String(args.chat ?? "").trim();
           if (!chat) return "חסר chat";
           const limit = Math.min(Number(args.limit ?? 30) || 30, 200);
-          // resolve conversation_id
-          let convId: string | null = null;
-          let convName = "";
-          const byId = await supabaseAdmin
-            .from("conversations")
-            .select("id, name, whapi_chat_id")
-            .eq("whapi_chat_id", chat)
-            .maybeSingle();
-          if (byId.data) {
-            convId = byId.data.id;
-            convName = byId.data.name ?? byId.data.whapi_chat_id;
-          } else {
-            const byName = await supabaseAdmin
-              .from("conversations")
-              .select("id, name, whapi_chat_id")
-              .ilike("name", `%${chat}%`)
-              .order("last_message_at", { ascending: false, nullsFirst: false })
-              .limit(1)
-              .maybeSingle();
-            if (byName.data) {
-              convId = byName.data.id;
-              convName = byName.data.name ?? byName.data.whapi_chat_id;
-            }
-          }
-          if (!convId) return `לא נמצאה שיחה התואמת ל-"${chat}". נסה search_conversations.`;
-          const { data, error } = await supabaseAdmin
-            .from("messages")
-            .select("created_at, direction, sender_name, sender_id, body")
-            .eq("conversation_id", convId)
-            .order("created_at", { ascending: false })
-            .limit(limit);
-          if (error) return `שגיאה: ${error.message}`;
-          const ordered = (data ?? []).reverse();
-          return `שיחה: ${convName}\nסה"כ הודעות שהוחזרו: ${ordered.length}\n\n` +
-            ordered
-              .map((m) => `[${m.created_at}] ${m.direction === "outbound" ? "🤖 הבוט" : m.sender_name ?? m.sender_id ?? "אנונימי"}: ${m.body ?? ""}`)
-              .join("\n");
+          return formatMessagesForConversation(chat, limit);
         }
         if (name === "stats") {
           const [{ count: convCount }, { count: msgCount }, { count: blockedCount }] = await Promise.all([
@@ -287,13 +466,14 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     let replyText: string;
     try {
-      replyText = await runAI({
-        systemPrompt,
-        history: prior,
-        userMessage: data.content,
-        extraTools,
-        toolExecutor,
-      });
+      replyText = directAdminReply ??
+        await runAI({
+          systemPrompt,
+          history: prior,
+          userMessage: data.content,
+          extraTools,
+          toolExecutor,
+        });
     } catch (e: any) {
       replyText = `שגיאה: ${String(e?.message ?? e)}`;
     }

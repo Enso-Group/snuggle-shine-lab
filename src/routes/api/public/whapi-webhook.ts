@@ -6,7 +6,7 @@ const latestInboundAt = new Map<string, number>();
 const MIN_GAP_MS = 800;
 
 
-function pickJid(m: any): { chatId: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
+function pickJid(m: any): { chatId: string; chatName: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
   if (!m) return null;
   const chatId = m.chat_id || m.from || m.chatId;
   if (!chatId) return null;
@@ -20,8 +20,9 @@ function pickJid(m: any): { chatId: string; senderId: string; senderName: string
     "";
   const senderId = m.from || m.author || chatId;
   const senderName = m.from_name || m.author_name || m.pushname || "";
+  const chatName = m.chat_name || m.chat?.name || m.group_name || "";
   const ts = (m.timestamp ?? Math.floor(Date.now() / 1000)) * 1000;
-  return { chatId, senderId, senderName, body: String(body || ""), isGroup, fromMe, messageId: m.id || "", ts };
+  return { chatId, chatName, senderId, senderName, body: String(body || ""), isGroup, fromMe, messageId: m.id || "", ts };
 }
 
 export const Route = createFileRoute("/api/public/whapi-webhook")({
@@ -98,7 +99,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
                 .from("conversations")
                 .insert({
                   whapi_chat_id: m.chatId,
-                  name: m.senderName || m.chatId,
+                  name: m.chatName || m.senderName || m.chatId,
                   is_group: m.isGroup,
                   last_message_at: new Date(m.ts).toISOString(),
                 })
@@ -108,7 +109,10 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             } else {
               await supabaseAdmin
                 .from("conversations")
-                .update({ last_message_at: new Date(m.ts).toISOString() })
+                .update({
+                  last_message_at: new Date(m.ts).toISOString(),
+                  ...(m.chatName ? { name: m.chatName } : {}),
+                })
                 .eq("id", convId);
             }
             if (!convId) continue;
