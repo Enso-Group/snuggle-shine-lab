@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Naive in-memory rate limit per chat (best-effort; resets per worker instance).
-// Keeps the bot from spamming if Whapi delivers a burst.
+// Per-chat in-memory dedupe (best-effort; the durable rules live in DB via anti-ban.server)
 const lastReplyAt = new Map<string, number>();
-const MIN_GAP_MS = 4000; // don't reply to same chat twice within 4s
+const MIN_GAP_MS = 4000;
 
 function pickJid(m: any): { chatId: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
   if (!m) return null;
@@ -33,7 +32,6 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        // Optional shared-secret check
         const { data: settings } = await supabaseAdmin
           .from("bot_settings")
           .select("id, system_prompt, bot_name, enabled, webhook_secret")
@@ -60,17 +58,23 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
         const enabled = settings?.enabled !== false;
         const systemPrompt = settings?.system_prompt ?? "אתה עוזר חכם בעברית.";
 
-        // Don't block webhook; process best-effort serially
+        const {
+          isStopRequest,
+          recordInbound,
+          recordOutbound,
+          checkOutboundAllowed,
+          loadConversationByChatId,
+          isWhapiRestrictionError,
+          raiseAdminAlert,
+        } = await import("@/lib/anti-ban.server");
+
         for (const raw of messages) {
           try {
             const m = pickJid(raw);
             if (!m) continue;
 
-            // Ignore own outgoing messages (no echo loops)
             if (m.fromMe) continue;
-            // Ignore non-text
             if (!m.body || !m.body.trim()) continue;
-            // Ignore old messages (>2 min)
             if (Date.now() - m.ts > 2 * 60 * 1000) continue;
 
             // Upsert conversation
@@ -101,7 +105,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             }
             if (!convId) continue;
 
-            // Save inbound
+            // Save inbound message row
             await supabaseAdmin.from("messages").insert({
               conversation_id: convId,
               whapi_message_id: m.messageId || null,
@@ -112,9 +116,17 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               raw: raw,
             });
 
-            if (!enabled) continue;
+            // Update inbound counters + auto-block if stop request
+            const { blockedNow } = await recordInbound(supabaseAdmin, convId, m.body);
 
-            // In groups, only reply when the bot is mentioned or addressed
+            if (!enabled) continue;
+            if (blockedNow) {
+              // Honor stop silently — no confirmation reply (never message them again)
+              continue;
+            }
+            if (isStopRequest(m.body)) continue; // double-guard
+
+            // In groups, only reply if addressed
             if (m.isGroup) {
               const botName = settings?.bot_name ?? "";
               const lower = m.body.toLowerCase();
@@ -125,7 +137,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               if (!mentioned) continue;
             }
 
-            // Per-chat rate limit
+            // Cheap in-memory burst limit
             const last = lastReplyAt.get(m.chatId) ?? 0;
             if (Date.now() - last < MIN_GAP_MS) continue;
             lastReplyAt.set(m.chatId, Date.now());
@@ -144,14 +156,12 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
                 role: (h.direction === "outbound" ? "assistant" : "user") as "user" | "assistant",
                 content: h.body as string,
               }));
-            // Last user message is the current one; drop the trailing duplicate
             if (history.length && history[history.length - 1].role === "user" && history[history.length - 1].content === m.body) {
               history.pop();
             }
 
-            // Human-like behavior: send typing presence + random delay
             const { sendPresence, sendTextMessage } = await import("@/lib/whapi.server");
-            const thinkMs = 1500 + Math.floor(Math.random() * 3500); // 1.5s - 5s
+            const thinkMs = 1500 + Math.floor(Math.random() * 3500);
             sendPresence(m.chatId, "typing", Math.ceil(thinkMs / 1000)).catch(() => {});
 
             const { runAI } = await import("@/lib/ai-brain.server");
@@ -163,7 +173,17 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               continue;
             }
 
-            // Wait a bit to simulate typing
+            // Re-check anti-ban guards immediately before sending (covers
+            // consecutive_outbound limit + duplicate-body for organic replies).
+            const conv = await loadConversationByChatId(supabaseAdmin, m.chatId);
+            if (conv) {
+              const guard = await checkOutboundAllowed(supabaseAdmin, conv, reply);
+              if (!guard.ok) {
+                console.warn("[bot] outbound blocked", guard.code, guard.reason);
+                continue;
+              }
+            }
+
             await new Promise((r) => setTimeout(r, thinkMs));
 
             try {
@@ -177,8 +197,23 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
                 body: reply,
                 raw: sendRes,
               });
+              await recordOutbound(supabaseAdmin, convId, reply);
             } catch (e: any) {
               console.error("[bot] send failed", e);
+              if (isWhapiRestrictionError(e)) {
+                // Halt + alert admin
+                if (settings?.id) {
+                  await supabaseAdmin
+                    .from("bot_settings")
+                    .update({ enabled: false })
+                    .eq("id", settings.id);
+                }
+                await raiseAdminAlert(
+                  supabaseAdmin,
+                  `WhatsApp restricted the account — bot disabled. Error: ${String(e?.message ?? e)}`,
+                );
+                return Response.json({ ok: false, halted: true });
+              }
             }
           } catch (e) {
             console.error("[webhook] handler error", e);
