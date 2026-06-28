@@ -31,24 +31,6 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-async function whapiRaw(path: string, init?: RequestInit): Promise<Response> {
-  const token = getToken();
-  const res = await fetch(`${WHAPI_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Accept": "application/json,image/*,*/*",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Whapi ${res.status}: ${text.slice(0, 500)}`);
-  }
-  return res;
-}
-
 export async function sendTextMessage(chatId: string, body: string) {
   return whapi("/messages/text", {
     method: "POST",
@@ -214,17 +196,30 @@ export async function logoutWhapiUser(): Promise<{ ok: boolean; alreadyLoggedOut
   }
 }
 
-export async function getWhapiLoginQrImage(): Promise<string> {
-  const res = await whapiRaw("/users/login/image?size=360&width=360&height=360&wakeup=true");
-  const contentType = res.headers.get("content-type") || "image/png";
-  const buffer = await res.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.slice(i, i + 0x8000));
+export async function getWhapiLoginQrImage(): Promise<{ image: string; status: string; expire?: number }> {
+  let lastStatus = "";
+  let lastError = "";
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const qr = await whapi<{ status?: string; base64?: string; expire?: number }>(
+        "/users/login?wakeup=true&size=360&width=360&height=360",
+      );
+      lastStatus = qr.status ?? "";
+      if (qr.base64 && qr.status === "OK") {
+        const image = qr.base64.startsWith("data:image") ? qr.base64 : `data:image/png;base64,${qr.base64}`;
+        return { image, status: qr.status, expire: qr.expire };
+      }
+    } catch (e: any) {
+      lastError = String(e?.message ?? e);
+      if (lastError.includes("Whapi 409")) {
+        throw new Error("החיבור עדיין מחובר. נתק את המכשיר המקושר מ-WhatsApp או נסה שוב בעוד כמה שניות.");
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  const base64 = btoa(binary);
-  return `data:${contentType};base64,${base64}`;
+
+  throw new Error(`לא נוצר QR אמיתי עדיין. סטטוס אחרון: ${lastStatus || lastError || "לא ידוע"}`);
 }
 
 

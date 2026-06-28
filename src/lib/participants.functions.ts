@@ -53,10 +53,12 @@ export const startWhatsAppReconnect = createServerFn({ method: "POST" })
     const { enableWhapiFullHistory, getWhapiLoginQrImage, getWhapiSettings, logoutWhapiUser, checkHealth } = await import("./whapi.server");
     await enableWhapiFullHistory();
     await logoutWhapiUser();
-    const qrImage = await getWhapiLoginQrImage();
+    const qr = await getWhapiLoginQrImage();
     const [settings, health] = await Promise.all([getWhapiSettings(), checkHealth()]);
     return {
-      qrImage,
+      qrImage: qr.image,
+      qrStatus: qr.status,
+      qrExpire: qr.expire ?? null,
       status: health.status ?? "QR",
       fullHistory: settings?.full_history === true,
     };

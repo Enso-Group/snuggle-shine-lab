@@ -139,9 +139,9 @@ function ParticipantsPage() {
         setFullHistory(r.fullHistory);
         setConnectionStatus(r.status);
         setQrImage(r.qrImage);
-        setHistoryNotice("סרוק את ה-QR מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+        setHistoryNotice("נוצר QR אמיתי. סרוק אותו מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
       })
-      .catch(() => setHistoryNotice("לא הצלחתי להתחיל חיבור מחדש. נסה שוב בעוד רגע."))
+      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי ליצור QR אמיתי. נסה שוב בעוד רגע.")))
       .finally(() => setReconnecting(false));
   }
 
