@@ -363,9 +363,18 @@ function ParticipantsPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
+              onClick={resetPipeline}
+              disabled={resetting || reconnecting || enablingHistory}
+              variant="default"
+            >
+              <RefreshCw className={`size-3 ms-1 ${resetting ? "animate-spin" : ""}`} />
+              אפס את כל זרימת הנתונים
+            </Button>
+            <Button
+              size="sm"
               onClick={enableFullHistory}
-              disabled={enablingHistory || reconnecting}
-              variant={fullHistory === true ? "outline" : "default"}
+              disabled={enablingHistory || reconnecting || resetting}
+              variant="outline"
             >
               <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
               {fullHistory === true ? "הפעל שוב" : "הפעל היסטוריה מלאה"}
@@ -373,7 +382,7 @@ function ParticipantsPage() {
             <Button
               size="sm"
               onClick={reconnectWhatsApp}
-              disabled={reconnecting || enablingHistory}
+              disabled={reconnecting || enablingHistory || resetting}
               variant="outline"
             >
               <RefreshCw className={`size-3 ms-1 ${reconnecting ? "animate-spin" : ""}`} />
