@@ -98,11 +98,23 @@ const TOOLS = [
   },
 ];
 
+export type AIToolDef = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
 export type AIRunInput = {
   systemPrompt: string;
   history: Array<{ role: "user" | "assistant"; content: string }>;
   userMessage: string;
+  extraTools?: AIToolDef[];
+  toolExecutor?: (name: string, args: Record<string, unknown>) => Promise<string>;
 };
+
 
 export async function runAI(input: AIRunInput): Promise<string> {
   const apiKey = process.env.LOVABLE_API_KEY;
@@ -125,8 +137,10 @@ export async function runAI(input: AIRunInput): Promise<string> {
   ];
 
 
-  // Up to 4 tool-call rounds
-  for (let step = 0; step < 4; step++) {
+  const allTools = [...TOOLS, ...(input.extraTools ?? [])];
+
+  // Up to 6 tool-call rounds
+  for (let step = 0; step < 6; step++) {
     const res = await fetch(GATEWAY_URL, {
       method: "POST",
       headers: {
@@ -136,7 +150,7 @@ export async function runAI(input: AIRunInput): Promise<string> {
       body: JSON.stringify({
         model: DEFAULT_MODEL,
         messages,
-        tools: TOOLS,
+        tools: allTools,
         tool_choice: "auto",
       }),
     });
@@ -155,14 +169,22 @@ export async function runAI(input: AIRunInput): Promise<string> {
     if (msg.tool_calls?.length) {
       messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
       for (const tc of msg.tool_calls) {
-        if (tc.function?.name === "web_search") {
-          let args: { query?: string } = {};
-          try { args = JSON.parse(tc.function.arguments || "{}"); } catch {}
-          const result = await webSearch(args.query || "");
-          messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+        const name = tc.function?.name ?? "";
+        let args: Record<string, unknown> = {};
+        try { args = JSON.parse(tc.function?.arguments || "{}"); } catch {}
+        let result = "";
+        if (name === "web_search") {
+          result = await webSearch(String(args.query ?? ""));
+        } else if (input.toolExecutor) {
+          try {
+            result = await input.toolExecutor(name, args);
+          } catch (e: any) {
+            result = `שגיאה בהרצת ${name}: ${String(e?.message ?? e)}`;
+          }
         } else {
-          messages.push({ role: "tool", tool_call_id: tc.id, content: "כלי לא ידוע." });
+          result = "כלי לא ידוע.";
         }
+        messages.push({ role: "tool", tool_call_id: tc.id, content: result });
       }
       continue;
     }
@@ -171,6 +193,7 @@ export async function runAI(input: AIRunInput): Promise<string> {
   }
   return "סליחה, נתקעתי בחיפוש מידע. נסי שוב.";
 }
+
 
 // Standalone "command from dashboard": prompt + send to chat
 export async function runCommand(prompt: string, systemPrompt: string): Promise<string> {
