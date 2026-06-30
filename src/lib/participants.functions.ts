@@ -162,6 +162,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       return lidToPhone.get(id) ?? id;
     };
     const ownPhone = resolveSenderKey(health.userId ?? "") || normalizeId(health.userId ?? "");
+    if (ownPhone) participantPhones.add(ownPhone);
     const getSenderId = (m: any) => {
       if (m.from_me) return resolveSenderKey(m.from ?? m.author ?? ownPhone) || normalizeId(m.from ?? m.author ?? ownPhone) || ownPhone;
       return resolveSenderKey(m.from ?? m.author ?? "") || m.from || m.author || data.whapiChatId;
