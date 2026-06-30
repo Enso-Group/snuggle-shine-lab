@@ -49,26 +49,38 @@ async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
 async function webSearch(query: string): Promise<string> {
   const { logUsage } = await import("./usage-log.server");
   const start = Date.now();
+  const UA =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
+  const stripTags = (s: string) =>
+    s.replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ").trim();
   try {
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
-    });
+    // Brave Search HTML — DuckDuckGo's html endpoint started returning an
+    // "anomaly detected" block page for serverless egress (always 0 results),
+    // so we use Brave which serves results without an API key.
+    const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
+    const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "text/html" } });
     const html = await res.text();
     const results: Array<{ title: string; url: string; snippet: string }> = [];
-    const blockRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-    let m;
-    while ((m = blockRe.exec(html)) !== null && results.length < 5) {
-      const stripped = (s: string) => s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-      let href = m[1];
-      const um = href.match(/uddg=([^&]+)/);
-      if (um) href = decodeURIComponent(um[1]);
-      if (href.startsWith("//")) href = "https:" + href;
-      results.push({ url: href, title: stripped(m[2]), snippet: stripped(m[3]) });
+    // Each web result block starts with data-type="web"; the next block (or end of section) bounds it.
+    const parts = html.split('data-type="web"');
+    for (let i = 1; i < parts.length && results.length < 5; i++) {
+      const chunk = parts[i].slice(0, 6000);
+      const href = chunk.match(/href="(https?:\/\/[^"]+)"/)?.[1];
+      const title = chunk.match(/class="title search-snippet-title[^"]*"[^>]*>([^<]+)/)?.[1];
+      const snip =
+        chunk.match(/class="snippet-description[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ??
+        chunk.match(/<p[^>]*>([\s\S]{20,400}?)<\/p>/)?.[1] ??
+        "";
+      if (href && title) {
+        results.push({ url: href, title: stripTags(title), snippet: stripTags(snip) });
+      }
     }
 
     if (results.length === 0) {
-      logUsage({ kind: "tool", tool_name: "web_search", provider: "duckduckgo", status: "success", duration_ms: Date.now() - start, meta: { query, results: 0 } });
+      logUsage({ kind: "tool", tool_name: "web_search", provider: "brave", status: "success", duration_ms: Date.now() - start, meta: { query, results: 0, http: res.status } });
       return "לא נמצאו תוצאות. נסה ניסוח אחר של השאילתה.";
     }
     const top = results.slice(0, 2);
@@ -77,10 +89,10 @@ async function webSearch(query: string): Promise<string> {
       const content = pages[i] ? `\nתוכן: ${pages[i]}` : "";
       return `[${i + 1}] ${r.title}\n${r.snippet}${content}\nמקור: ${r.url}`;
     }).join("\n\n---\n\n");
-    logUsage({ kind: "tool", tool_name: "web_search", provider: "duckduckgo", status: "success", duration_ms: Date.now() - start, meta: { query, results: results.length } });
+    logUsage({ kind: "tool", tool_name: "web_search", provider: "brave", status: "success", duration_ms: Date.now() - start, meta: { query, results: results.length } });
     return out;
   } catch (e: any) {
-    logUsage({ kind: "tool", tool_name: "web_search", provider: "duckduckgo", status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { query } });
+    logUsage({ kind: "tool", tool_name: "web_search", provider: "brave", status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { query } });
     return `שגיאה בחיפוש: ${String(e?.message ?? e)}`;
   }
 }
