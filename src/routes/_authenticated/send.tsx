@@ -5,11 +5,22 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { listWhapiGroups, sendManualMessage } from "@/lib/bot.functions";
+
+function normalizeChatId(input: string): string {
+  const v = input.trim();
+  if (!v) return "";
+  if (v.endsWith("@g.us") || v.endsWith("@s.whatsapp.net") || v.endsWith("@c.us")) return v;
+  const digits = v.replace(/[^\d]/g, "");
+  if (!digits) return v;
+  return `${digits}@s.whatsapp.net`;
+}
 
 export const Route = createFileRoute("/_authenticated/send")({
   head: () => ({ meta: [{ title: "שליחה — בוט WhatsApp" }] }),
