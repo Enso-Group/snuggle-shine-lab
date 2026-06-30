@@ -28,18 +28,20 @@ function SettingsPage() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [botName, setBotName] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [requireApprovalAll, setRequireApprovalAll] = useState(false);
 
   useEffect(() => {
     if (settings) {
       setSystemPrompt(settings.system_prompt);
       setBotName(settings.bot_name);
       setEnabled(settings.enabled);
+      setRequireApprovalAll((settings as any).require_approval_all ?? false);
     }
   }, [settings]);
 
   const save = useMutation({
     mutationFn: () =>
-      upFn({ data: { id: settings!.id, system_prompt: systemPrompt, bot_name: botName, enabled } }),
+      upFn({ data: { id: settings!.id, system_prompt: systemPrompt, bot_name: botName, enabled, require_approval_all: requireApprovalAll } }),
     onSuccess: () => {
       toast.success("נשמר!");
       qc.invalidateQueries({ queryKey: ["botSettings"] });
@@ -104,6 +106,15 @@ function SettingsPage() {
               <p className="text-xs text-muted-foreground">כשמכובה — הוא לא יענה אבל ימשיך לשמור הודעות</p>
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+          <div className="flex items-center justify-between p-3 border rounded-md border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
+            <div>
+              <Label>דרוש אישור לכל הודעה יוצאת</Label>
+              <p className="text-xs text-muted-foreground">
+                כשמופעל, כל הודעה שהבוט רוצה לשלוח (תשובה, תזמון או ידנית) תיכנס לעמוד "אישור הודעות" עם שלח / ערוך / מחק.
+              </p>
+            </div>
+            <Switch checked={requireApprovalAll} onCheckedChange={setRequireApprovalAll} />
           </div>
           <div>
             <Label htmlFor="botName">שם הבוט (לזיהוי בקבוצות)</Label>

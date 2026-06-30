@@ -30,6 +30,7 @@ export const updateBotSettings = createServerFn({ method: "POST" })
       system_prompt: z.string().min(1).max(8000),
       bot_name: z.string().min(1).max(80),
       enabled: z.boolean(),
+      require_approval_all: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -40,6 +41,7 @@ export const updateBotSettings = createServerFn({ method: "POST" })
         system_prompt: data.system_prompt,
         bot_name: data.bot_name,
         enabled: data.enabled,
+        ...(data.require_approval_all !== undefined ? { require_approval_all: data.require_approval_all } : {}),
       })
       .eq("id", data.id);
     if (error) throw new Error(error.message);

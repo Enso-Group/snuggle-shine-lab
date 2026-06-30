@@ -42,7 +42,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
         const { data: settings } = await supabaseAdmin
           .from("bot_settings")
-          .select("id, system_prompt, bot_name, enabled, webhook_secret")
+          .select("id, system_prompt, bot_name, enabled, webhook_secret, require_approval_all")
           .order("created_at", { ascending: true })
           .limit(1)
           .maybeSingle();
@@ -235,6 +235,28 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             }
 
 
+
+            // Global approval gate — queue instead of sending
+            if (settings?.require_approval_all) {
+              const { data: admin } = await supabaseAdmin
+                .from("user_roles")
+                .select("user_id")
+                .eq("role", "admin")
+                .limit(1)
+                .maybeSingle();
+              if (admin?.user_id) {
+                await supabaseAdmin.from("scheduled_approvals").insert({
+                  user_id: admin.user_id,
+                  conversation_id: convId,
+                  target_chat_id: m.chatId,
+                  target_name: m.chatName || m.senderName || m.chatId,
+                  body: reply,
+                  source: "ai_reply",
+                  status: "pending",
+                });
+              }
+              continue;
+            }
 
             try {
               const sendRes: any = await sendTextMessage(m.chatId, reply);

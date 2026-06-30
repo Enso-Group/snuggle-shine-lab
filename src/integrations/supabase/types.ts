@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           enabled: boolean
           id: string
+          require_approval_all: boolean
           system_prompt: string
           updated_at: string
           webhook_secret: string | null
@@ -29,6 +30,7 @@ export type Database = {
           created_at?: string
           enabled?: boolean
           id?: string
+          require_approval_all?: boolean
           system_prompt?: string
           updated_at?: string
           webhook_secret?: string | null
@@ -38,6 +40,7 @@ export type Database = {
           created_at?: string
           enabled?: boolean
           id?: string
+          require_approval_all?: boolean
           system_prompt?: string
           updated_at?: string
           webhook_secret?: string | null
@@ -240,10 +243,12 @@ export type Database = {
       scheduled_approvals: {
         Row: {
           body: string
+          conversation_id: string | null
           created_at: string
           decided_at: string | null
           id: string
           scheduled_message_id: string | null
+          source: string
           status: string
           target_chat_id: string
           target_name: string | null
@@ -251,10 +256,12 @@ export type Database = {
         }
         Insert: {
           body: string
+          conversation_id?: string | null
           created_at?: string
           decided_at?: string | null
           id?: string
           scheduled_message_id?: string | null
+          source?: string
           status?: string
           target_chat_id: string
           target_name?: string | null
@@ -262,16 +269,25 @@ export type Database = {
         }
         Update: {
           body?: string
+          conversation_id?: string | null
           created_at?: string
           decided_at?: string | null
           id?: string
           scheduled_message_id?: string | null
+          source?: string
           status?: string
           target_chat_id?: string
           target_name?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "scheduled_approvals_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "scheduled_approvals_scheduled_message_id_fkey"
             columns: ["scheduled_message_id"]
