@@ -21,6 +21,7 @@ import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/l
 import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedTelegramRouteImport } from './routes/_authenticated/telegram'
+import { Route as AuthenticatedCandidatesRouteImport } from './routes/_authenticated/candidates'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedConversationsIndexRouteImport } from './routes/_authenticated/conversations.index'
 import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/whapi-webhook'
@@ -94,6 +95,11 @@ const AuthenticatedTelegramRoute = AuthenticatedTelegramRouteImport.update({
   path: '/telegram',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCandidatesRoute = AuthenticatedCandidatesRouteImport.update({
+  id: '/candidates',
+  path: '/candidates',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedConversationsIndexRoute =
   AuthenticatedConversationsIndexRouteImport.update({
     id: '/',
@@ -137,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/telegram': typeof AuthenticatedTelegramRoute
+  '/candidates': typeof AuthenticatedCandidatesRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/telegram': typeof AuthenticatedTelegramRoute
+  '/candidates': typeof AuthenticatedCandidatesRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/usage': typeof AuthenticatedUsageRoute
   '/_authenticated/telegram': typeof AuthenticatedTelegramRoute
+  '/_authenticated/candidates': typeof AuthenticatedCandidatesRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/conversations/$id': typeof AuthenticatedConversationsIdRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/usage'
     | '/telegram'
+    | '/candidates'
     | '/chat/$threadId'
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
@@ -214,6 +224,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/usage'
     | '/telegram'
+    | '/candidates'
     | '/'
     | '/chat/$threadId'
     | '/conversations/$id'
@@ -234,6 +245,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/usage'
     | '/_authenticated/telegram'
+    | '/_authenticated/candidates'
     | '/_authenticated/'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/conversations/$id'
@@ -335,6 +347,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTelegramRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/candidates': {
+      id: '/_authenticated/candidates'
+      path: '/candidates'
+      fullPath: '/candidates'
+      preLoaderRoute: typeof AuthenticatedCandidatesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/approvals': {
       id: '/_authenticated/approvals'
       path: '/approvals'
@@ -418,6 +437,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
   AuthenticatedTelegramRoute: typeof AuthenticatedTelegramRoute
+  AuthenticatedCandidatesRoute: typeof AuthenticatedCandidatesRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
@@ -432,6 +452,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedUsageRoute: AuthenticatedUsageRoute,
   AuthenticatedTelegramRoute: AuthenticatedTelegramRoute,
+  AuthenticatedCandidatesRoute: AuthenticatedCandidatesRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 
