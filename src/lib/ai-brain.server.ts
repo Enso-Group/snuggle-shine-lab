@@ -47,6 +47,8 @@ async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
 }
 
 async function webSearch(query: string): Promise<string> {
+  const { logUsage } = await import("./usage-log.server");
+  const start = Date.now();
   try {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const res = await fetch(url, {
@@ -64,18 +66,21 @@ async function webSearch(query: string): Promise<string> {
       if (href.startsWith("//")) href = "https:" + href;
       results.push({ url: href, title: stripped(m[2]), snippet: stripped(m[3]) });
     }
-    if (results.length === 0) return "לא נמצאו תוצאות. נסה ניסוח אחר של השאילתה.";
 
-    // Fetch content of top 2 results in parallel for real substance
+    if (results.length === 0) {
+      logUsage({ kind: "tool", tool_name: "web_search", provider: "duckduckgo", status: "success", duration_ms: Date.now() - start, meta: { query, results: 0 } });
+      return "לא נמצאו תוצאות. נסה ניסוח אחר של השאילתה.";
+    }
     const top = results.slice(0, 2);
     const pages = await Promise.all(top.map((r) => fetchPageText(r.url)));
-
     const out = results.map((r, i) => {
       const content = pages[i] ? `\nתוכן: ${pages[i]}` : "";
       return `[${i + 1}] ${r.title}\n${r.snippet}${content}\nמקור: ${r.url}`;
     }).join("\n\n---\n\n");
+    logUsage({ kind: "tool", tool_name: "web_search", provider: "duckduckgo", status: "success", duration_ms: Date.now() - start, meta: { query, results: results.length } });
     return out;
   } catch (e: any) {
+    logUsage({ kind: "tool", tool_name: "web_search", provider: "duckduckgo", status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { query } });
     return `שגיאה בחיפוש: ${String(e?.message ?? e)}`;
   }
 }
@@ -116,9 +121,11 @@ export type AIRunInput = {
 };
 
 
-export async function runAI(input: AIRunInput): Promise<string> {
+export async function runAI(input: AIRunInput & { source?: string }): Promise<string> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+  const { logUsage } = await import("./usage-log.server");
+  const { estimateCostUSD, providerFromModel } = await import("./ai-pricing.server");
 
   const humanize = `
 
@@ -136,32 +143,51 @@ export async function runAI(input: AIRunInput): Promise<string> {
     { role: "user", content: input.userMessage },
   ];
 
-
   const allTools = [...TOOLS, ...(input.extraTools ?? [])];
+  const source = input.source ?? "chat";
 
-  // Up to 6 tool-call rounds
   for (let step = 0; step < 6; step++) {
-    const res = await fetch(GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        messages,
-        tools: allTools,
-        tool_choice: "auto",
-      }),
-    });
+    const start = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(GATEWAY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: DEFAULT_MODEL, messages, tools: allTools, tool_choice: "auto" }),
+      });
+    } catch (e: any) {
+      logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { step } });
+      throw e;
+    }
 
     if (!res.ok) {
       const txt = await res.text();
+      logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", http_status: res.status, duration_ms: Date.now() - start, error_message: txt.slice(0, 500), meta: { step } });
       if (res.status === 429) throw new Error("יותר מדי בקשות ל-AI — נסי שוב בעוד דקה.");
       if (res.status === 402) throw new Error("נגמרו הקרדיטים ל-AI. הוסיפי קרדיטים בהגדרות.");
       throw new Error(`AI error ${res.status}: ${txt.slice(0, 200)}`);
     }
     const data = await res.json();
+    const usage = data.usage ?? {};
+    const inTok = Number(usage.prompt_tokens ?? 0);
+    const outTok = Number(usage.completion_tokens ?? 0);
+    const totalTok = Number(usage.total_tokens ?? inTok + outTok);
+    const cost = estimateCostUSD(DEFAULT_MODEL, inTok, outTok);
+    logUsage({
+      kind: "llm",
+      provider: providerFromModel(DEFAULT_MODEL),
+      model: DEFAULT_MODEL,
+      source,
+      status: "success",
+      http_status: res.status,
+      duration_ms: Date.now() - start,
+      prompt_tokens: inTok,
+      completion_tokens: outTok,
+      total_tokens: totalTok,
+      cost_usd: cost,
+      meta: { step, finish_reason: data.choices?.[0]?.finish_reason },
+    });
+
     const choice = data.choices?.[0];
     const msg = choice?.message;
     if (!msg) throw new Error("AI returned no message");
@@ -173,16 +199,20 @@ export async function runAI(input: AIRunInput): Promise<string> {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(tc.function?.arguments || "{}"); } catch {}
         let result = "";
+        const toolStart = Date.now();
         if (name === "web_search") {
           result = await webSearch(String(args.query ?? ""));
         } else if (input.toolExecutor) {
           try {
             result = await input.toolExecutor(name, args);
+            logUsage({ kind: "tool", tool_name: name, source, status: "success", duration_ms: Date.now() - toolStart, meta: { args } });
           } catch (e: any) {
             result = `שגיאה בהרצת ${name}: ${String(e?.message ?? e)}`;
+            logUsage({ kind: "tool", tool_name: name, source, status: "error", duration_ms: Date.now() - toolStart, error_message: String(e?.message ?? e), meta: { args } });
           }
         } else {
           result = "כלי לא ידוע.";
+          logUsage({ kind: "tool", tool_name: name, source, status: "error", duration_ms: Date.now() - toolStart, error_message: "unknown tool" });
         }
         messages.push({ role: "tool", tool_call_id: tc.id, content: result });
       }
