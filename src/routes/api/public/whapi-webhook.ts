@@ -210,20 +210,57 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             sendPresence(m.chatId, "typing", 3).catch(() => {});
 
             const { runAI, isTrivialMessage } = await import("@/lib/ai-brain.server");
-            if (isTrivialMessage(m.body)) {
+            const requireApproval = !!settings?.require_approval_all;
+
+            // Skip trivial messages only when NOT in approval mode.
+            // In approval mode every inbound message should produce a draft for the human.
+            if (!requireApproval && isTrivialMessage(m.body)) {
               console.log("[bot] trivial message skipped");
               continue;
             }
-            let reply: string;
+
+            let reply = "";
             try {
               reply = await runAI({ systemPrompt, history, userMessage: m.body, chatId: m.chatId, source: "whatsapp" });
-              if (!reply) continue;
+              // Dedup hit (empty string) — skip direct send, but still queue for approval
+              if (!reply && !requireApproval) continue;
             } catch (e: any) {
               console.error("[bot] AI failure", e);
+              // In approval mode still queue so the human can write/fix the reply
+              if (!requireApproval) continue;
+            }
+
+            // Global approval gate — queue instead of sending.
+            // Runs before the anti-ban / supersede checks so every message reaches approvals.
+            if (requireApproval) {
+              const { data: admin } = await supabaseAdmin
+                .from("user_roles")
+                .select("user_id")
+                .eq("role", "admin")
+                .limit(1)
+                .maybeSingle();
+              if (admin?.user_id) {
+                await supabaseAdmin.from("scheduled_approvals").insert({
+                  user_id: admin.user_id,
+                  conversation_id: convId,
+                  target_chat_id: m.chatId,
+                  target_name: m.chatName || m.senderName || m.chatId,
+                  body: reply, // may be empty if AI failed — human fills it in
+                  source: "ai_reply",
+                  status: "pending",
+                });
+                console.log("[bot] queued for approval, body length:", reply.length);
+              } else {
+                console.warn("[bot] require_approval_all is set but no admin user found in user_roles");
+              }
               continue;
             }
 
-            // If a newer inbound arrived while we were thinking, abort — the newer one will be handled
+            // --- Direct send path (require_approval_all is false) ---
+
+            if (!reply) continue; // AI returned empty (dedup)
+
+            // If a newer inbound arrived while we were thinking, abort
             if ((latestInboundAt.get(m.chatId) ?? 0) > myInboundTs) {
               console.log("[bot] superseded by newer inbound, skipping send");
               continue;
@@ -237,30 +274,6 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
                 console.warn("[bot] outbound blocked", guard.code, guard.reason);
                 continue;
               }
-            }
-
-
-
-            // Global approval gate — queue instead of sending
-            if (settings?.require_approval_all) {
-              const { data: admin } = await supabaseAdmin
-                .from("user_roles")
-                .select("user_id")
-                .eq("role", "admin")
-                .limit(1)
-                .maybeSingle();
-              if (admin?.user_id) {
-                await supabaseAdmin.from("scheduled_approvals").insert({
-                  user_id: admin.user_id,
-                  conversation_id: convId,
-                  target_chat_id: m.chatId,
-                  target_name: m.chatName || m.senderName || m.chatId,
-                  body: reply,
-                  source: "ai_reply",
-                  status: "pending",
-                });
-              }
-              continue;
             }
 
             try {
