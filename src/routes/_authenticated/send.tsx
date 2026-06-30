@@ -37,6 +37,9 @@ function SendPage() {
   });
 
   const [target, setTarget] = useState<string>("");
+  const [manualMode, setManualMode] = useState(false);
+  const [manualTarget, setManualTarget] = useState("");
+  const [manualName, setManualName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"direct" | "ai">("ai");
 
@@ -47,6 +50,10 @@ function SendPage() {
 
   const send = useMutation({
     mutationFn: () => {
+      if (manualMode) {
+        const id = normalizeChatId(manualTarget);
+        return sendFn({ data: { target_chat_id: id, target_name: manualName.trim() || id, prompt, mode } });
+      }
       const tgt = allTargets.find((t) => t.id === target);
       return sendFn({ data: { target_chat_id: target, target_name: tgt?.name, prompt, mode } });
     },
@@ -56,6 +63,8 @@ function SendPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const canSend = (manualMode ? manualTarget.trim().length > 0 : !!target) && prompt.trim().length > 0 && !send.isPending;
 
   return (
     <div className="p-8 max-w-3xl space-y-6">
