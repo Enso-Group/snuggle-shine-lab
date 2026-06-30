@@ -238,8 +238,9 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
 
 
 // Standalone "command from dashboard": prompt + send to chat
-export async function runCommand(prompt: string, systemPrompt: string): Promise<string> {
+export async function runCommand(prompt: string, systemPrompt: string, source = "send"): Promise<string> {
   return runAI({
+    source,
     systemPrompt: systemPrompt + "\n\nעכשיו, בצע את הבקשה הבאה והפק טקסט מוכן לשליחה לוואטסאפ. החזר רק את הטקסט הסופי לשליחה, ללא הקדמות.",
     history: [],
     userMessage: prompt,
