@@ -126,36 +126,16 @@ async function webSearch(query: string): Promise<string> {
   const start = Date.now();
   const UA =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
-  const stripTags = (s: string) =>
-    s.replace(/<[^>]+>/g, "")
-      .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'")
-      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
-      .replace(/\s+/g, " ").trim();
   try {
-    // Brave Search HTML — DuckDuckGo's html endpoint started returning an
-    // "anomaly detected" block page for serverless egress (always 0 results),
-    // so we use Brave which serves results without an API key.
-    const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
-    const res = await fetchWithTimeout(url, { headers: { "User-Agent": UA, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
-    const html = await res.text();
-    const results: Array<{ title: string; url: string; snippet: string }> = [];
-    // Each web result block starts with data-type="web"; the next block (or end of section) bounds it.
-    const parts = html.split('data-type="web"');
-    for (let i = 1; i < parts.length && results.length < 5; i++) {
-      const chunk = parts[i].slice(0, 6000);
-      const href = chunk.match(/href="(https?:\/\/[^"]+)"/)?.[1];
-      const title = chunk.match(/class="title search-snippet-title[^"]*"[^>]*>([^<]+)/)?.[1];
-      const snip =
-        chunk.match(/class="snippet-description[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ??
-        chunk.match(/<p[^>]*>([\s\S]{20,400}?)<\/p>/)?.[1] ??
-        "";
-      if (href && title) {
-        results.push({ url: href, title: stripTags(title), snippet: stripTags(snip) });
-      }
+    let provider = "duckduckgo";
+    let results = await searchDuckDuckGo(query, UA);
+    if (results.length === 0) {
+      provider = "bing";
+      results = await searchBing(query, UA);
     }
 
     if (results.length === 0) {
-      logUsage({ kind: "tool", tool_name: "web_search", provider: "brave", status: "success", duration_ms: Date.now() - start, meta: { query, results: 0, http: res.status } });
+      logUsage({ kind: "tool", tool_name: "web_search", provider, status: "success", duration_ms: Date.now() - start, meta: { query, results: 0 } });
       return "לא נמצאו תוצאות. נסה ניסוח אחר של השאילתה.";
     }
     const top = results.slice(0, 2);
@@ -164,10 +144,10 @@ async function webSearch(query: string): Promise<string> {
       const content = pages[i] ? `\nתוכן: ${pages[i]}` : "";
       return `[${i + 1}] ${r.title}\n${r.snippet}${content}\nמקור: ${r.url}`;
     }).join("\n\n---\n\n");
-    logUsage({ kind: "tool", tool_name: "web_search", provider: "brave", status: "success", duration_ms: Date.now() - start, meta: { query, results: results.length } });
+    logUsage({ kind: "tool", tool_name: "web_search", provider, status: "success", duration_ms: Date.now() - start, meta: { query, results: results.length } });
     return out;
   } catch (e: any) {
-    logUsage({ kind: "tool", tool_name: "web_search", provider: "brave", status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { query } });
+    logUsage({ kind: "tool", tool_name: "web_search", provider: "search_html", status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { query } });
     return `שגיאה בחיפוש: ${String(e?.message ?? e)}`;
   }
 }
