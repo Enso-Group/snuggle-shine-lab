@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_usage_log: {
+        Row: {
+          completion_tokens: number | null
+          cost_usd: number | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          http_status: number | null
+          id: string
+          kind: string
+          meta: Json | null
+          model: string | null
+          prompt_tokens: number | null
+          provider: string | null
+          source: string | null
+          status: string
+          tool_name: string | null
+          total_tokens: number | null
+        }
+        Insert: {
+          completion_tokens?: number | null
+          cost_usd?: number | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          http_status?: number | null
+          id?: string
+          kind: string
+          meta?: Json | null
+          model?: string | null
+          prompt_tokens?: number | null
+          provider?: string | null
+          source?: string | null
+          status?: string
+          tool_name?: string | null
+          total_tokens?: number | null
+        }
+        Update: {
+          completion_tokens?: number | null
+          cost_usd?: number | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          http_status?: number | null
+          id?: string
+          kind?: string
+          meta?: Json | null
+          model?: string | null
+          prompt_tokens?: number | null
+          provider?: string | null
+          source?: string | null
+          status?: string
+          tool_name?: string | null
+          total_tokens?: number | null
+        }
+        Relationships: []
+      }
       bot_settings: {
         Row: {
           bot_name: string
