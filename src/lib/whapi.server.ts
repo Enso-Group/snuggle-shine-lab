@@ -237,11 +237,24 @@ export async function enableWhapiFullHistory(): Promise<{ full_history?: boolean
 export async function resetWhapiPipeline(webhookUrl: string): Promise<any> {
   // Single PATCH: enable full history + register our webhook so every
   // incoming message is POSTed to the app automatically.
+  // If a webhook secret is configured server-side, bake it into the registered
+  // URL so Whapi presents it on every call (the secret never touches the client).
+  const secret = process.env.WHAPI_WEBHOOK_SECRET;
+  let registeredUrl = webhookUrl;
+  if (secret) {
+    try {
+      const u = new URL(webhookUrl);
+      u.searchParams.set("secret", secret);
+      registeredUrl = u.toString();
+    } catch {
+      registeredUrl = `${webhookUrl}${webhookUrl.includes("?") ? "&" : "?"}secret=${encodeURIComponent(secret)}`;
+    }
+  }
   const body = {
     full_history: true,
     webhooks: [
       {
-        url: webhookUrl,
+        url: registeredUrl,
         events: [
           { type: "messages", method: "post" },
           { type: "statuses", method: "post" },

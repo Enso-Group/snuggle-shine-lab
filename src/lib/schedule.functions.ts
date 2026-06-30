@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
 import { z } from "zod";
 
 const scheduleSchema = z.object({
@@ -13,7 +13,7 @@ const scheduleSchema = z.object({
 });
 
 export const listScheduledMessages = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("scheduled_messages")
@@ -25,7 +25,7 @@ export const listScheduledMessages = createServerFn({ method: "GET" })
   });
 
 export const createScheduledMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: unknown) => scheduleSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
@@ -38,7 +38,7 @@ export const createScheduledMessage = createServerFn({ method: "POST" })
   });
 
 export const updateScheduledMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: unknown) =>
     z.object({ id: z.string().uuid() }).merge(scheduleSchema.partial()).parse(d),
   )
@@ -55,7 +55,7 @@ export const updateScheduledMessage = createServerFn({ method: "POST" })
   });
 
 export const deleteScheduledMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
@@ -67,7 +67,7 @@ export const deleteScheduledMessage = createServerFn({ method: "POST" })
   });
 
 export const sendScheduledNow = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
@@ -87,7 +87,7 @@ export const sendScheduledNow = createServerFn({ method: "POST" })
   });
 
 export const listPendingApprovals = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("scheduled_approvals")
@@ -99,7 +99,7 @@ export const listPendingApprovals = createServerFn({ method: "GET" })
   });
 
 export const approvePending = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string; body?: string }) =>
     z.object({ id: z.string().uuid(), body: z.string().min(1).max(4000).optional() }).parse(d),
   )
@@ -138,7 +138,7 @@ export const approvePending = createServerFn({ method: "POST" })
   });
 
 export const updatePendingBody = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string; body: string }) =>
     z.object({ id: z.string().uuid(), body: z.string().min(1).max(4000) }).parse(d),
   )
@@ -153,7 +153,7 @@ export const updatePendingBody = createServerFn({ method: "POST" })
   });
 
 export const rejectPending = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase

@@ -4,8 +4,26 @@ import { createClient } from "@supabase/supabase-js";
 export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
         try {
+          // Require a shared secret so only the configured cron can trigger sends.
+          const cronSecret = process.env.CRON_SECRET;
+          if (cronSecret) {
+            const url = new URL(request.url);
+            const provided =
+              request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
+            if (provided !== cronSecret) {
+              return new Response(JSON.stringify({ error: "forbidden" }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
+          } else {
+            console.warn(
+              "[cron] no CRON_SECRET configured — scheduled-send endpoint is UNAUTHENTICATED.",
+            );
+          }
+
           const supabase = createClient(
             process.env.SUPABASE_URL!,
             process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -41,11 +59,20 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
 
           const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < minTs);
 
+          // Global approval gate — when on, every scheduled send is queued too.
+          const { data: botSettings } = await supabase
+            .from("bot_settings")
+            .select("require_approval_all")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          const globalApproval = !!botSettings?.require_approval_all;
+
           const { sendTextMessage } = await import("@/lib/whapi.server");
           const results: any[] = [];
           for (const r of due) {
             try {
-              if (r.require_approval) {
+              if (r.require_approval || globalApproval) {
                 await supabase.from("scheduled_approvals").insert({
                   scheduled_message_id: r.id,
                   user_id: r.user_id,

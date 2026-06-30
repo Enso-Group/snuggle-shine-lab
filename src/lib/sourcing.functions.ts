@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ async function apifyGoogleFallback(
 // Server fn: enrich one candidate with Apollo + Apify
 // ---------------------------------------------------------------------------
 export const enrichCandidate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: unknown) =>
     z
       .object({
@@ -212,7 +212,7 @@ export const enrichCandidate = createServerFn({ method: "POST" })
 // Server fn: scan WhatsApp groups and find candidates via AI
 // ---------------------------------------------------------------------------
 export const scanGroupsForCandidates = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: unknown) =>
     z.object({
       description: z.string().min(3).max(2000),
@@ -354,7 +354,7 @@ ${groupBlocks.slice(0, 15000)}`;
 // Server fn: list all WhatsApp groups (for the group picker UI)
 // ---------------------------------------------------------------------------
 export const listGroupsForSourcing = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async (): Promise<Array<{ id: string; name: string }>> => {
     const { listGroups } = await import("./whapi.server");
     return listGroups();

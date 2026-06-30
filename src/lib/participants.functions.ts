@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
 import { z } from "zod";
 
 function normalizePhone(raw: unknown) {
@@ -23,7 +23,7 @@ function getMessageBody(m: any) {
 }
 
 export const resetWhatsAppPipeline = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { webhookUrl: string }) =>
     z.object({ webhookUrl: z.string().url() }).parse(d),
   )
@@ -44,7 +44,7 @@ export const resetWhatsAppPipeline = createServerFn({ method: "POST" })
 
 
 export const listGroupConversations = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { listGroups } = await import("./whapi.server");
     const groups = await listGroups();
@@ -54,7 +54,7 @@ export const listGroupConversations = createServerFn({ method: "GET" })
   });
 
 export const getHistorySyncStatus = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { getWhapiSettings } = await import("./whapi.server");
     const settings = await getWhapiSettings();
@@ -62,7 +62,7 @@ export const getHistorySyncStatus = createServerFn({ method: "GET" })
   });
 
 export const getWhatsAppConnectionStatus = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { checkHealth, getWhapiSettings } = await import("./whapi.server");
     const [health, settings] = await Promise.all([checkHealth(), getWhapiSettings()]);
@@ -77,7 +77,7 @@ export const getWhatsAppConnectionStatus = createServerFn({ method: "GET" })
   });
 
 export const enableHistorySync = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { enableWhapiFullHistory, getWhapiSettings } = await import("./whapi.server");
     await enableWhapiFullHistory();
@@ -89,7 +89,7 @@ export const enableHistorySync = createServerFn({ method: "POST" })
   });
 
 export const startWhatsAppReconnect = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { enableWhapiFullHistory, getWhapiLoginQrImage, getWhapiSettings, logoutWhapiUser, checkHealth } = await import("./whapi.server");
     await enableWhapiFullHistory();
@@ -106,7 +106,7 @@ export const startWhatsAppReconnect = createServerFn({ method: "POST" })
   });
 
 export const fetchWhatsAppQr = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { getWhapiLoginQrImage, checkHealth } = await import("./whapi.server");
     const qr = await getWhapiLoginQrImage();
@@ -120,7 +120,7 @@ export const fetchWhatsAppQr = createServerFn({ method: "POST" })
   });
 
 export const listGroupParticipants = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { whapiChatId: string }) =>
     z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
@@ -329,7 +329,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
   });
 
 export const getParticipantMessages = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { whapiChatId: string; senderId: string }) =>
     z
       .object({
@@ -413,7 +413,7 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
   });
 
 export const syncConversationHistory = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAdmin])
   .inputValidator((d: { conversationId: string }) =>
     z.object({ conversationId: z.string().min(1) }).parse(d),
   )

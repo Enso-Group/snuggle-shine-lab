@@ -10,6 +10,18 @@ export const Route = createFileRoute("/_authenticated")({
     if (error || !data.user) {
       throw redirect({ to: "/auth", search: { next: location.pathname } });
     }
+    // Dashboard is admin-only. RLS lets a user read their own roles, so this is
+    // a safe client-side gate; the server functions enforce admin independently.
+    const { data: adminRole } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    if (!adminRole) {
+      await supabase.auth.signOut();
+      throw redirect({ to: "/auth", search: { next: location.pathname } });
+    }
     return { user: data.user };
   },
   component: AuthedLayout,

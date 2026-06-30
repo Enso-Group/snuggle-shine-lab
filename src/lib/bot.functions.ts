@@ -138,18 +138,41 @@ export const sendManualMessage = createServerFn({ method: "POST" })
       .single();
 
     try {
+      const { data: settings } = await context.supabase
+        .from("bot_settings")
+        .select("system_prompt, require_approval_all")
+        .limit(1)
+        .maybeSingle();
+
       let body = data.prompt;
       if (data.mode === "ai") {
-        const { data: settings } = await context.supabase
-          .from("bot_settings")
-          .select("system_prompt")
-          .limit(1)
-          .maybeSingle();
         const { runCommand } = await import("./ai-brain.server");
         body = await runCommand(
           data.prompt,
           settings?.system_prompt ?? "אתה עוזר חכם בעברית.",
         );
+      }
+
+      // Global approval gate — when on, queue for human approval instead of
+      // sending directly (matches the Settings page promise: replies, schedule,
+      // AND manual sends all go through the approval queue).
+      if (settings?.require_approval_all) {
+        await context.supabase.from("scheduled_approvals").insert({
+          user_id: context.userId,
+          conversation_id: conv.id,
+          target_chat_id: targetChatId,
+          target_name: data.target_name ?? null,
+          body,
+          source: "manual",
+          status: "pending",
+        });
+        if (log?.id) {
+          await context.supabase
+            .from("commands_log")
+            .update({ status: "queued", result: body.slice(0, 2000) })
+            .eq("id", log.id);
+        }
+        return { ok: true, queued: true, body };
       }
 
       // Enforce all anti-ban guards

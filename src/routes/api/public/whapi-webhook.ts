@@ -47,8 +47,17 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
           .limit(1)
           .maybeSingle();
 
-        if (settings?.webhook_secret && settings.webhook_secret !== secretParam) {
-          return new Response("forbidden", { status: 403 });
+        // Prefer a server-side env secret (set in Cloud), fall back to the DB column.
+        // If a secret is configured, every webhook call MUST present it.
+        const expectedSecret = process.env.WHAPI_WEBHOOK_SECRET || settings?.webhook_secret || "";
+        if (expectedSecret) {
+          if (secretParam !== expectedSecret) {
+            return new Response("forbidden", { status: 403 });
+          }
+        } else {
+          console.warn(
+            "[webhook] no WHAPI_WEBHOOK_SECRET configured — endpoint is UNAUTHENTICATED. Set the secret in Cloud and re-register the webhook.",
+          );
         }
 
         let payload: any;
