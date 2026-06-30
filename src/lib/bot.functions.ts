@@ -97,19 +97,17 @@ export const sendManualMessage = createServerFn({ method: "POST" })
         .from("conversations")
         .insert({
           whapi_chat_id: data.target_chat_id,
-          display_name: data.target_name ?? data.target_chat_id,
+          name: data.target_name ?? data.target_chat_id,
           is_group: isGroup,
-          inbound_count: 0,
-          consecutive_outbound: 0,
-          blocked: false,
         })
         .select("id, whapi_chat_id, inbound_count, consecutive_outbound, blocked, last_outbound_at, last_outbound_body")
         .single();
       if (convErr || !created) {
         throw new Error(`לא ניתן ליצור שיחה חדשה: ${convErr?.message ?? "unknown"}`);
       }
-      conv = created as typeof conv;
+      conv = created as NonNullable<typeof conv>;
     }
+
 
 
     // Log command (pending)
