@@ -125,13 +125,14 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listAllMessagesByChatId, listContacts, listContactLids } = await import("./whapi.server");
+    const { getGroup, listAllMessagesByChatId, listContacts, listContactLids, checkHealth } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [groupBase, liveMessages, contacts, conv] = await Promise.all([
+    const [groupBase, liveMessages, contacts, health, conv] = await Promise.all([
       getGroup(data.whapiChatId, true),
       listAllMessagesByChatId(data.whapiChatId),
       listContacts(),
+      checkHealth(),
       supabaseAdmin
         .from("conversations")
         .select("id")
@@ -159,6 +160,15 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       const id = normalizeId(raw);
       if (!id) return "";
       return lidToPhone.get(id) ?? id;
+    };
+    const ownPhone = resolveSenderKey(health.userId ?? "") || normalizeId(health.userId ?? "");
+    const getSenderId = (m: any) => {
+      if (m.from_me) return resolveSenderKey(m.from ?? m.author ?? ownPhone) || normalizeId(m.from ?? m.author ?? ownPhone) || ownPhone;
+      return resolveSenderKey(m.from ?? m.author ?? "") || m.from || m.author || data.whapiChatId;
+    };
+    const getSenderName = (m: any) => {
+      if (m.from_me) return health.userName || contactBook.get(ownPhone) || "אני";
+      return m.from_name ?? m.author_name ?? m.pushname ?? "";
     };
     const resolveName = (id: string, fallback?: string) => {
       const phone = resolveSenderKey(id) || normalizeId(id);
@@ -200,14 +210,13 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         .limit(10000);
       const existing = new Set((existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean));
       const rows = (liveMessages ?? [])
-        .filter((m: any) => !m.from_me)
         .filter((m: any) => m.id && !existing.has(m.id))
         .map((m: any) => ({
           conversation_id: convId,
           whapi_message_id: m.id,
           direction: "inbound",
-          sender_name: m.from_name ?? m.author_name ?? m.pushname ?? null,
-          sender_id: resolveSenderKey(m.from ?? m.author ?? "") || m.from || m.author || data.whapiChatId,
+          sender_name: getSenderName(m) || null,
+          sender_id: getSenderId(m),
           body: getMessageBody(m),
           raw: m,
           created_at: normalizeWhapiTs(m.timestamp),
@@ -254,9 +263,8 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     };
 
     for (const m of liveMessages ?? []) {
-      if (m.from_me) continue;
-      const senderId = m.from ?? m.author ?? "";
-      const senderName = m.from_name ?? m.author_name ?? "";
+      const senderId = getSenderId(m);
+      const senderName = getSenderName(m);
       const body = getMessageBody(m);
       const ts = m.timestamp ? normalizeWhapiTs(m.timestamp) : null;
       addMessage(senderId, senderName, body, ts);
@@ -326,13 +334,13 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listAllMessagesByChatId, listContactLids } = await import("./whapi.server");
+    const { getGroup, listAllMessagesByChatId, listContactLids, checkHealth } = await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const seen = new Set<string>();
     const out: Array<{ id: string; body: string; created_at: string; source: "live" | "db" }> = [];
     const normalizeId = normalizePhone;
-    const group = await getGroup(data.whapiChatId);
+    const [group, health] = await Promise.all([getGroup(data.whapiChatId), checkHealth()]);
     const participants: any[] = group?.participants ?? [];
     const phoneToLid = await listContactLids(participants.map((p) => p.id ?? p.phone ?? ""));
     const lidToPhone = new Map<string, string>();
@@ -341,10 +349,15 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
     }
     const selectedId = normalizeId(data.senderId);
     const selectedLid = phoneToLid[selectedId];
+    const ownPhone = normalizeId(health.userId ?? "");
     const resolveSenderKey = (raw: string) => {
       const id = normalizeId(raw);
       if (!id) return "";
       return lidToPhone.get(id) ?? id;
+    };
+    const getSenderId = (m: any) => {
+      if (m.from_me) return resolveSenderKey(m.from ?? m.author ?? ownPhone) || normalizeId(m.from ?? m.author ?? ownPhone) || ownPhone;
+      return m.from ?? m.author ?? "";
     };
     const isSelectedSender = (rawId: string, rawName?: string | null) => {
       const id = normalizeId(rawId);
@@ -354,9 +367,8 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
 
     const live = await listAllMessagesByChatId(data.whapiChatId);
     for (const m of live ?? []) {
-      if (m.from_me) continue;
-      const senderId = m.from ?? m.author ?? "";
-      const senderName = m.from_name ?? m.author_name ?? "";
+      const senderId = getSenderId(m);
+      const senderName = m.from_me ? health.userName ?? "אני" : m.from_name ?? m.author_name ?? "";
       if (!isSelectedSender(senderId, senderName)) continue;
       const id = String(m.id ?? `${m.timestamp}-${senderId}`);
       if (seen.has(id)) continue;

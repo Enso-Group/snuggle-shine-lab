@@ -87,9 +87,16 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             const m = pickJid(raw);
             if (!m) continue;
 
-            if (m.fromMe) continue;
             if (!m.body || !m.body.trim()) continue;
             const isFreshMessage = Math.abs(Date.now() - m.ts) <= 2 * 60 * 1000;
+            let ownUser: { id?: string; name?: string } = {};
+            if (m.fromMe) {
+              try {
+                const { checkHealth } = await import("@/lib/whapi.server");
+                const health = await checkHealth();
+                ownUser = { id: health.userId, name: health.userName };
+              } catch {}
+            }
 
             // Upsert conversation
             const { data: convExisting } = await supabaseAdmin
@@ -137,12 +144,16 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               conversation_id: convId,
               whapi_message_id: m.messageId || null,
               direction: "inbound",
-              sender_name: m.senderName || null,
-              sender_id: m.senderId,
+              sender_name: m.fromMe ? ownUser.name || m.senderName || "אני" : m.senderName || null,
+              sender_id: m.fromMe ? ownUser.id || m.senderId : m.senderId,
               body: m.body,
               raw: raw,
               created_at: new Date(m.ts).toISOString(),
             });
+
+            // Messages sent from the linked phone should be stored and counted,
+            // but must never trigger bot replies or anti-ban inbound counters.
+            if (m.fromMe) continue;
 
             // Historical replay should be stored, but must never trigger old bot replies.
             if (!isFreshMessage) continue;
