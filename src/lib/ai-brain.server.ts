@@ -31,14 +31,10 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 // Web search via DuckDuckGo HTML, with content fetch for top results
 async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(url, {
-      signal: ctrl.signal,
+    const res = await fetchWithTimeout(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
-    });
+    }, 6_000);
     const html = await res.text();
-    clearTimeout(t);
     // Strip scripts/styles, then tags
     const cleaned = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
