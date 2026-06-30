@@ -56,6 +56,71 @@ async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
   }
 }
 
+function decodeHtml(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+}
+
+function stripTags(s: string): string {
+  return decodeHtml(s.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+}
+
+function extractDuckDuckGoUrl(href: string): string {
+  const decoded = decodeHtml(href);
+  try {
+    const url = new URL(decoded, "https://duckduckgo.com");
+    const uddg = url.searchParams.get("uddg");
+    return uddg ? decodeURIComponent(uddg) : url.href;
+  } catch {
+    return decoded;
+  }
+}
+
+async function searchDuckDuckGo(query: string, ua: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const res = await fetchWithTimeout(url, { headers: { "User-Agent": ua, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
+  const html = await res.text();
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const blocks = html.split(/<div class="result results_links/gi);
+  for (let i = 1; i < blocks.length && results.length < 5; i++) {
+    const chunk = blocks[i].slice(0, 5000);
+    const link = chunk.match(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!link) continue;
+    const snippet = chunk.match(/<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ??
+      chunk.match(/<div[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ??
+      "";
+    results.push({ title: stripTags(link[2]), url: extractDuckDuckGoUrl(link[1]), snippet: stripTags(snippet) });
+  }
+  return results;
+}
+
+async function searchBing(query: string, ua: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US`;
+  const res = await fetchWithTimeout(url, { headers: { "User-Agent": ua, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
+  const html = await res.text();
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const blocks = html.split(/<li class="b_algo"/gi);
+  for (let i = 1; i < blocks.length && results.length < 5; i++) {
+    const chunk = blocks[i].slice(0, 5000);
+    const link = chunk.match(/<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!link) continue;
+    const snippet = chunk.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "";
+    results.push({ title: stripTags(link[2]), url: decodeHtml(link[1]), snippet: stripTags(snippet) });
+  }
+  return results;
+}
+
+function shouldSearchBeforeModel(text: string): boolean {
+  return /\b(news|today|latest|current|202[4-9]|stock|market|price|gpt|openai)\b/i.test(text) ||
+    /(חדשות|עדכני|היום|כרגע|מניה|מניות|שוק|מחיר|סקירה|כתבה|כתבות|חפש|בדוק)/i.test(text);
+}
+
 async function webSearch(query: string): Promise<string> {
   const { logUsage } = await import("./usage-log.server");
   const start = Date.now();
