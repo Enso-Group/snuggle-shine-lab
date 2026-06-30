@@ -21,7 +21,8 @@ function normalizeChatId(input: string): string {
   if (v.endsWith("@g.us") || v.endsWith("@s.whatsapp.net") || v.endsWith("@c.us")) return v;
   const digits = v.replace(/[^\d]/g, "");
   if (!digits) return v;
-  return `${digits}@s.whatsapp.net`;
+  const phone = /^0\d{9}$/.test(digits) ? `972${digits.slice(1)}` : digits;
+  return `${phone}@s.whatsapp.net`;
 }
 
 export const Route = createFileRoute("/_authenticated/send")({

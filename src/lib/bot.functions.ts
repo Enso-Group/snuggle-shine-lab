@@ -8,6 +8,19 @@ async function requireAdmin(supabase: any, userId: string) {
   if (!data) throw new Error("Forbidden: admin only");
 }
 
+function normalizeTargetChatId(input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) return raw;
+  const atIdx = raw.indexOf("@");
+  const local = atIdx >= 0 ? raw.slice(0, atIdx) : raw;
+  const suffix = atIdx >= 0 ? raw.slice(atIdx) : "@s.whatsapp.net";
+  if (suffix === "@g.us") return raw;
+  const digits = local.split(":")[0].replace(/\D/g, "");
+  if (!digits) return raw;
+  const phone = /^0\d{9}$/.test(digits) ? `972${digits.slice(1)}` : digits;
+  return `${phone}${suffix}`;
+}
+
 export const getBotSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -77,6 +90,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await requireAdmin(context.supabase, context.userId);
+    const targetChatId = normalizeTargetChatId(data.target_chat_id);
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const {
@@ -90,14 +104,14 @@ export const sendManualMessage = createServerFn({ method: "POST" })
     // Admin chose the recipient explicitly. If we don't have a conversation
     // row yet (e.g. manual chat id / first outbound to a group), create one
     // so downstream guards and logging have something to attach to.
-    let conv = await loadConversationByChatId(supabaseAdmin, data.target_chat_id);
+    let conv = await loadConversationByChatId(supabaseAdmin, targetChatId);
     if (!conv) {
-      const isGroup = data.target_chat_id.endsWith("@g.us");
+      const isGroup = targetChatId.endsWith("@g.us");
       const { data: created, error: convErr } = await supabaseAdmin
         .from("conversations")
         .insert({
-          whapi_chat_id: data.target_chat_id,
-          name: data.target_name ?? data.target_chat_id,
+          whapi_chat_id: targetChatId,
+          name: data.target_name ?? targetChatId,
           is_group: isGroup,
         })
         .select("id, whapi_chat_id, inbound_count, consecutive_outbound, blocked, last_outbound_at, last_outbound_body")
@@ -116,7 +130,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
       .insert({
         user_id: context.userId,
         prompt: data.prompt,
-        target_chat_id: data.target_chat_id,
+        target_chat_id: targetChatId,
         target_name: data.target_name ?? null,
         status: "pending",
       })
@@ -152,7 +166,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
 
       const { sendTextMessage } = await import("./whapi.server");
       try {
-        await sendTextMessage(data.target_chat_id, body);
+        await sendTextMessage(targetChatId, body);
       } catch (e) {
         if (isWhapiRestrictionError(e)) {
           await supabaseAdmin
