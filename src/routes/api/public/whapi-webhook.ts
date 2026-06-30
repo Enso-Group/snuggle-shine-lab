@@ -209,10 +209,15 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             const { sendPresence, sendTextMessage } = await import("@/lib/whapi.server");
             sendPresence(m.chatId, "typing", 3).catch(() => {});
 
-            const { runAI } = await import("@/lib/ai-brain.server");
+            const { runAI, isTrivialMessage } = await import("@/lib/ai-brain.server");
+            if (isTrivialMessage(m.body)) {
+              console.log("[bot] trivial message skipped");
+              continue;
+            }
             let reply: string;
             try {
-              reply = await runAI({ systemPrompt, history, userMessage: m.body });
+              reply = await runAI({ systemPrompt, history, userMessage: m.body, chatId: m.chatId, source: "whatsapp" });
+              if (!reply) continue;
             } catch (e: any) {
               console.error("[bot] AI failure", e);
               continue;

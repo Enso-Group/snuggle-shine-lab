@@ -472,6 +472,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           systemPrompt,
           history: prior,
           userMessage: data.content,
+          source: "dashboard",
           extraTools,
           toolExecutor,
         });

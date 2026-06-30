@@ -1,5 +1,6 @@
-// AI brain — calls Lovable AI Gateway with web search tool, returns reply in Hebrew.
-// Uses raw fetch (OpenAI-compatible) to avoid extra deps.
+// AI brain — calls Lovable AI Gateway.
+// CREDIT CONSERVATION: aggressive caching, deduplication, trivial-message skip,
+// rate limiting, and lazy search. Only burns tokens when truly needed.
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -8,6 +9,100 @@ const SEARCH_REQUEST_TIMEOUT_MS = 6_000;
 const PAGE_FETCH_TIMEOUT_MS = 4_000;
 const AI_RUN_TIMEOUT_MS = 55_000;
 
+// ---------------------------------------------------------------------------
+// Rate limiting — per chat + global
+// ---------------------------------------------------------------------------
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_PER_CHAT = 10;
+const RATE_LIMIT_GLOBAL = 100;
+
+type RateBucket = { count: number; resetAt: number };
+const chatRateBuckets = new Map<string, RateBucket>();
+let globalBucket: RateBucket = { count: 0, resetAt: Date.now() + RATE_LIMIT_WINDOW_MS };
+
+function checkRateLimit(chatId?: string): void {
+  const now = Date.now();
+  if (now > globalBucket.resetAt) globalBucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+  globalBucket.count++;
+  if (globalBucket.count > RATE_LIMIT_GLOBAL) throw new Error("יותר מדי בקשות AI — נסה שוב בעוד דקה.");
+  if (chatId) {
+    let b = chatRateBuckets.get(chatId);
+    if (!b || now > b.resetAt) { b = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }; chatRateBuckets.set(chatId, b); }
+    b.count++;
+    if (b.count > RATE_LIMIT_PER_CHAT) throw new Error("יותר מדי הודעות — אנא המתן דקה.");
+  }
+  if (globalBucket.count % 500 === 0) {
+    const now2 = Date.now();
+    for (const [k, b] of chatRateBuckets.entries()) if (now2 > b.resetAt) chatRateBuckets.delete(k);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Response cache — skip identical prompts within TTL
+// ---------------------------------------------------------------------------
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX = 300;
+
+type CacheEntry = { reply: string; expiresAt: number };
+const responseCache = new Map<string, CacheEntry>();
+
+function cacheKey(systemPrompt: string, history: Array<{ role: string; content: string }>, userMessage: string): string {
+  const sp = systemPrompt.slice(-200);
+  const hist = history.slice(-2).map((h) => `${h.role}:${h.content.slice(0, 100)}`).join("|");
+  return `${sp}||${hist}||${userMessage.trim().toLowerCase()}`;
+}
+
+function getCached(key: string): string | null {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { responseCache.delete(key); return null; }
+  return entry.reply;
+}
+
+function setCache(key: string, reply: string): void {
+  if (responseCache.size >= CACHE_MAX) {
+    const firstKey = responseCache.keys().next().value;
+    if (firstKey) responseCache.delete(firstKey);
+  }
+  responseCache.set(key, { reply, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+// ---------------------------------------------------------------------------
+// Deduplication — exact same message in same chat within 30s = skip
+// ---------------------------------------------------------------------------
+const DEDUP_TTL_MS = 30_000;
+type DedupEntry = { ts: number };
+const dedupMap = new Map<string, DedupEntry>();
+
+function isDuplicate(chatId: string, userMessage: string): boolean {
+  const key = `${chatId}::${userMessage.trim().toLowerCase()}`;
+  const entry = dedupMap.get(key);
+  const now = Date.now();
+  if (entry && now - entry.ts < DEDUP_TTL_MS) return true;
+  dedupMap.set(key, { ts: now });
+  if (dedupMap.size > 1000) {
+    for (const [k, e] of dedupMap.entries()) if (now - e.ts > DEDUP_TTL_MS * 2) dedupMap.delete(k);
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Trivial message detection — skip AI entirely
+// ---------------------------------------------------------------------------
+const TRIVIAL_PATTERNS = [
+  /^[\p{Emoji}\s]{1,5}$/u,
+  /^(ok|okay|כן|לא|תודה|thanks|👍|🙏|✅|אוקי|אוקיי|נהדר|מעולה|בסדר|good|great|sure|cool|nice|wow|haha|lol|😊|😄|🔥|💪)$/iu,
+];
+
+export function isTrivialMessage(text: string): boolean {
+  const t = text.trim();
+  if (t.length <= 2) return true;
+  return TRIVIAL_PATTERNS.some((p) => p.test(t));
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -23,91 +118,58 @@ type ChatMessage = {
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
-  }
+  try { return await fetch(url, { ...init, signal: ctrl.signal }); }
+  finally { clearTimeout(t); }
 }
 
-// Web search via DuckDuckGo HTML, with content fetch for top results
-async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
+// ---------------------------------------------------------------------------
+// Web search — tight trigger conditions
+// ---------------------------------------------------------------------------
+async function fetchPageText(url: string, maxChars = 1500): Promise<string> {
   try {
-    const res = await fetchWithTimeout(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
-    }, PAGE_FETCH_TIMEOUT_MS);
+    const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" } }, PAGE_FETCH_TIMEOUT_MS);
     const html = await res.text();
-    // Strip scripts/styles, then tags
-    const cleaned = html
+    return html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#x27;/g, "'")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/\s+/g, " ")
-      .trim();
-    return cleaned.slice(0, maxChars);
-  } catch {
-    return "";
-  }
+      .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ").trim().slice(0, maxChars);
+  } catch { return ""; }
 }
 
 function decodeHtml(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ");
+  return s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
 }
-
-function stripTags(s: string): string {
-  return decodeHtml(s.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
-}
-
-function extractDuckDuckGoUrl(href: string): string {
+function stripTags(s: string): string { return decodeHtml(s.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim(); }
+function extractDDGUrl(href: string): string {
   const decoded = decodeHtml(href);
-  try {
-    const url = new URL(decoded, "https://duckduckgo.com");
-    const uddg = url.searchParams.get("uddg");
-    return uddg ? decodeURIComponent(uddg) : url.href;
-  } catch {
-    return decoded;
-  }
+  try { const u = new URL(decoded, "https://duckduckgo.com"); return u.searchParams.get("uddg") ? decodeURIComponent(u.searchParams.get("uddg")!) : u.href; }
+  catch { return decoded; }
 }
 
-async function searchDuckDuckGo(query: string, ua: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
-  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const res = await fetchWithTimeout(url, { headers: { "User-Agent": ua, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
+async function searchDDG(query: string, ua: string) {
+  const res = await fetchWithTimeout(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: { "User-Agent": ua, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
   const html = await res.text();
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   const blocks = html.split(/<div class="result results_links/gi);
-  for (let i = 1; i < blocks.length && results.length < 5; i++) {
-    const chunk = blocks[i].slice(0, 5000);
+  for (let i = 1; i < blocks.length && results.length < 4; i++) {
+    const chunk = blocks[i].slice(0, 4000);
     const link = chunk.match(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
     if (!link) continue;
-    const snippet = chunk.match(/<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ??
-      chunk.match(/<div[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ??
-      "";
-    results.push({ title: stripTags(link[2]), url: extractDuckDuckGoUrl(link[1]), snippet: stripTags(snippet) });
+    const snippet = chunk.match(/<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? chunk.match(/<div[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "";
+    results.push({ title: stripTags(link[2]), url: extractDDGUrl(link[1]), snippet: stripTags(snippet) });
   }
   return results;
 }
 
-async function searchBing(query: string, ua: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
-  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US`;
-  const res = await fetchWithTimeout(url, { headers: { "User-Agent": ua, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
+async function searchBing(query: string, ua: string) {
+  const res = await fetchWithTimeout(`https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US`, { headers: { "User-Agent": ua, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
   const html = await res.text();
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   const blocks = html.split(/<li class="b_algo"/gi);
-  for (let i = 1; i < blocks.length && results.length < 5; i++) {
-    const chunk = blocks[i].slice(0, 5000);
+  for (let i = 1; i < blocks.length && results.length < 4; i++) {
+    const chunk = blocks[i].slice(0, 4000);
     const link = chunk.match(/<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
     if (!link) continue;
     const snippet = chunk.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "";
@@ -116,27 +178,22 @@ async function searchBing(query: string, ua: string): Promise<Array<{ title: str
   return results;
 }
 
-function shouldSearchBeforeModel(text: string): boolean {
-  return /\b(news|today|latest|current|202[4-9]|stock|market|price|gpt|openai)\b/i.test(text) ||
-    /(חדשות|עדכני|היום|כרגע|מניה|מניות|שוק|מחיר|סקירה|כתבה|כתבות|חפש|בדוק)/i.test(text);
+function shouldSearch(text: string): boolean {
+  return /\b(news|today|latest|current|stock price|market cap|live|breaking)\b/i.test(text) ||
+    /(חדשות|עדכני|היום|כרגע|מחיר מניה|שוק ההון|סקירה|כתבה)/i.test(text);
 }
 
 async function webSearch(query: string): Promise<string> {
   const { logUsage } = await import("./usage-log.server");
   const start = Date.now();
-  const UA =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
+  const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
   try {
     let provider = "duckduckgo";
-    let results = await searchDuckDuckGo(query, UA);
-    if (results.length === 0) {
-      provider = "bing";
-      results = await searchBing(query, UA);
-    }
-
-    if (results.length === 0) {
+    let results = await searchDDG(query, UA);
+    if (!results.length) { provider = "bing"; results = await searchBing(query, UA); }
+    if (!results.length) {
       logUsage({ kind: "tool", tool_name: "web_search", provider, status: "success", duration_ms: Date.now() - start, meta: { query, results: 0 } });
-      return "לא נמצאו תוצאות. נסה ניסוח אחר של השאילתה.";
+      return "לא נמצאו תוצאות.";
     }
     const top = results.slice(0, 2);
     const pages = await Promise.all(top.map((r) => fetchPageText(r.url)));
@@ -152,31 +209,20 @@ async function webSearch(query: string): Promise<string> {
   }
 }
 
-
 const TOOLS = [
   {
     type: "function" as const,
     function: {
       name: "web_search",
-      description: "חיפוש מידע עדכני באינטרנט. השתמש כאשר נשאלת על אירועים אקטואליים, חדשות, או מידע שצריך להיות מעודכן.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "מילות החיפוש (יכול להיות באנגלית או עברית)" },
-        },
-        required: ["query"],
-      },
+      description: "חיפוש מידע עדכני באינטרנט. השתמש רק כאשר נשאלת על חדשות/אירועים/מחירים שדורשים מידע מעודכן.",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
     },
   },
 ];
 
 export type AIToolDef = {
   type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
+  function: { name: string; description: string; parameters: Record<string, unknown> };
 };
 
 export type AIRunInput = {
@@ -185,12 +231,22 @@ export type AIRunInput = {
   userMessage: string;
   extraTools?: AIToolDef[];
   toolExecutor?: (name: string, args: Record<string, unknown>) => Promise<string>;
+  chatId?: string;
 };
 
-
+// ---------------------------------------------------------------------------
+// Main AI runner
+// ---------------------------------------------------------------------------
 export async function runAI(input: AIRunInput & { source?: string }): Promise<string> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+
+  if (input.chatId && isDuplicate(input.chatId, input.userMessage)) return "";
+  const ck = cacheKey(input.systemPrompt, input.history, input.userMessage);
+  const cached = getCached(ck);
+  if (cached) return cached;
+  checkRateLimit(input.chatId);
+
   const { logUsage } = await import("./usage-log.server");
   const { estimateCostUSD, providerFromModel } = await import("./ai-pricing.server");
 
@@ -199,22 +255,17 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
 הנחיות סגנון קריטיות (חובה):
 - דבר/י כמו אדם אמיתי בוואטסאפ: קצר, ישיר, חם, בלי רשמיות מיותרת.
 - אסור להתחיל ב"נראה ש...", "סליחה, לא הצלחתי...", "כעוזר AI..." או כל פתיח שמסגיר שאתה בוט.
-- אם החיפוש לא החזיר משהו טוב, פשוט תגיד מה כן ידוע לך ותציע כיוון — בלי להתנצל ובלי "האם תרצה ש...".
-- אל תחזור על עצמך, אל תכפיל משפטים, ואל תוסיף "אם יש שאלות נוספות אני כאן".
-- כשמחפשים מידע ולא נמצא — תנסח/י שאלת חיפוש שונה (אנגלית, מילים אחרות) ותחפש/י שוב לפני שמוותרים.
-- תשובה ממוצעת: 1–4 משפטים. רק אם באמת מבקשים פירוט — תרחיב/י.`;
+- אל תחזור על עצמך, ואל תוסיף "אם יש שאלות נוספות אני כאן".
+- תשובה ממוצעת: 1–4 משפטים בלבד.`;
 
   const messages: ChatMessage[] = [
     { role: "system", content: input.systemPrompt + humanize },
     ...input.history.map((h) => ({ role: h.role, content: h.content })),
   ];
 
-  if (shouldSearchBeforeModel(input.userMessage)) {
+  if (shouldSearch(input.userMessage)) {
     const searchResults = await webSearch(input.userMessage);
-    messages.push({
-      role: "system",
-      content: `תוצאות חיפוש אינטרנט עדכניות לשאלה של המשתמש:\n${searchResults}\n\nהשתמש/י במידע הזה בתשובה, ואם יש מקורות רלוונטיים שמור/י אותם קצר.`
-    });
+    messages.push({ role: "system", content: `תוצאות חיפוש:\n${searchResults}` });
   }
 
   messages.push({ role: "user", content: input.userMessage });
@@ -225,9 +276,7 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
 
   for (let step = 0; step < 6; step++) {
     const remainingMs = runDeadline - Date.now();
-    if (remainingMs <= 0) {
-      throw new Error("ה-AI לקח יותר מדי זמן לסיים את הבקשה. נסי בקשה קצרה יותר או שליחה ישירה.");
-    }
+    if (remainingMs <= 0) throw new Error("AI timeout.");
     const start = Date.now();
     let res: Response;
     try {
@@ -238,42 +287,32 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
       }, Math.min(AI_REQUEST_TIMEOUT_MS, remainingMs));
     } catch (e: any) {
       logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { step } });
-      if (e?.name === "AbortError") {
-        throw new Error("ה-AI לקח יותר מדי זמן לענות. נסי שוב עם בקשה קצרה יותר או בלי חיפוש אינטרנט.");
-      }
+      if (e?.name === "AbortError") throw new Error("AI timeout.");
       throw e;
     }
 
     if (!res.ok) {
       const txt = await res.text();
       logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", http_status: res.status, duration_ms: Date.now() - start, error_message: txt.slice(0, 500), meta: { step } });
-      if (res.status === 429) throw new Error("יותר מדי בקשות ל-AI — נסי שוב בעוד דקה.");
-      if (res.status === 402) throw new Error("נגמרו הקרדיטים ל-AI. הוסיפי קרדיטים בהגדרות.");
+      if (res.status === 429) throw new Error("יותר מדי בקשות — נסי שוב בעוד דקה.");
+      if (res.status === 402) throw new Error("נגמרו הקרדיטים. הוסיפי קרדיטים בהגדרות.");
       throw new Error(`AI error ${res.status}: ${txt.slice(0, 200)}`);
     }
+
     const data = await res.json();
     const usage = data.usage ?? {};
     const inTok = Number(usage.prompt_tokens ?? 0);
     const outTok = Number(usage.completion_tokens ?? 0);
     const totalTok = Number(usage.total_tokens ?? inTok + outTok);
-    const cost = estimateCostUSD(DEFAULT_MODEL, inTok, outTok);
     logUsage({
-      kind: "llm",
-      provider: providerFromModel(DEFAULT_MODEL),
-      model: DEFAULT_MODEL,
-      source,
-      status: "success",
-      http_status: res.status,
-      duration_ms: Date.now() - start,
-      prompt_tokens: inTok,
-      completion_tokens: outTok,
-      total_tokens: totalTok,
-      cost_usd: cost,
+      kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source,
+      status: "success", http_status: res.status, duration_ms: Date.now() - start,
+      prompt_tokens: inTok, completion_tokens: outTok, total_tokens: totalTok,
+      cost_usd: estimateCostUSD(DEFAULT_MODEL, inTok, outTok),
       meta: { step, finish_reason: data.choices?.[0]?.finish_reason },
     });
 
-    const choice = data.choices?.[0];
-    const msg = choice?.message;
+    const msg = data.choices?.[0]?.message;
     if (!msg) throw new Error("AI returned no message");
 
     if (msg.tool_calls?.length) {
@@ -292,24 +331,23 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
             logUsage({ kind: "tool", tool_name: name, source, status: "success", duration_ms: Date.now() - toolStart, meta: { args } });
           } catch (e: any) {
             result = `שגיאה בהרצת ${name}: ${String(e?.message ?? e)}`;
-            logUsage({ kind: "tool", tool_name: name, source, status: "error", duration_ms: Date.now() - toolStart, error_message: String(e?.message ?? e), meta: { args } });
+            logUsage({ kind: "tool", tool_name: name, source, status: "error", duration_ms: Date.now() - toolStart, error_message: String(e?.message ?? e) });
           }
         } else {
           result = "כלי לא ידוע.";
-          logUsage({ kind: "tool", tool_name: name, source, status: "error", duration_ms: Date.now() - toolStart, error_message: "unknown tool" });
         }
         messages.push({ role: "tool", tool_call_id: tc.id, content: result });
       }
       continue;
     }
 
-    return (msg.content ?? "").trim() || "סליחה, לא הצלחתי להבין.";
+    const reply = (msg.content ?? "").trim() || "סליחה, לא הצלחתי להבין.";
+    setCache(ck, reply);
+    return reply;
   }
-  return "סליחה, נתקעתי בחיפוש מידע. נסי שוב.";
+  return "סליחה, נתקעתי. נסי שוב.";
 }
 
-
-// Standalone "command from dashboard": prompt + send to chat
 export async function runCommand(prompt: string, systemPrompt: string, source = "send"): Promise<string> {
   return runAI({
     source,
