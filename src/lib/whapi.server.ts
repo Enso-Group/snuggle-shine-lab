@@ -68,7 +68,10 @@ function sanitizeWhapiTo(chatId: string): string {
   const local = atIdx >= 0 ? raw.slice(0, atIdx) : raw;
   const suffix = atIdx >= 0 ? raw.slice(atIdx) : "";
   // Whapi requires local part to match ^[\d-]{9,31}$ — strip device suffixes like ":5" and any other chars.
-  const cleanedLocal = normalizePhoneLocalPart(local.split(":")[0]);
+  const baseLocal = local.split(":")[0];
+  const cleanedLocal = suffix === "@g.us"
+    ? baseLocal.replace(/[^\d-]/g, "")
+    : normalizePhoneLocalPart(baseLocal);
   return suffix ? `${cleanedLocal}${suffix}` : cleanedLocal;
 }
 
