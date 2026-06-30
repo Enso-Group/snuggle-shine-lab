@@ -146,7 +146,7 @@ function CandidatesPage() {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <Textarea
-            placeholder='Describe who you\'re looking for… e.g. "Senior React developer, startup background, based in Tel Aviv"'
+            placeholder={`Describe who you're looking for... e.g. "Senior React developer, startup background, based in Tel Aviv"`}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
