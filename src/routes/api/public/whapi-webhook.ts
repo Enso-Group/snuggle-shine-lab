@@ -284,10 +284,40 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
             if (!reply) continue; // AI returned empty (dedup)
 
-            // If a newer inbound arrived while we were thinking, abort
+            // If a newer inbound arrived while we were thinking, abort.
+            // In-memory fast path (best-effort on serverless)...
             if ((latestInboundAt.get(m.chatId) ?? 0) > myInboundTs) {
-              console.log("[bot] superseded by newer inbound, skipping send");
+              console.log("[bot] superseded by newer inbound (memory), skipping send");
               continue;
+            }
+            // ...plus a DURABLE check against the DB so a burst of messages
+            // doesn't produce duplicate replies when each webhook call runs in a
+            // fresh isolate (module memory doesn't persist across invocations).
+            {
+              const { data: newer } = await supabaseAdmin
+                .from("messages")
+                .select("id, created_at")
+                .eq("conversation_id", convId)
+                .eq("direction", "inbound")
+                .gt("created_at", new Date(myInboundTs).toISOString())
+                .limit(1);
+              if (newer && newer.length > 0) {
+                console.log("[bot] superseded by newer inbound (db), skipping send");
+                continue;
+              }
+              // Guard against duplicate replies: if we already sent an outbound
+              // AFTER this inbound arrived, another isolate already answered.
+              const { data: alreadyReplied } = await supabaseAdmin
+                .from("messages")
+                .select("id")
+                .eq("conversation_id", convId)
+                .eq("direction", "outbound")
+                .gt("created_at", new Date(myInboundTs).toISOString())
+                .limit(1);
+              if (alreadyReplied && alreadyReplied.length > 0) {
+                console.log("[bot] already replied to this inbound, skipping duplicate");
+                continue;
+              }
             }
 
             // Re-check anti-ban guards immediately before sending
