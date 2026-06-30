@@ -3,6 +3,10 @@
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
+const AI_REQUEST_TIMEOUT_MS = 18_000;
+const SEARCH_REQUEST_TIMEOUT_MS = 6_000;
+const PAGE_FETCH_TIMEOUT_MS = 4_000;
+const AI_RUN_TIMEOUT_MS = 55_000;
 
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -16,16 +20,22 @@ type ChatMessage = {
   }>;
 };
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // Web search via DuckDuckGo HTML, with content fetch for top results
 async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(url, {
-      signal: ctrl.signal,
+    const res = await fetchWithTimeout(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
-    });
-    clearTimeout(t);
+    }, PAGE_FETCH_TIMEOUT_MS);
     const html = await res.text();
     // Strip scripts/styles, then tags
     const cleaned = html
@@ -61,7 +71,7 @@ async function webSearch(query: string): Promise<string> {
     // "anomaly detected" block page for serverless egress (always 0 results),
     // so we use Brave which serves results without an API key.
     const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
-    const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "text/html" } });
+    const res = await fetchWithTimeout(url, { headers: { "User-Agent": UA, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
     const html = await res.text();
     const results: Array<{ title: string; url: string; snippet: string }> = [];
     // Each web result block starts with data-type="web"; the next block (or end of section) bounds it.
@@ -157,18 +167,26 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
 
   const allTools = [...TOOLS, ...(input.extraTools ?? [])];
   const source = input.source ?? "chat";
+  const runDeadline = Date.now() + AI_RUN_TIMEOUT_MS;
 
   for (let step = 0; step < 6; step++) {
+    const remainingMs = runDeadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error("ה-AI לקח יותר מדי זמן לסיים את הבקשה. נסי בקשה קצרה יותר או שליחה ישירה.");
+    }
     const start = Date.now();
     let res: Response;
     try {
-      res = await fetch(GATEWAY_URL, {
+      res = await fetchWithTimeout(GATEWAY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({ model: DEFAULT_MODEL, messages, tools: allTools, tool_choice: "auto" }),
-      });
+      }, Math.min(AI_REQUEST_TIMEOUT_MS, remainingMs));
     } catch (e: any) {
       logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { step } });
+      if (e?.name === "AbortError") {
+        throw new Error("ה-AI לקח יותר מדי זמן לענות. נסי שוב עם בקשה קצרה יותר או בלי חיפוש אינטרנט.");
+      }
       throw e;
     }
 
