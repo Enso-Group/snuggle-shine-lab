@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { syncConversationHistory } from "@/lib/participants.functions";
+import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/conversations/$id")({
   component: ConvView,
@@ -13,19 +16,40 @@ function ConvView() {
   const { id } = Route.useParams();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [conv, setConv] = useState<{ name: string | null; whapi_chat_id: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const sync = useServerFn(syncConversationHistory);
 
   useEffect(() => {
     let mounted = true;
-    async function load() {
-      const [{ data: c }, { data: m }] = await Promise.all([
-        supabase.from("conversations").select("name, whapi_chat_id").eq("id", id).maybeSingle(),
-        supabase.from("messages").select("*").eq("conversation_id", id).order("created_at", { ascending: true }).limit(500),
-      ]);
+    async function loadMessages() {
+      const { data: m } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", id)
+        .order("created_at", { ascending: true })
+        .limit(5000);
+      if (mounted) setMsgs((m ?? []) as Msg[]);
+    }
+    async function run() {
+      const { data: c } = await supabase
+        .from("conversations")
+        .select("name, whapi_chat_id")
+        .eq("id", id)
+        .maybeSingle();
       if (!mounted) return;
       setConv(c as any);
-      setMsgs((m ?? []) as Msg[]);
+      await loadMessages();
+      setSyncing(true);
+      try {
+        await sync({ data: { conversationId: id } });
+      } catch (e) {
+        console.error("sync history failed", e);
+      }
+      if (!mounted) return;
+      await loadMessages();
+      setSyncing(false);
     }
-    load();
+    run();
     const ch = supabase
       .channel("conv-" + id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` }, (payload) => {
@@ -36,7 +60,7 @@ function ConvView() {
       mounted = false;
       supabase.removeChannel(ch);
     };
-  }, [id]);
+  }, [id, sync]);
 
   return (
     <div className="flex flex-col h-screen">
