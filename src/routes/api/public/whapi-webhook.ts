@@ -71,6 +71,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
         const enabled = settings?.enabled !== false;
         const systemPrompt = settings?.system_prompt ?? "אתה עוזר חכם בעברית.";
+        console.log("[webhook] config — enabled:", enabled, "require_approval_all:", settings?.require_approval_all, "bot_name:", settings?.bot_name);
 
         const {
           isStopRequest,
@@ -89,6 +90,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
             if (!m.body || !m.body.trim()) continue;
             const isFreshMessage = Math.abs(Date.now() - m.ts) <= 2 * 60 * 1000;
+            console.log(`[webhook] msg chatId=${m.chatId} fromMe=${m.fromMe} fresh=${isFreshMessage} body="${m.body.slice(0,60)}"`);
             let ownUser: { id?: string; name?: string } = {};
             if (m.fromMe) {
               try {
@@ -161,12 +163,12 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             // Update inbound counters + auto-block if stop request
             const { blockedNow } = await recordInbound(supabaseAdmin, convId, m.body);
 
-            if (!enabled) continue;
+            if (!enabled) { console.log("[webhook] skip: bot disabled"); continue; }
             if (blockedNow) {
-              // Honor stop silently — no confirmation reply (never message them again)
+              console.log("[webhook] skip: blockedNow (stop word)");
               continue;
             }
-            if (isStopRequest(m.body)) continue; // double-guard
+            if (isStopRequest(m.body)) { console.log("[webhook] skip: stop request"); continue; }
 
             // In groups, only reply if addressed
             if (m.isGroup) {
@@ -176,7 +178,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
                 lower.includes("@" + botName.toLowerCase()) ||
                 (botName && lower.includes(botName.toLowerCase())) ||
                 /@\d+/.test(m.body);
-              if (!mentioned) continue;
+              if (!mentioned) { console.log("[webhook] skip: group msg, bot not mentioned"); continue; }
             }
 
             // Track latest inbound for this chat so a newer message cancels this reply
@@ -225,7 +227,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
               // Dedup hit (empty string) — skip direct send, but still queue for approval
               if (!reply && !requireApproval) continue;
             } catch (e: any) {
-              console.error("[bot] AI failure", e);
+              console.error("[bot] AI failure:", String((e as any)?.message ?? e));
               // In approval mode still queue so the human can write/fix the reply
               if (!requireApproval) continue;
             }
@@ -233,15 +235,28 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             // Global approval gate — queue instead of sending.
             // Runs before the anti-ban / supersede checks so every message reaches approvals.
             if (requireApproval) {
-              const { data: admin } = await supabaseAdmin
+              // Find any authenticated user to own the approval row.
+              // Prefer an admin from user_roles, but fall back to any user in auth.users
+              // so the insert never fails silently just because user_roles is empty.
+              let ownerUserId: string | null = null;
+
+              const { data: adminRole } = await supabaseAdmin
                 .from("user_roles")
                 .select("user_id")
                 .eq("role", "admin")
                 .limit(1)
                 .maybeSingle();
-              if (admin?.user_id) {
+              ownerUserId = adminRole?.user_id ?? null;
+
+              if (!ownerUserId) {
+                // Fall back: first user in auth.users
+                const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1 });
+                ownerUserId = users?.[0]?.id ?? null;
+              }
+
+              if (ownerUserId) {
                 await supabaseAdmin.from("scheduled_approvals").insert({
-                  user_id: admin.user_id,
+                  user_id: ownerUserId,
                   conversation_id: convId,
                   target_chat_id: m.chatId,
                   target_name: m.chatName || m.senderName || m.chatId,
@@ -249,9 +264,9 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
                   source: "ai_reply",
                   status: "pending",
                 });
-                console.log("[bot] queued for approval, body length:", reply.length);
+                console.log("[bot] queued for approval, owner:", ownerUserId, "body length:", reply.length);
               } else {
-                console.warn("[bot] require_approval_all is set but no admin user found in user_roles");
+                console.error("[bot] APPROVAL FAILED — no user found in auth.users to own the row");
               }
               continue;
             }
@@ -271,7 +286,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
             if (conv) {
               const guard = await checkOutboundAllowed(supabaseAdmin, conv, reply);
               if (!guard.ok) {
-                console.warn("[bot] outbound blocked", guard.code, guard.reason);
+                console.warn("[bot] outbound blocked by anti-ban:", guard.code, guard.reason);
                 continue;
               }
             }
