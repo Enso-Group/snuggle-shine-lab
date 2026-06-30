@@ -304,10 +304,10 @@ export async function listChats(): Promise<Array<{ id: string; name: string; typ
   }
 }
 
-export async function checkHealth(): Promise<{ ok: boolean; status?: string; userName?: string; error?: string }> {
+export async function checkHealth(): Promise<{ ok: boolean; status?: string; userName?: string; userId?: string; error?: string }> {
   try {
     const r = await whapi<{ status?: { text?: string }; user?: { name?: string; pushname?: string; id?: string } }>("/health");
-    return { ok: true, status: r.status?.text, userName: r.user?.name || r.user?.pushname || r.user?.id };
+    return { ok: true, status: r.status?.text, userName: r.user?.name || r.user?.pushname || r.user?.id, userId: r.user?.id };
   } catch (e: any) {
     return { ok: false, error: String(e?.message ?? e) };
   }
