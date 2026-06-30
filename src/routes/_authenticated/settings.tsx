@@ -28,18 +28,20 @@ function SettingsPage() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [botName, setBotName] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [requireApprovalAll, setRequireApprovalAll] = useState(false);
 
   useEffect(() => {
     if (settings) {
       setSystemPrompt(settings.system_prompt);
       setBotName(settings.bot_name);
       setEnabled(settings.enabled);
+      setRequireApprovalAll((settings as any).require_approval_all ?? false);
     }
   }, [settings]);
 
   const save = useMutation({
     mutationFn: () =>
-      upFn({ data: { id: settings!.id, system_prompt: systemPrompt, bot_name: botName, enabled } }),
+      upFn({ data: { id: settings!.id, system_prompt: systemPrompt, bot_name: botName, enabled, require_approval_all: requireApprovalAll } }),
     onSuccess: () => {
       toast.success("נשמר!");
       qc.invalidateQueries({ queryKey: ["botSettings"] });
