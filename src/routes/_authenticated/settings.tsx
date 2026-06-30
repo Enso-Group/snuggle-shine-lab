@@ -107,6 +107,15 @@ function SettingsPage() {
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </div>
+          <div className="flex items-center justify-between p-3 border rounded-md border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
+            <div>
+              <Label>דרוש אישור לכל הודעה יוצאת</Label>
+              <p className="text-xs text-muted-foreground">
+                כשמופעל, כל הודעה שהבוט רוצה לשלוח (תשובה, תזמון או ידנית) תיכנס לעמוד "אישור הודעות" עם שלח / ערוך / מחק.
+              </p>
+            </div>
+            <Switch checked={requireApprovalAll} onCheckedChange={setRequireApprovalAll} />
+          </div>
           <div>
             <Label htmlFor="botName">שם הבוט (לזיהוי בקבוצות)</Label>
             <Input id="botName" value={botName} onChange={(e) => setBotName(e.target.value)} />
