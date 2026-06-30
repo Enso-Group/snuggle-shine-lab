@@ -50,16 +50,18 @@ const MAX_DISTINCT_CHATS_PER_HOUR = 10;
 export type GuardOk = { ok: true; jitterMs: number };
 export type GuardBlock = { ok: false; reason: string; code: string };
 export type GuardResult = GuardOk | GuardBlock;
+export type GuardOptions = { allowColdContact?: boolean };
 
 export async function checkOutboundAllowed(
   supabaseAdmin: any,
   conv: ConversationRow,
   body: string,
+  options: GuardOptions = {},
 ): Promise<GuardResult> {
   if (conv.blocked) {
     return { ok: false, code: "blocked", reason: "איש קשר חסום (ביקש להפסיק או הוסר ידנית)." };
   }
-  if (!conv.inbound_count || conv.inbound_count <= 0) {
+  if (!options.allowColdContact && (!conv.inbound_count || conv.inbound_count <= 0)) {
     return {
       ok: false,
       code: "cold_contact",

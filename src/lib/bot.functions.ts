@@ -139,7 +139,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
       }
 
       // Enforce all anti-ban guards
-      const guard = await checkOutboundAllowed(supabaseAdmin, conv, body);
+      const guard = await checkOutboundAllowed(supabaseAdmin, conv, body, { allowColdContact: true });
       if (!guard.ok) {
         if (log?.id) {
           await context.supabase
