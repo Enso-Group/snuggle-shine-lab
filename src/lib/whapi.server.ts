@@ -2,6 +2,7 @@
 // Docs: https://whapi.readme.io/reference
 
 const WHAPI_BASE = "https://gate.whapi.cloud";
+const WHAPI_TIMEOUT_MS = 20_000;
 
 function getToken(): string {
   const token = process.env.WHAPI_TOKEN;
@@ -11,16 +12,29 @@ function getToken(): string {
 
 async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${WHAPI_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "User-Agent": "Mozilla/5.0 (compatible; Lovable WhatsApp sync)",
-      ...(init?.headers ?? {}),
-    },
-  });
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), WHAPI_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${WHAPI_BASE}${path}`, {
+      ...init,
+      signal: ctrl.signal,
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; Lovable WhatsApp sync)",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error("החיבור ל-WhatsApp לקח יותר מדי זמן. בדקי שהחיבור פעיל ונסי שוב.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
   const text = await res.text();
   if (!res.ok) {
     if (res.status === 402 && text.includes("trial version limit exceeded")) {

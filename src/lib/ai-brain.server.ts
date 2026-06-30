@@ -3,8 +3,10 @@
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
-const AI_REQUEST_TIMEOUT_MS = 25_000;
-const SEARCH_REQUEST_TIMEOUT_MS = 8_000;
+const AI_REQUEST_TIMEOUT_MS = 18_000;
+const SEARCH_REQUEST_TIMEOUT_MS = 6_000;
+const PAGE_FETCH_TIMEOUT_MS = 4_000;
+const AI_RUN_TIMEOUT_MS = 55_000;
 
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -33,7 +35,7 @@ async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
   try {
     const res = await fetchWithTimeout(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
-    }, 6_000);
+    }, PAGE_FETCH_TIMEOUT_MS);
     const html = await res.text();
     // Strip scripts/styles, then tags
     const cleaned = html
@@ -165,8 +167,13 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
 
   const allTools = [...TOOLS, ...(input.extraTools ?? [])];
   const source = input.source ?? "chat";
+  const runDeadline = Date.now() + AI_RUN_TIMEOUT_MS;
 
   for (let step = 0; step < 6; step++) {
+    const remainingMs = runDeadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error("ה-AI לקח יותר מדי זמן לסיים את הבקשה. נסי בקשה קצרה יותר או שליחה ישירה.");
+    }
     const start = Date.now();
     let res: Response;
     try {
@@ -174,7 +181,7 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({ model: DEFAULT_MODEL, messages, tools: allTools, tool_choice: "auto" }),
-      }, AI_REQUEST_TIMEOUT_MS);
+      }, Math.min(AI_REQUEST_TIMEOUT_MS, remainingMs));
     } catch (e: any) {
       logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { step } });
       if (e?.name === "AbortError") {
