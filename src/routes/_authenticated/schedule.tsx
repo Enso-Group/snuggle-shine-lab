@@ -178,6 +178,11 @@ function SchedulePage() {
                     {r.target_name ?? r.target_chat_id}
                   </p>
                   <p className="line-clamp-2 whitespace-pre-wrap" title={r.body}>{r.body}</p>
+                  {r.require_approval && (
+                    <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400">
+                      <ShieldQuestion className="size-3" />דורש אישור
+                    </Badge>
+                  )}
                   <div className="flex gap-1 pt-1">
                     <ScheduleDialog targets={allTargets} onSaved={invalidate} existing={r}>
                       <Button size="icon" variant="ghost" className="h-6 w-6"><Pencil className="size-3" /></Button>
