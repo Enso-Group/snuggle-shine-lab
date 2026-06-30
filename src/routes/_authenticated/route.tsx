@@ -22,6 +22,7 @@ const NAV = [
   { to: "/chat", label: "צ'אט AI", icon: Bot },
   { to: "/send", label: "שלח הודעה", icon: Send },
   { to: "/schedule", label: "תזמון שבועי", icon: CalendarClock },
+  { to: "/approvals", label: "אישור הודעות", icon: Inbox },
   { to: "/settings", label: "הגדרות", icon: SettingsIcon },
   { to: "/logs", label: "לוגים", icon: ScrollText },
 ] as const;
