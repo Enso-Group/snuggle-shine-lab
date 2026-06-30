@@ -95,6 +95,23 @@ function SchedulePage() {
     onSuccess: invalidate,
   });
 
+  const { data: pending = [] } = useQuery({
+    queryKey: ["scheduled-approvals"],
+    queryFn: () => pendingFn() as Promise<Approval[]>,
+    refetchInterval: 30000,
+  });
+  const invalidateApprovals = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
+  const approve = useMutation({
+    mutationFn: (id: string) => approveFn({ data: { id } }),
+    onSuccess: () => { invalidateApprovals(); toast.success("נשלח"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) => rejectFn({ data: { id } }),
+    onSuccess: () => { invalidateApprovals(); toast.success("נדחה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const byDay = DAYS.map((_, i) => rows.filter((r) => r.day_of_week === i).sort((a, b) => a.send_time.localeCompare(b.send_time)));
 
   return (
@@ -108,6 +125,35 @@ function SchedulePage() {
           <Button><Plus className="size-4 ms-2" />הודעה חדשה</Button>
         </ScheduleDialog>
       </div>
+
+      {pending.length > 0 && (
+        <Card className="border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldQuestion className="size-4 text-amber-600" />
+              ממתינות לאישור ({pending.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pending.map((p) => (
+              <div key={p.id} className="rounded-md border bg-background p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  {p.target_name ?? p.target_chat_id} · {new Date(p.created_at).toLocaleString("he-IL")}
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{p.body}</p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => approve.mutate(p.id)} disabled={approve.isPending}>
+                    <Check className="size-3 ms-1" />אשר ושלח
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => reject.mutate(p.id)} disabled={reject.isPending}>
+                    <X className="size-3 ms-1" />דחה
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
         {DAYS.map((day, i) => (
