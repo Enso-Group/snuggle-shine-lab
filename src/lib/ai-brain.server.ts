@@ -207,7 +207,6 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
   const messages: ChatMessage[] = [
     { role: "system", content: input.systemPrompt + humanize },
     ...input.history.map((h) => ({ role: h.role, content: h.content })),
-    { role: "user", content: input.userMessage },
   ];
 
   if (shouldSearchBeforeModel(input.userMessage)) {
@@ -217,6 +216,8 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
       content: `תוצאות חיפוש אינטרנט עדכניות לשאלה של המשתמש:\n${searchResults}\n\nהשתמש/י במידע הזה בתשובה, ואם יש מקורות רלוונטיים שמור/י אותם קצר.`
     });
   }
+
+  messages.push({ role: "user", content: input.userMessage });
 
   const allTools = [...TOOLS, ...(input.extraTools ?? [])];
   const source = input.source ?? "chat";
