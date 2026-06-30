@@ -42,7 +42,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
 
         const { data: settings } = await supabaseAdmin
           .from("bot_settings")
-          .select("id, system_prompt, bot_name, enabled, webhook_secret")
+          .select("id, system_prompt, bot_name, enabled, webhook_secret, require_approval_all")
           .order("created_at", { ascending: true })
           .limit(1)
           .maybeSingle();
