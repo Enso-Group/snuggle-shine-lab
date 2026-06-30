@@ -289,6 +289,17 @@ function ScheduleDialog({
             <Label>תוכן ההודעה</Label>
             <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} />
           </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <ShieldQuestion className="size-4" />דרוש אישור לפני שליחה
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                כשמופעל, הבוט יבקש ממך אישור במסך זה במקום לשלוח אוטומטית.
+              </p>
+            </div>
+            <Switch checked={requireApproval} onCheckedChange={setRequireApproval} />
+          </div>
         </div>
         <DialogFooter>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
