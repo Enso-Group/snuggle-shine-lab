@@ -147,7 +147,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
             .update({ status: "blocked", result: `[${guard.code}] ${guard.reason}` })
             .eq("id", log.id);
         }
-        throw new Error(guard.reason);
+        return { ok: false, blocked: true, code: guard.code, reason: guard.reason, body };
       }
 
       const { sendTextMessage } = await import("./whapi.server");
@@ -192,7 +192,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
           .update({ status: "error", result: msg.slice(0, 2000) })
           .eq("id", log.id);
       }
-      throw new Error(msg);
+      return { ok: false, blocked: false, code: "send_error", reason: msg };
     }
   });
 

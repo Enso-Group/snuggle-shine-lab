@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { ChevronsUpDown, Check } from "lucide-react";
+import { ChevronsUpDown, Check, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listWhapiGroups, sendManualMessage } from "@/lib/bot.functions";
 
@@ -43,6 +44,7 @@ function SendPage() {
   const [search, setSearch] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"direct" | "ai">("ai");
+  const [sendNotice, setSendNotice] = useState<{ type: "blocked" | "error" | "success"; title: string; message: string } | null>(null);
 
   const allTargets = useMemo(() => [
     ...(data?.groups ?? []).map((g) => ({ id: g.id, name: `👥 ${g.name}`, type: "group" as const })),
@@ -56,11 +58,22 @@ function SendPage() {
 
   const send = useMutation({
     mutationFn: () => sendFn({ data: { target_chat_id: target, target_name: targetName || target, prompt, mode } }),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (!result.ok) {
+        const title = result.blocked ? "השליחה נחסמה להגנה על החשבון" : "השליחה נכשלה";
+        setSendNotice({ type: result.blocked ? "blocked" : "error", title, message: result.reason });
+        toast[result.blocked ? "warning" : "error"](result.reason);
+        return;
+      }
       toast.success("נשלח!");
+      setSendNotice({ type: "success", title: "נשלח בהצלחה", message: result.body });
       setPrompt("");
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => {
+      const message = e.message || "שגיאה לא צפויה בשליחה";
+      setSendNotice({ type: "error", title: "השליחה נכשלה", message });
+      toast.error(message);
+    },
   });
 
   return (
@@ -78,6 +91,16 @@ function SendPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {sendNotice && (
+            <Alert variant={sendNotice.type === "error" ? "destructive" : "default"}>
+              {sendNotice.type !== "success" && <AlertTriangle className="size-4" />}
+              <AlertTitle>{sendNotice.title}</AlertTitle>
+              <AlertDescription className="whitespace-pre-wrap break-words">
+                {sendNotice.message}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div>
             <Label>בחרי יעד</Label>
             <Popover open={open} onOpenChange={setOpen}>
