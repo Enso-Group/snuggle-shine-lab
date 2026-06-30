@@ -87,13 +87,28 @@ export const sendManualMessage = createServerFn({ method: "POST" })
       raiseAdminAlert,
     } = await import("./anti-ban.server");
 
-    // Conversation MUST exist + have prior inbound (no cold contacts / broadcasts)
-    const conv = await loadConversationByChatId(supabaseAdmin, data.target_chat_id);
+    // Admin chose the recipient explicitly. If we don't have a conversation
+    // row yet (e.g. manual chat id / first outbound to a group), create one
+    // so downstream guards and logging have something to attach to.
+    let conv = await loadConversationByChatId(supabaseAdmin, data.target_chat_id);
     if (!conv) {
-      throw new Error(
-        "אסור לשלוח לאיש קשר שלא יזם שיחה. שלחי רק למי שכתב לבוט קודם.",
-      );
+      const isGroup = data.target_chat_id.endsWith("@g.us");
+      const { data: created, error: convErr } = await supabaseAdmin
+        .from("conversations")
+        .insert({
+          whapi_chat_id: data.target_chat_id,
+          name: data.target_name ?? data.target_chat_id,
+          is_group: isGroup,
+        })
+        .select("id, whapi_chat_id, inbound_count, consecutive_outbound, blocked, last_outbound_at, last_outbound_body")
+        .single();
+      if (convErr || !created) {
+        throw new Error(`לא ניתן ליצור שיחה חדשה: ${convErr?.message ?? "unknown"}`);
+      }
+      conv = created as NonNullable<typeof conv>;
     }
+
+
 
     // Log command (pending)
     const { data: log } = await context.supabase
