@@ -237,6 +237,50 @@ export type Database = {
           },
         ]
       }
+      scheduled_approvals: {
+        Row: {
+          body: string
+          created_at: string
+          decided_at: string | null
+          id: string
+          scheduled_message_id: string | null
+          status: string
+          target_chat_id: string
+          target_name: string | null
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          decided_at?: string | null
+          id?: string
+          scheduled_message_id?: string | null
+          status?: string
+          target_chat_id: string
+          target_name?: string | null
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          decided_at?: string | null
+          id?: string
+          scheduled_message_id?: string | null
+          status?: string
+          target_chat_id?: string
+          target_name?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_approvals_scheduled_message_id_fkey"
+            columns: ["scheduled_message_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scheduled_messages: {
         Row: {
           body: string
@@ -245,6 +289,7 @@ export type Database = {
           enabled: boolean
           id: string
           last_sent_at: string | null
+          require_approval: boolean
           send_time: string
           target_chat_id: string
           target_name: string | null
@@ -259,6 +304,7 @@ export type Database = {
           enabled?: boolean
           id?: string
           last_sent_at?: string | null
+          require_approval?: boolean
           send_time: string
           target_chat_id: string
           target_name?: string | null
@@ -273,6 +319,7 @@ export type Database = {
           enabled?: boolean
           id?: string
           last_sent_at?: string | null
+          require_approval?: boolean
           send_time?: string
           target_chat_id?: string
           target_name?: string | null

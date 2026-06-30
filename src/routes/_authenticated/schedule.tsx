@@ -12,13 +12,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, Pencil } from "lucide-react";
+import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion } from "lucide-react";
 import {
   listScheduledMessages,
   createScheduledMessage,
   updateScheduledMessage,
   deleteScheduledMessage,
   sendScheduledNow,
+  listPendingApprovals,
+  approvePending,
+  rejectPending,
 } from "@/lib/schedule.functions";
 import { listWhapiGroups } from "@/lib/bot.functions";
 
@@ -37,7 +40,16 @@ type Row = {
   target_name: string | null;
   body: string;
   enabled: boolean;
+  require_approval: boolean;
   last_sent_at: string | null;
+};
+
+type Approval = {
+  id: string;
+  target_chat_id: string;
+  target_name: string | null;
+  body: string;
+  created_at: string;
 };
 
 function SchedulePage() {
@@ -48,6 +60,9 @@ function SchedulePage() {
   const deleteFn = useServerFn(deleteScheduledMessage);
   const sendNowFn = useServerFn(sendScheduledNow);
   const targetsFn = useServerFn(listWhapiGroups);
+  const pendingFn = useServerFn(listPendingApprovals);
+  const approveFn = useServerFn(approvePending);
+  const rejectFn = useServerFn(rejectPending);
 
   const { data: rows = [] } = useQuery({
     queryKey: ["scheduled-messages"],
@@ -80,6 +95,23 @@ function SchedulePage() {
     onSuccess: invalidate,
   });
 
+  const { data: pending = [] } = useQuery({
+    queryKey: ["scheduled-approvals"],
+    queryFn: () => pendingFn() as Promise<Approval[]>,
+    refetchInterval: 30000,
+  });
+  const invalidateApprovals = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
+  const approve = useMutation({
+    mutationFn: (id: string) => approveFn({ data: { id } }),
+    onSuccess: () => { invalidateApprovals(); toast.success("נשלח"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) => rejectFn({ data: { id } }),
+    onSuccess: () => { invalidateApprovals(); toast.success("נדחה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const byDay = DAYS.map((_, i) => rows.filter((r) => r.day_of_week === i).sort((a, b) => a.send_time.localeCompare(b.send_time)));
 
   return (
@@ -93,6 +125,35 @@ function SchedulePage() {
           <Button><Plus className="size-4 ms-2" />הודעה חדשה</Button>
         </ScheduleDialog>
       </div>
+
+      {pending.length > 0 && (
+        <Card className="border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldQuestion className="size-4 text-amber-600" />
+              ממתינות לאישור ({pending.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pending.map((p) => (
+              <div key={p.id} className="rounded-md border bg-background p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  {p.target_name ?? p.target_chat_id} · {new Date(p.created_at).toLocaleString("he-IL")}
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{p.body}</p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => approve.mutate(p.id)} disabled={approve.isPending}>
+                    <Check className="size-3 ms-1" />אשר ושלח
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => reject.mutate(p.id)} disabled={reject.isPending}>
+                    <X className="size-3 ms-1" />דחה
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
         {DAYS.map((day, i) => (
@@ -117,6 +178,11 @@ function SchedulePage() {
                     {r.target_name ?? r.target_chat_id}
                   </p>
                   <p className="line-clamp-2 whitespace-pre-wrap" title={r.body}>{r.body}</p>
+                  {r.require_approval && (
+                    <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400">
+                      <ShieldQuestion className="size-3" />דורש אישור
+                    </Badge>
+                  )}
                   <div className="flex gap-1 pt-1">
                     <ScheduleDialog targets={allTargets} onSaved={invalidate} existing={r}>
                       <Button size="icon" variant="ghost" className="h-6 w-6"><Pencil className="size-3" /></Button>
@@ -162,6 +228,7 @@ function ScheduleDialog({
   const [target, setTarget] = useState(existing?.target_chat_id ?? "");
   const [targetName, setTargetName] = useState(existing?.target_name ?? "");
   const [body, setBody] = useState(existing?.body ?? "");
+  const [requireApproval, setRequireApproval] = useState(existing?.require_approval ?? false);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -173,6 +240,7 @@ function ScheduleDialog({
         target_chat_id: target,
         target_name: targetName || targets.find((t) => t.id === target)?.name || null,
         body,
+        require_approval: requireApproval,
       };
       if (existing) await updateFn({ data: { id: existing.id, ...payload } });
       else await createFn({ data: payload });
@@ -220,6 +288,17 @@ function ScheduleDialog({
           <div>
             <Label>תוכן ההודעה</Label>
             <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} />
+          </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <ShieldQuestion className="size-4" />דרוש אישור לפני שליחה
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                כשמופעל, הבוט יבקש ממך אישור במסך זה במקום לשלוח אוטומטית.
+              </p>
+            </div>
+            <Switch checked={requireApproval} onCheckedChange={setRequireApproval} />
           </div>
         </div>
         <DialogFooter>
