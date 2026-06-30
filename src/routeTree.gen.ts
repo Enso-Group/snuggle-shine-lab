@@ -22,6 +22,7 @@ import { Route as AuthenticatedConversationsIndexRouteImport } from './routes/_a
 import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/whapi-webhook'
 import { Route as AuthenticatedConversationsIdRouteImport } from './routes/_authenticated/conversations.$id'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
+import { Route as ApiPublicHooksSendScheduledMessagesRouteImport } from './routes/api/public/hooks/send-scheduled-messages'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -92,6 +93,12 @@ const AuthenticatedChatThreadIdRoute =
     path: '/$threadId',
     getParentRoute: () => AuthenticatedChatRoute,
   } as any)
+const ApiPublicHooksSendScheduledMessagesRoute =
+  ApiPublicHooksSendScheduledMessagesRouteImport.update({
+    id: '/api/public/hooks/send-scheduled-messages',
+    path: '/api/public/hooks/send-scheduled-messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/conversations/': typeof AuthenticatedConversationsIndexRoute
+  '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -119,6 +127,7 @@ export interface FileRoutesByTo {
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/conversations': typeof AuthenticatedConversationsIndexRoute
+  '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -135,6 +144,7 @@ export interface FileRoutesById {
   '/_authenticated/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/_authenticated/conversations/': typeof AuthenticatedConversationsIndexRoute
+  '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
     | '/conversations/'
+    | '/api/public/hooks/send-scheduled-messages'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
     | '/conversations'
+    | '/api/public/hooks/send-scheduled-messages'
   id:
     | '__root__'
     | '/_authenticated'
@@ -179,12 +191,14 @@ export interface FileRouteTypes {
     | '/_authenticated/conversations/$id'
     | '/api/public/whapi-webhook'
     | '/_authenticated/conversations/'
+    | '/api/public/hooks/send-scheduled-messages'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   ApiPublicWhapiWebhookRoute: typeof ApiPublicWhapiWebhookRoute
+  ApiPublicHooksSendScheduledMessagesRoute: typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -280,6 +294,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
       parentRoute: typeof AuthenticatedChatRoute
     }
+    '/api/public/hooks/send-scheduled-messages': {
+      id: '/api/public/hooks/send-scheduled-messages'
+      path: '/api/public/hooks/send-scheduled-messages'
+      fullPath: '/api/public/hooks/send-scheduled-messages'
+      preLoaderRoute: typeof ApiPublicHooksSendScheduledMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -337,6 +358,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiPublicWhapiWebhookRoute: ApiPublicWhapiWebhookRoute,
+  ApiPublicHooksSendScheduledMessagesRoute:
+    ApiPublicHooksSendScheduledMessagesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
