@@ -40,10 +40,21 @@ function isWhapiTrialLimitError(e: unknown) {
   return msg.includes("trial version limit exceeded") || msg.includes("מגבלת Trial");
 }
 
+function sanitizeWhapiTo(chatId: string): string {
+  const raw = String(chatId || "").trim();
+  if (!raw) return raw;
+  const atIdx = raw.indexOf("@");
+  const local = atIdx >= 0 ? raw.slice(0, atIdx) : raw;
+  const suffix = atIdx >= 0 ? raw.slice(atIdx) : "";
+  // Whapi requires local part to match ^[\d-]{9,31}$ — strip device suffixes like ":5" and any other chars.
+  const cleanedLocal = local.split(":")[0].replace(/[^\d-]/g, "");
+  return suffix ? `${cleanedLocal}${suffix}` : cleanedLocal;
+}
+
 export async function sendTextMessage(chatId: string, body: string) {
   return whapi("/messages/text", {
     method: "POST",
-    body: JSON.stringify({ to: chatId, body }),
+    body: JSON.stringify({ to: sanitizeWhapiTo(chatId), body }),
   });
 }
 
