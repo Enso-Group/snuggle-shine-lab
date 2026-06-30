@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users } from "lucide-react";
+import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -21,6 +21,7 @@ const NAV = [
   { to: "/participants", label: "משתתפים", icon: Users },
   { to: "/chat", label: "צ'אט AI", icon: Bot },
   { to: "/send", label: "שלח הודעה", icon: Send },
+  { to: "/schedule", label: "תזמון שבועי", icon: CalendarClock },
   { to: "/settings", label: "הגדרות", icon: SettingsIcon },
   { to: "/logs", label: "לוגים", icon: ScrollText },
 ] as const;

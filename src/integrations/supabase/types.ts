@@ -237,6 +237,51 @@ export type Database = {
           },
         ]
       }
+      scheduled_messages: {
+        Row: {
+          body: string
+          created_at: string
+          day_of_week: number
+          enabled: boolean
+          id: string
+          last_sent_at: string | null
+          send_time: string
+          target_chat_id: string
+          target_name: string | null
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          day_of_week: number
+          enabled?: boolean
+          id?: string
+          last_sent_at?: string | null
+          send_time: string
+          target_chat_id: string
+          target_name?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          day_of_week?: number
+          enabled?: boolean
+          id?: string
+          last_sent_at?: string | null
+          send_time?: string
+          target_chat_id?: string
+          target_name?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
