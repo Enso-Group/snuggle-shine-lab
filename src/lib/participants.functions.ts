@@ -238,10 +238,14 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       string,
       { sender_id: string; sender_name: string; message_count: number; last_message_at: string | null; last_body: string }
     >();
+    const countedMessageKeys = new Set<string>();
 
-    const addMessage = (senderId: string, senderName: string, body: string, ts: string | null) => {
+    const addMessage = (senderId: string, senderName: string, body: string, ts: string | null, uniqueKey?: string | null) => {
       const phone = resolveSenderKey(senderId) || normalizeId(senderId) || senderId;
       if (!phone) return;
+      const countKey = uniqueKey || `${phone}-${ts ?? ""}-${body}`;
+      if (countedMessageKeys.has(countKey)) return;
+      countedMessageKeys.add(countKey);
       const cur = stats.get(phone);
       const resolved = resolveName(senderId, senderName);
       if (cur) {
@@ -267,7 +271,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       const senderName = getSenderName(m);
       const body = getMessageBody(m);
       const ts = m.timestamp ? normalizeWhapiTs(m.timestamp) : null;
-      addMessage(senderId, senderName, body, ts);
+      addMessage(senderId, senderName, body, ts, m.id ?? null);
     }
 
     if (participants.length === 0 && stats.size > 0) {
@@ -280,7 +284,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     if (conv?.id) {
       const { data: dbRows } = await supabaseAdmin
         .from("messages")
-        .select("sender_id, sender_name, body, created_at")
+        .select("id, whapi_message_id, sender_id, sender_name, body, created_at")
         .eq("conversation_id", conv.id)
         .eq("direction", "inbound")
         .order("created_at", { ascending: false })
@@ -289,7 +293,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         const senderId = m.sender_id ?? "";
         const normalized = resolveSenderKey(senderId) || normalizeId(senderId);
         if (participantPhones.size > 0 && normalized && !participantPhones.has(normalized)) continue;
-        addMessage(senderId, m.sender_name ?? "", m.body ?? "", m.created_at);
+        addMessage(senderId, m.sender_name ?? "", m.body ?? "", m.created_at, m.whapi_message_id ?? m.id);
       }
     }
 
