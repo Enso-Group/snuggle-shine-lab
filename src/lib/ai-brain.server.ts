@@ -210,6 +210,14 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
     { role: "user", content: input.userMessage },
   ];
 
+  if (shouldSearchBeforeModel(input.userMessage)) {
+    const searchResults = await webSearch(input.userMessage);
+    messages.push({
+      role: "system",
+      content: `תוצאות חיפוש אינטרנט עדכניות לשאלה של המשתמש:\n${searchResults}\n\nהשתמש/י במידע הזה בתשובה, ואם יש מקורות רלוונטיים שמור/י אותם קצר.`
+    });
+  }
+
   const allTools = [...TOOLS, ...(input.extraTools ?? [])];
   const source = input.source ?? "chat";
   const runDeadline = Date.now() + AI_RUN_TIMEOUT_MS;
@@ -224,7 +232,7 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
     try {
       res = await fetchWithTimeout(GATEWAY_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
         body: JSON.stringify({ model: DEFAULT_MODEL, messages, tools: allTools, tool_choice: "auto" }),
       }, Math.min(AI_REQUEST_TIMEOUT_MS, remainingMs));
     } catch (e: any) {
