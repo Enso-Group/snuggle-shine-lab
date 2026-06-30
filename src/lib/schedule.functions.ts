@@ -100,7 +100,9 @@ export const listPendingApprovals = createServerFn({ method: "GET" })
 
 export const approvePending = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { id: string; body?: string }) =>
+    z.object({ id: z.string().uuid(), body: z.string().min(1).max(4000).optional() }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
       .from("scheduled_approvals")
@@ -110,12 +112,43 @@ export const approvePending = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("לא נמצא");
+    const body = data.body ?? row.body;
     const { sendTextMessage } = await import("./whapi.server");
-    await sendTextMessage(row.target_chat_id, row.body);
+    const sendRes: any = await sendTextMessage(row.target_chat_id, body);
     await context.supabase
       .from("scheduled_approvals")
-      .update({ status: "approved", decided_at: new Date().toISOString() })
+      .update({ status: "approved", decided_at: new Date().toISOString(), body })
       .eq("id", row.id);
+    // If this approval came from an AI reply, also log the outbound to the conversation
+    if (row.conversation_id) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.from("messages").insert({
+        conversation_id: row.conversation_id,
+        whapi_message_id: sendRes?.message?.id ?? null,
+        direction: "outbound",
+        sender_name: "הבוט",
+        sender_id: "bot",
+        body,
+        raw: sendRes,
+      });
+      const { recordOutbound } = await import("./anti-ban.server");
+      await recordOutbound(supabaseAdmin, row.conversation_id, body);
+    }
+    return { ok: true };
+  });
+
+export const updatePendingBody = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; body: string }) =>
+    z.object({ id: z.string().uuid(), body: z.string().min(1).max(4000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("scheduled_approvals")
+      .update({ body: data.body })
+      .eq("id", data.id)
+      .eq("status", "pending");
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
@@ -130,3 +163,4 @@ export const rejectPending = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
