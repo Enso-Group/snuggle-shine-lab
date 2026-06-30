@@ -411,3 +411,81 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
 
     return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
   });
+
+export const syncConversationHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { conversationId: string }) =>
+    z.object({ conversationId: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { listAllMessagesByChatId, checkHealth, listContactLids } = await import("./whapi.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: conv } = await supabaseAdmin
+      .from("conversations")
+      .select("id, whapi_chat_id, name")
+      .eq("id", data.conversationId)
+      .maybeSingle();
+    if (!conv?.whapi_chat_id) return { inserted: 0, total: 0 };
+
+    const [live, health] = await Promise.all([
+      listAllMessagesByChatId(conv.whapi_chat_id),
+      checkHealth(),
+    ]);
+    if (!live.length) return { inserted: 0, total: 0 };
+
+    const senderIds = [...new Set(live.map((m: any) => normalizePhone(m.from ?? m.author ?? "")).filter(Boolean))];
+    const phoneToLid = await listContactLids(senderIds);
+    const lidToPhone = new Map<string, string>();
+    for (const [phone, lid] of Object.entries(phoneToLid)) if (phone && lid) lidToPhone.set(lid, phone);
+    const ownPhone = normalizePhone(health.userId ?? "");
+    const resolveKey = (raw: string) => {
+      const id = normalizePhone(raw);
+      return lidToPhone.get(id) ?? id;
+    };
+
+    const { data: existingRows } = await supabaseAdmin
+      .from("messages")
+      .select("whapi_message_id")
+      .eq("conversation_id", conv.id)
+      .not("whapi_message_id", "is", null)
+      .limit(20000);
+    const existing = new Set((existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean));
+
+    const rows = live
+      .filter((m: any) => m.id && !existing.has(m.id))
+      .map((m: any) => {
+        const fromMe = !!m.from_me;
+        const senderId = fromMe
+          ? resolveKey(m.from ?? m.author ?? ownPhone) || ownPhone
+          : resolveKey(m.from ?? m.author ?? "") || m.from || m.author || conv.whapi_chat_id;
+        const senderName = fromMe
+          ? health.userName || "אני"
+          : m.from_name ?? m.author_name ?? m.pushname ?? "";
+        return {
+          conversation_id: conv.id,
+          whapi_message_id: m.id,
+          direction: fromMe ? "outbound" : "inbound",
+          sender_name: senderName || null,
+          sender_id: senderId,
+          body: getMessageBody(m),
+          raw: m,
+          created_at: normalizeWhapiTs(m.timestamp),
+        };
+      });
+
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      if (batch.length) await supabaseAdmin.from("messages").insert(batch);
+    }
+
+    const latest = rows.map((r) => r.created_at).sort().at(-1);
+    if (latest) {
+      await supabaseAdmin
+        .from("conversations")
+        .update({ last_message_at: latest })
+        .eq("id", conv.id);
+    }
+
+    return { inserted: rows.length, total: live.length };
+  });
