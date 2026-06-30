@@ -1,81 +1,127 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
 
-export const getUsageStats = createServerFn({ method: "GET" })
+async function requireAdmin(supabase: any, userId: string) {
+  const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Forbidden: admin only");
+}
+
+const listSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(5).max(100).default(25),
+  kind: z.enum(["all", "llm", "tool"]).default("all"),
+  status: z.enum(["all", "success", "error"]).default("all"),
+  model: z.string().optional(),
+  tool: z.string().optional(),
+  rangeHours: z.number().int().min(1).max(24 * 90).default(24 * 7),
+});
+
+export const listAiUsage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const now = new Date();
-    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+  .inputValidator((d: unknown) => listSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const since = new Date(Date.now() - data.rangeHours * 60 * 60 * 1000).toISOString();
+    const from = (data.page - 1) * data.pageSize;
+    const to = from + data.pageSize - 1;
 
-    const s = context.supabase;
+    let q = context.supabase
+      .from("ai_usage_log")
+      .select("*", { count: "exact" })
+      .gte("created_at", since)
+      .order("created_at", { ascending: false });
 
-    const [
-      convsTotal,
-      convsBlocked,
-      msgsTotal,
-      msgsInDay,
-      msgsOutDay,
-      msgsInWeek,
-      msgsOutWeek,
-      msgsInMonth,
-      msgsOutMonth,
-      cmdsMonth,
-      scheduled,
-      pending,
-      distinctOutHour,
-      lastInbound,
-      lastOutbound,
-    ] = await Promise.all([
-      s.from("conversations").select("id", { count: "exact", head: true }),
-      s.from("conversations").select("id", { count: "exact", head: true }).eq("blocked", true),
-      s.from("messages").select("id", { count: "exact", head: true }),
-      s.from("messages").select("id", { count: "exact", head: true }).eq("direction", "inbound").gte("created_at", dayAgo),
-      s.from("messages").select("id", { count: "exact", head: true }).eq("direction", "outbound").gte("created_at", dayAgo),
-      s.from("messages").select("id", { count: "exact", head: true }).eq("direction", "inbound").gte("created_at", weekAgo),
-      s.from("messages").select("id", { count: "exact", head: true }).eq("direction", "outbound").gte("created_at", weekAgo),
-      s.from("messages").select("id", { count: "exact", head: true }).eq("direction", "inbound").gte("created_at", monthAgo),
-      s.from("messages").select("id", { count: "exact", head: true }).eq("direction", "outbound").gte("created_at", monthAgo),
-      s.from("commands_log").select("id", { count: "exact", head: true }).gte("created_at", monthAgo),
-      s.from("scheduled_messages").select("id, enabled"),
-      s.from("scheduled_approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      s.from("messages").select("conversation_id").eq("direction", "outbound").gte("created_at", hourAgo),
-      s.from("messages").select("created_at").eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      s.from("messages").select("created_at").eq("direction", "outbound").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    ]);
+    if (data.kind !== "all") q = q.eq("kind", data.kind);
+    if (data.status !== "all") q = q.eq("status", data.status);
+    if (data.model) q = q.eq("model", data.model);
+    if (data.tool) q = q.eq("tool_name", data.tool);
 
-    const distinctChatsHour = new Set((distinctOutHour.data ?? []).map((r: any) => r.conversation_id)).size;
-    const schedRows = scheduled.data ?? [];
+    const { data: rows, count, error } = await q.range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: rows ?? [], total: count ?? 0, page: data.page, pageSize: data.pageSize };
+  });
+
+export const getAiUsageSummary = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ rangeHours: z.number().int().min(1).max(24 * 90).default(24 * 7) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const since = new Date(Date.now() - data.rangeHours * 60 * 60 * 1000).toISOString();
+    const { data: rows, error } = await context.supabase
+      .from("ai_usage_log")
+      .select("kind, model, tool_name, status, prompt_tokens, completion_tokens, total_tokens, cost_usd, duration_ms, created_at")
+      .gte("created_at", since);
+    if (error) throw new Error(error.message);
+
+    const all = (rows ?? []) as any[];
+    const llm = all.filter((r) => r.kind === "llm");
+    const tool = all.filter((r) => r.kind === "tool");
+    const errors = all.filter((r) => r.status === "error");
+
+    const byModel: Record<string, { calls: number; promptTokens: number; completionTokens: number; totalTokens: number; cost: number }> = {};
+    for (const r of llm) {
+      const key = r.model ?? "unknown";
+      byModel[key] ??= { calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0 };
+      byModel[key].calls += 1;
+      byModel[key].promptTokens += Number(r.prompt_tokens ?? 0);
+      byModel[key].completionTokens += Number(r.completion_tokens ?? 0);
+      byModel[key].totalTokens += Number(r.total_tokens ?? 0);
+      byModel[key].cost += Number(r.cost_usd ?? 0);
+    }
+
+    const byTool: Record<string, { calls: number; errors: number }> = {};
+    for (const r of tool) {
+      const key = r.tool_name ?? "unknown";
+      byTool[key] ??= { calls: 0, errors: 0 };
+      byTool[key].calls += 1;
+      if (r.status === "error") byTool[key].errors += 1;
+    }
+
+    // Daily series
+    const days: Record<string, { calls: number; cost: number; tokens: number }> = {};
+    for (const r of all) {
+      const day = String(r.created_at).slice(0, 10);
+      days[day] ??= { calls: 0, cost: 0, tokens: 0 };
+      days[day].calls += 1;
+      days[day].cost += Number(r.cost_usd ?? 0);
+      days[day].tokens += Number(r.total_tokens ?? 0);
+    }
+    const series = Object.entries(days)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => ({ date, ...v }));
+
+    const totalCost = llm.reduce((s, r) => s + Number(r.cost_usd ?? 0), 0);
+    const totalTokens = llm.reduce((s, r) => s + Number(r.total_tokens ?? 0), 0);
+    const avgLatency = all.length ? Math.round(all.reduce((s, r) => s + Number(r.duration_ms ?? 0), 0) / all.length) : 0;
 
     return {
-      conversations: {
-        total: convsTotal.count ?? 0,
-        blocked: convsBlocked.count ?? 0,
+      totals: {
+        calls: all.length,
+        llmCalls: llm.length,
+        toolCalls: tool.length,
+        errorCount: errors.length,
+        totalTokens,
+        totalCostUsd: +totalCost.toFixed(6),
+        avgLatencyMs: avgLatency,
       },
-      messages: {
-        total: msgsTotal.count ?? 0,
-        inbound24h: msgsInDay.count ?? 0,
-        outbound24h: msgsOutDay.count ?? 0,
-        inbound7d: msgsInWeek.count ?? 0,
-        outbound7d: msgsOutWeek.count ?? 0,
-        inbound30d: msgsInMonth.count ?? 0,
-        outbound30d: msgsOutMonth.count ?? 0,
-        lastInboundAt: lastInbound.data?.created_at ?? null,
-        lastOutboundAt: lastOutbound.data?.created_at ?? null,
-      },
-      commands30d: cmdsMonth.count ?? 0,
-      scheduled: {
-        total: schedRows.length,
-        enabled: schedRows.filter((r: any) => r.enabled).length,
-      },
-      pendingApprovals: pending.count ?? 0,
-      antiBan: {
-        distinctChatsLastHour: distinctChatsHour,
-        maxDistinctChatsPerHour: 10,
-        maxConsecutiveOutbound: 3,
-        minGapMinutes: 3,
-      },
+      byModel,
+      byTool,
+      series,
     };
+  });
+
+export const getAiUsageFilters = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      .from("ai_usage_log")
+      .select("model, tool_name")
+      .limit(2000);
+    if (error) throw new Error(error.message);
+    const models = Array.from(new Set((data ?? []).map((r: any) => r.model).filter(Boolean))) as string[];
+    const tools = Array.from(new Set((data ?? []).map((r: any) => r.tool_name).filter(Boolean))) as string[];
+    return { models, tools };
   });
