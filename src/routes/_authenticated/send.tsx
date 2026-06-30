@@ -46,6 +46,8 @@ function SendPage() {
   const [mode, setMode] = useState<"direct" | "ai">("ai");
   const [sendNotice, setSendNotice] = useState<{ type: "blocked" | "error" | "success"; title: string; message: string } | null>(null);
 
+  const pendingText = mode === "ai" ? "ה-AI מכין את ההודעה ובודק מקורות..." : "שולח הודעה...";
+
   const allTargets = useMemo(() => [
     ...(data?.groups ?? []).map((g) => ({ id: g.id, name: `👥 ${g.name}`, type: "group" as const })),
     ...(data?.chats ?? []).filter((c) => !c.id.endsWith("@g.us")).map((c) => ({ id: c.id, name: `👤 ${c.name}`, type: "chat" as const })),
@@ -200,7 +202,7 @@ function SendPage() {
             disabled={!target || !prompt.trim() || send.isPending}
             className="w-full"
           >
-            {send.isPending ? "שולח..." : mode === "ai" ? "🧠 צור ושלח" : "📤 שלח"}
+            {send.isPending ? pendingText : mode === "ai" ? "🧠 צור ושלח" : "📤 שלח"}
           </Button>
         </CardContent>
       </Card>

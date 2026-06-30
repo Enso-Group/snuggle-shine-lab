@@ -3,6 +3,8 @@
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
+const AI_REQUEST_TIMEOUT_MS = 25_000;
+const SEARCH_REQUEST_TIMEOUT_MS = 8_000;
 
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -16,6 +18,16 @@ type ChatMessage = {
   }>;
 };
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // Web search via DuckDuckGo HTML, with content fetch for top results
 async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
   try {
@@ -25,8 +37,8 @@ async function fetchPageText(url: string, maxChars = 2000): Promise<string> {
       signal: ctrl.signal,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" },
     });
-    clearTimeout(t);
     const html = await res.text();
+    clearTimeout(t);
     // Strip scripts/styles, then tags
     const cleaned = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -61,7 +73,7 @@ async function webSearch(query: string): Promise<string> {
     // "anomaly detected" block page for serverless egress (always 0 results),
     // so we use Brave which serves results without an API key.
     const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
-    const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "text/html" } });
+    const res = await fetchWithTimeout(url, { headers: { "User-Agent": UA, "Accept": "text/html" } }, SEARCH_REQUEST_TIMEOUT_MS);
     const html = await res.text();
     const results: Array<{ title: string; url: string; snippet: string }> = [];
     // Each web result block starts with data-type="web"; the next block (or end of section) bounds it.
@@ -162,13 +174,16 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
     const start = Date.now();
     let res: Response;
     try {
-      res = await fetch(GATEWAY_URL, {
+      res = await fetchWithTimeout(GATEWAY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({ model: DEFAULT_MODEL, messages, tools: allTools, tool_choice: "auto" }),
-      });
+      }, AI_REQUEST_TIMEOUT_MS);
     } catch (e: any) {
       logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", duration_ms: Date.now() - start, error_message: String(e?.message ?? e), meta: { step } });
+      if (e?.name === "AbortError") {
+        throw new Error("ה-AI לקח יותר מדי זמן לענות. נסי שוב עם בקשה קצרה יותר או בלי חיפוש אינטרנט.");
+      }
       throw e;
     }
 
