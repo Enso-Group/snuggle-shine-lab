@@ -9,6 +9,7 @@ const scheduleSchema = z.object({
   target_name: z.string().nullable().optional(),
   body: z.string().min(1).max(4000),
   enabled: z.boolean().optional(),
+  require_approval: z.boolean().optional(),
 });
 
 export const listScheduledMessages = createServerFn({ method: "GET" })
