@@ -19,18 +19,42 @@ function ConvLayout() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      const { data } = await supabase
-        .from("conversations")
-        .select("*")
-        .not("last_message_at", "is", null)
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(200);
-      if (mounted && data) setConvs(data as Conv[]);
+      // Only show conversations the user actually participated in:
+      // - direct chats (1:1) that have any message
+      // - groups where the user sent at least one outbound message
+      const [{ data: directs }, { data: outboundRows }] = await Promise.all([
+        supabase
+          .from("conversations")
+          .select("*")
+          .eq("is_group", false)
+          .not("last_message_at", "is", null),
+        supabase
+          .from("messages")
+          .select("conversation_id")
+          .eq("direction", "outbound"),
+      ]);
+      const outboundConvIds = [...new Set((outboundRows ?? []).map((r: any) => r.conversation_id).filter(Boolean))];
+      let groups: Conv[] = [];
+      if (outboundConvIds.length) {
+        const { data } = await supabase
+          .from("conversations")
+          .select("*")
+          .eq("is_group", true)
+          .in("id", outboundConvIds);
+        groups = (data ?? []) as Conv[];
+      }
+      const merged = [...((directs ?? []) as Conv[]), ...groups].sort((a, b) => {
+        const ta = a.last_message_at ? Date.parse(a.last_message_at) : 0;
+        const tb = b.last_message_at ? Date.parse(b.last_message_at) : 0;
+        return tb - ta;
+      });
+      if (mounted) setConvs(merged);
     }
     load();
     const ch = supabase
       .channel("conv-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, load)
       .subscribe();
     return () => {
       mounted = false;
