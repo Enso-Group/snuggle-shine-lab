@@ -45,7 +45,7 @@ async function apolloSearch(
         page: 1,
         per_page: 3,
       }),
-      signal: AbortSignal.timeout(15_000),
+      signal: (() => { const c = new AbortController(); setTimeout(() => c.abort(), 15_000); return c.signal; })(),
     });
     if (!res.ok) {
       console.warn("[sourcing] Apollo error", res.status, await res.text().catch(() => ""));
@@ -89,7 +89,7 @@ async function apifyLinkedIn(
           resultsPerPage: 3,
           maxPagesPerQuery: 1,
         }),
-        signal: AbortSignal.timeout(35_000),
+        signal: (() => { const c = new AbortController(); setTimeout(() => c.abort(), 35_000); return c.signal; })(),
       },
     );
     if (!res.ok) {
