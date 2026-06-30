@@ -40,7 +40,16 @@ type Row = {
   target_name: string | null;
   body: string;
   enabled: boolean;
+  require_approval: boolean;
   last_sent_at: string | null;
+};
+
+type Approval = {
+  id: string;
+  target_chat_id: string;
+  target_name: string | null;
+  body: string;
+  created_at: string;
 };
 
 function SchedulePage() {
@@ -51,6 +60,9 @@ function SchedulePage() {
   const deleteFn = useServerFn(deleteScheduledMessage);
   const sendNowFn = useServerFn(sendScheduledNow);
   const targetsFn = useServerFn(listWhapiGroups);
+  const pendingFn = useServerFn(listPendingApprovals);
+  const approveFn = useServerFn(approvePending);
+  const rejectFn = useServerFn(rejectPending);
 
   const { data: rows = [] } = useQuery({
     queryKey: ["scheduled-messages"],
