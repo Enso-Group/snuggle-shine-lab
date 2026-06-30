@@ -54,6 +54,13 @@ function isWhapiTrialLimitError(e: unknown) {
   return msg.includes("trial version limit exceeded") || msg.includes("מגבלת Trial");
 }
 
+function normalizePhoneLocalPart(local: string): string {
+  const digits = local.replace(/\D/g, "");
+  // Israeli local numbers are often typed as 05x...; WhatsApp/Whapi expects E.164 without '+'.
+  if (/^0\d{9}$/.test(digits)) return `972${digits.slice(1)}`;
+  return digits;
+}
+
 function sanitizeWhapiTo(chatId: string): string {
   const raw = String(chatId || "").trim();
   if (!raw) return raw;
@@ -61,7 +68,7 @@ function sanitizeWhapiTo(chatId: string): string {
   const local = atIdx >= 0 ? raw.slice(0, atIdx) : raw;
   const suffix = atIdx >= 0 ? raw.slice(atIdx) : "";
   // Whapi requires local part to match ^[\d-]{9,31}$ — strip device suffixes like ":5" and any other chars.
-  const cleanedLocal = local.split(":")[0].replace(/[^\d-]/g, "");
+  const cleanedLocal = normalizePhoneLocalPart(local.split(":")[0]);
   return suffix ? `${cleanedLocal}${suffix}` : cleanedLocal;
 }
 
