@@ -12,13 +12,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, Pencil } from "lucide-react";
+import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion } from "lucide-react";
 import {
   listScheduledMessages,
   createScheduledMessage,
   updateScheduledMessage,
   deleteScheduledMessage,
   sendScheduledNow,
+  listPendingApprovals,
+  approvePending,
+  rejectPending,
 } from "@/lib/schedule.functions";
 import { listWhapiGroups } from "@/lib/bot.functions";
 
