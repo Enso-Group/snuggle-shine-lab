@@ -45,12 +45,28 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           const results: any[] = [];
           for (const r of due) {
             try {
-              await sendTextMessage(r.target_chat_id, r.body);
-              await supabase
-                .from("scheduled_messages")
-                .update({ last_sent_at: new Date().toISOString() })
-                .eq("id", r.id);
-              results.push({ id: r.id, ok: true });
+              if (r.require_approval) {
+                await supabase.from("scheduled_approvals").insert({
+                  scheduled_message_id: r.id,
+                  user_id: r.user_id,
+                  target_chat_id: r.target_chat_id,
+                  target_name: r.target_name,
+                  body: r.body,
+                  status: "pending",
+                });
+                await supabase
+                  .from("scheduled_messages")
+                  .update({ last_sent_at: new Date().toISOString() })
+                  .eq("id", r.id);
+                results.push({ id: r.id, queued: true });
+              } else {
+                await sendTextMessage(r.target_chat_id, r.body);
+                await supabase
+                  .from("scheduled_messages")
+                  .update({ last_sent_at: new Date().toISOString() })
+                  .eq("id", r.id);
+                results.push({ id: r.id, ok: true });
+              }
             } catch (e: any) {
               results.push({ id: r.id, ok: false, error: String(e?.message ?? e) });
             }
