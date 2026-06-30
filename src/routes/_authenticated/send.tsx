@@ -164,7 +164,7 @@ function SendPage() {
 
           <Button
             onClick={() => send.mutate()}
-            disabled={!target || !prompt.trim() || send.isPending}
+            disabled={!canSend}
             className="w-full"
           >
             {send.isPending ? "שולח..." : mode === "ai" ? "🧠 צור ושלח" : "📤 שלח"}
