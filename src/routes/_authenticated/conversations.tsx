@@ -22,6 +22,7 @@ function ConvLayout() {
       const { data } = await supabase
         .from("conversations")
         .select("*")
+        .not("last_message_at", "is", null)
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(200);
       if (mounted && data) setConvs(data as Conv[]);
