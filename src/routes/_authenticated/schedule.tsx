@@ -228,6 +228,7 @@ function ScheduleDialog({
   const [target, setTarget] = useState(existing?.target_chat_id ?? "");
   const [targetName, setTargetName] = useState(existing?.target_name ?? "");
   const [body, setBody] = useState(existing?.body ?? "");
+  const [requireApproval, setRequireApproval] = useState(existing?.require_approval ?? false);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -239,6 +240,7 @@ function ScheduleDialog({
         target_chat_id: target,
         target_name: targetName || targets.find((t) => t.id === target)?.name || null,
         body,
+        require_approval: requireApproval,
       };
       if (existing) await updateFn({ data: { id: existing.id, ...payload } });
       else await createFn({ data: payload });
