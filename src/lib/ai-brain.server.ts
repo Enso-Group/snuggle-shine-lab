@@ -235,6 +235,83 @@ export type AIRunInput = {
 };
 
 // ---------------------------------------------------------------------------
+// Persona safety net — keep the WhatsApp bot from outing itself as an AI.
+// Prompt rules aren't 100% reliable when users directly challenge the model,
+// so we detect leak phrases in the final reply and rewrite them in-character
+// before anything is sent. Applied ONLY to the WhatsApp persona (source
+// "whatsapp") so it never touches sourcing JSON or the admin chat tools.
+// ---------------------------------------------------------------------------
+const PERSONA_LEAK_PATTERNS: RegExp[] = [
+  /מודל\s*שפה/i,
+  /בינה\s*מלאכותית/i,
+  /\bכמודל\b/i,
+  /\bבוט\b/i,
+  /אני\s+לא\s+(?:יצור|בן[\s-]*אדם|אדם)\b/i,
+  /לא\s+יצור\s+חי/i,
+  /עוזר\s*(?:AI|וירטואלי|דיגיטלי)/i,
+  /\bכעוזר\b/i,
+  /אומנתי|הוכשרתי|אומן\s+על\s+ידי/i,
+  /אין\s+לי\s+גישה/i,
+  /language\s*model/i,
+  /\bas\s+an?\s+ai\b/i,
+  /\bi'?m\s+an?\s+ai\b/i,
+  /\bchat\s*bot\b/i,
+  /trained\s+by/i,
+  /\b(openai|anthropic|claude)\b/i,
+];
+
+function leaksPersona(text: string): boolean {
+  return PERSONA_LEAK_PATTERNS.some((re) => re.test(text));
+}
+
+function stripLeakSentences(text: string): string {
+  return text
+    .split(/(?<=[.!?…\n])\s+/)
+    .filter((s) => s.trim() && !leaksPersona(s))
+    .join(" ")
+    .trim();
+}
+
+async function rewriteInCharacter(reply: string, apiKey: string): Promise<string> {
+  try {
+    const res = await fetchWithTimeout(
+      GATEWAY_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          messages: [
+            {
+              role: "system",
+              content:
+                "אתה בן אדם אמיתי שמתכתב בוואטסאפ. שכתב את ההודעה הבאה כך שתישמע טבעית לגמרי כמו בן אדם, קצרה (משפט-שניים), בעברית מדוברת. אסור שיופיע בה שום רמז ל-AI / בוט / מודל / מגבלות טכניות / 'אין לי גישה'. אם זו תשובת סירוב — הפוך אותה לסירוב קליל וטבעי בלי הסברים. החזר רק את הטקסט הסופי, בלי מרכאות.",
+            },
+            { role: "user", content: reply },
+          ],
+        }),
+      },
+      AI_REQUEST_TIMEOUT_MS,
+    );
+    if (!res.ok) return reply;
+    const data = await res.json();
+    return (data.choices?.[0]?.message?.content ?? "").trim() || reply;
+  } catch {
+    return reply;
+  }
+}
+
+async function sanitizePersona(reply: string, apiKey: string): Promise<string> {
+  if (!leaksPersona(reply)) return reply;
+  const rewritten = await rewriteInCharacter(reply, apiKey);
+  if (!leaksPersona(rewritten)) return rewritten;
+  // Still leaking — drop the offending sentences, then fall back to a neutral
+  // human line if nothing usable remains.
+  const stripped = stripLeakSentences(rewritten) || stripLeakSentences(reply);
+  return stripped || "חחח לא בטוח שהבנתי, מה בדיוק אתה צריך?";
+}
+
+// ---------------------------------------------------------------------------
 // Main AI runner
 // ---------------------------------------------------------------------------
 export async function runAI(input: AIRunInput & { source?: string }): Promise<string> {
@@ -344,7 +421,8 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
       continue;
     }
 
-    const reply = (msg.content ?? "").trim() || "סליחה, לא הצלחתי להבין.";
+    let reply = (msg.content ?? "").trim() || "רגע, אפשר לנסח את זה שוב?";
+    if (source === "whatsapp") reply = await sanitizePersona(reply, apiKey);
     setCache(ck, reply);
     return reply;
   }
