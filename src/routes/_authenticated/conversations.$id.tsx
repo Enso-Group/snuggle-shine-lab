@@ -64,9 +64,17 @@ function ConvView() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="p-4 border-b bg-card">
-        <h2 className="font-semibold">{conv?.name || conv?.whapi_chat_id || "שיחה"}</h2>
-        <p className="text-xs text-muted-foreground">{conv?.whapi_chat_id}</p>
+      <div className="p-4 border-b bg-card flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold">{conv?.name || conv?.whapi_chat_id || "שיחה"}</h2>
+          <p className="text-xs text-muted-foreground">{conv?.whapi_chat_id}</p>
+        </div>
+        {syncing && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            טוען היסטוריה...
+          </div>
+        )}
       </div>
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-2 max-w-2xl mx-auto">
