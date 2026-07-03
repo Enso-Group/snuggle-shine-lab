@@ -9,10 +9,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion } from "lucide-react";
+import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown } from "lucide-react";
 import {
   listScheduledMessages,
   createScheduledMessage,
@@ -227,6 +230,8 @@ function ScheduleDialog({
   const [time, setTime] = useState(existing?.send_time?.slice(0, 5) ?? "09:00");
   const [target, setTarget] = useState(existing?.target_chat_id ?? "");
   const [targetName, setTargetName] = useState(existing?.target_name ?? "");
+  const [targetOpen, setTargetOpen] = useState(false);
+  const [targetSearch, setTargetSearch] = useState("");
   const [body, setBody] = useState(existing?.body ?? "");
   const [requireApproval, setRequireApproval] = useState(existing?.require_approval ?? false);
 
@@ -278,12 +283,45 @@ function ScheduleDialog({
           </div>
           <div>
             <Label>יעד</Label>
-            <Select value={target} onValueChange={(v) => { setTarget(v); setTargetName(targets.find((t) => t.id === v)?.name ?? ""); }}>
-              <SelectTrigger><SelectValue placeholder="בחר קבוצה / איש קשר" /></SelectTrigger>
-              <SelectContent>
-                {targets.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Popover open={targetOpen} onOpenChange={setTargetOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                  <span className={cn("truncate", !target && "text-muted-foreground")}>
+                    {target ? (targetName || target) : "בחר או חפש קבוצה / איש קשר..."}
+                  </span>
+                  <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command shouldFilter>
+                  <CommandInput
+                    placeholder="חיפוש לפי שם..."
+                    value={targetSearch}
+                    onValueChange={setTargetSearch}
+                  />
+                  <CommandList>
+                    <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>
+                    <CommandGroup heading="קבוצות ואנשי קשר">
+                      {targets.map((t) => (
+                        <CommandItem
+                          key={t.id}
+                          value={`${t.name} ${t.id}`}
+                          onSelect={() => {
+                            setTarget(t.id);
+                            setTargetName(t.name);
+                            setTargetOpen(false);
+                            setTargetSearch("");
+                          }}
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", target === t.id ? "opacity-100" : "opacity-0")} />
+                          <span className="truncate">{t.name}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div>
             <Label>תוכן ההודעה</Label>

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -36,6 +37,7 @@ function CandidatesPage() {
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [groupsExpanded, setGroupsExpanded] = useState(false);
   const [loadingGroups, setLoadingGroups] = useState(true);
+  const [groupSearch, setGroupSearch] = useState("");
 
   const listGroupsFn = useServerFn(listGroupsForSourcing);
   const scanFn = useServerFn(scanGroupsForCandidates);
@@ -197,6 +199,19 @@ function CandidatesPage() {
                   </button>
                 </div>
 
+                {!loadingGroups && groups.length > 0 && (
+                  <div className="relative">
+                    <Search className="absolute right-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                    <Input
+                      value={groupSearch}
+                      onChange={(e) => setGroupSearch(e.target.value)}
+                      placeholder="חיפוש קבוצה לפי שם..."
+                      className="h-8 pr-8 text-sm"
+                      dir="rtl"
+                    />
+                  </div>
+                )}
+
                 {loadingGroups ? (
                   <p className="text-sm text-muted-foreground flex items-center gap-2">
                     <Loader2 className="size-3 animate-spin" />
@@ -208,7 +223,11 @@ function CandidatesPage() {
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
-                    {groups.map((g) => (
+                    {groups
+                      .filter((g) =>
+                        g.name.toLowerCase().includes(groupSearch.trim().toLowerCase()),
+                      )
+                      .map((g) => (
                       <div key={g.id} className="flex items-center gap-2">
                         <Checkbox
                           id={`group-${g.id}`}
