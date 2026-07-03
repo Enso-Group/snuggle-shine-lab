@@ -76,9 +76,14 @@ function sanitizeWhapiTo(chatId: string): string {
 }
 
 export async function sendTextMessage(chatId: string, body: string) {
+  const to = sanitizeWhapiTo(chatId);
+  const localPart = to.split("@")[0] ?? "";
+  if (!/^[\d-]{9,31}$/.test(localPart)) {
+    throw new Error(`נמען לא תקין לשליחה ב-WhatsApp: "${chatId}". יש לבחור איש קשר או קבוצה אמיתיים (מספר טלפון או מזהה קבוצה), לא שם.`);
+  }
   return whapi("/messages/text", {
     method: "POST",
-    body: JSON.stringify({ to: sanitizeWhapiTo(chatId), body }),
+    body: JSON.stringify({ to, body }),
   });
 }
 
