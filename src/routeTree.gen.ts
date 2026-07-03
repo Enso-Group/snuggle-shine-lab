@@ -13,7 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
-import { Route as AuthenticatedTelegramRouteImport } from './routes/_authenticated/telegram'
+import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSendRouteImport } from './routes/_authenticated/send'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
@@ -48,9 +48,9 @@ const AuthenticatedUsageRoute = AuthenticatedUsageRouteImport.update({
   path: '/usage',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedTelegramRoute = AuthenticatedTelegramRouteImport.update({
-  id: '/telegram',
-  path: '/telegram',
+const AuthenticatedInstructionsRoute = AuthenticatedInstructionsRouteImport.update({
+  id: '/instructions',
+  path: '/instructions',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -142,7 +142,7 @@ export interface FileRoutesByFullPath {
   '/schedule': typeof AuthenticatedScheduleRoute
   '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/telegram': typeof AuthenticatedTelegramRoute
+  '/instructions': typeof AuthenticatedInstructionsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
@@ -160,7 +160,7 @@ export interface FileRoutesByTo {
   '/schedule': typeof AuthenticatedScheduleRoute
   '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/telegram': typeof AuthenticatedTelegramRoute
+  '/instructions': typeof AuthenticatedInstructionsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
@@ -182,7 +182,7 @@ export interface FileRoutesById {
   '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
   '/_authenticated/send': typeof AuthenticatedSendRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
-  '/_authenticated/telegram': typeof AuthenticatedTelegramRoute
+  '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/usage': typeof AuthenticatedUsageRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
@@ -205,7 +205,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/send'
     | '/settings'
-    | '/telegram'
+    | '/instructions'
     | '/usage'
     | '/chat/$threadId'
     | '/conversations/$id'
@@ -223,7 +223,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/send'
     | '/settings'
-    | '/telegram'
+    | '/instructions'
     | '/usage'
     | '/'
     | '/chat/$threadId'
@@ -244,7 +244,7 @@ export interface FileRouteTypes {
     | '/_authenticated/schedule'
     | '/_authenticated/send'
     | '/_authenticated/settings'
-    | '/_authenticated/telegram'
+    | '/_authenticated/instructions'
     | '/_authenticated/usage'
     | '/_authenticated/'
     | '/_authenticated/chat/$threadId'
@@ -291,11 +291,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsageRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/telegram': {
-      id: '/_authenticated/telegram'
-      path: '/telegram'
-      fullPath: '/telegram'
-      preLoaderRoute: typeof AuthenticatedTelegramRouteImport
+    '/_authenticated/instructions': {
+      id: '/_authenticated/instructions'
+      path: '/instructions'
+      fullPath: '/instructions'
+      preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -436,7 +436,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
   AuthenticatedSendRoute: typeof AuthenticatedSendRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedTelegramRoute: typeof AuthenticatedTelegramRoute
+  AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
@@ -451,7 +451,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
   AuthenticatedSendRoute: AuthenticatedSendRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedTelegramRoute: AuthenticatedTelegramRoute,
+  AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedUsageRoute: AuthenticatedUsageRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }

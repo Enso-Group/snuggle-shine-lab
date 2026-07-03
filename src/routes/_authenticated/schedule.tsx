@@ -293,16 +293,23 @@ function ScheduleDialog({
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command shouldFilter>
+                <Command shouldFilter={false}>
                   <CommandInput
                     placeholder="חיפוש לפי שם..."
                     value={targetSearch}
                     onValueChange={setTargetSearch}
                   />
                   <CommandList>
-                    <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>
-                    <CommandGroup heading="קבוצות ואנשי קשר">
-                      {targets.map((t) => (
+                    {(() => {
+                      const q = targetSearch.trim().toLowerCase();
+                      const filtered = q
+                        ? targets.filter((t) => `${t.name} ${t.id}`.toLowerCase().includes(q))
+                        : targets;
+                      return (
+                        <>
+                          {filtered.length === 0 && <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>}
+                          <CommandGroup heading="קבוצות ואנשי קשר">
+                            {filtered.map((t) => (
                         <CommandItem
                           key={t.id}
                           value={`${t.name} ${t.id}`}
@@ -316,8 +323,11 @@ function ScheduleDialog({
                           <Check className={cn("mr-2 h-4 w-4", target === t.id ? "opacity-100" : "opacity-0")} />
                           <span className="truncate">{t.name}</span>
                         </CommandItem>
-                      ))}
-                    </CommandGroup>
+                            ))}
+                          </CommandGroup>
+                        </>
+                      );
+                    })()}
                   </CommandList>
                 </Command>
               </PopoverContent>

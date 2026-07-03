@@ -59,6 +59,14 @@ function SendPage() {
   const hasMatch = allTargets.some((t) => t.id === normalized || t.id === trimmed);
   const showManualOption = trimmed.length > 0 && !hasMatch;
 
+  // Deterministic substring search (cmdk's built-in fuzzy filter is unreliable
+  // for Hebrew + emoji-prefixed names, so we filter ourselves).
+  const filteredTargets = useMemo(() => {
+    const q = trimmed.toLowerCase();
+    if (!q) return allTargets;
+    return allTargets.filter((t) => `${t.name} ${t.id}`.toLowerCase().includes(q));
+  }, [allTargets, trimmed]);
+
   const send = useMutation({
     mutationFn: () => sendFn({ data: { target_chat_id: target, target_name: targetName || target, prompt, mode } }),
     onSuccess: (result) => {
@@ -120,7 +128,7 @@ function SendPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command shouldFilter>
+                <Command shouldFilter={false}>
                   <CommandInput
                     placeholder="חיפוש לפי שם, או הקלידי מספר טלפון/Chat ID..."
                     value={search}
@@ -142,9 +150,9 @@ function SendPage() {
                         </CommandItem>
                       </CommandGroup>
                     )}
-                    <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>
+                    {filteredTargets.length === 0 && <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>}
                     <CommandGroup heading="קבוצות ואנשי קשר">
-                      {allTargets.map((t) => (
+                      {filteredTargets.map((t) => (
                         <CommandItem
                           key={t.id}
                           value={`${t.name} ${t.id}`}
