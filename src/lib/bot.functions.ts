@@ -73,9 +73,15 @@ export const listWhapiGroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await requireAdmin(context.supabase, context.userId);
-    const { listGroups, listChats } = await import("./whapi.server");
-    const [groups, chats] = await Promise.all([listGroups(), listChats()]);
-    return { groups, chats };
+    const { listGroups, listChats, listContacts } = await import("./whapi.server");
+    // Include the full contact book, not just recent chats, so people you
+    // haven't messaged yet are still searchable in the target pickers.
+    const [groups, chats, contacts] = await Promise.all([
+      listGroups(),
+      listChats(),
+      listContacts(),
+    ]);
+    return { groups, chats, contacts };
   });
 
 export const sendManualMessage = createServerFn({ method: "POST" })

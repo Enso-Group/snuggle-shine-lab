@@ -14,6 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { mergeTargets } from "@/lib/targets";
 import { toast } from "sonner";
 import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown } from "lucide-react";
 import {
@@ -75,10 +76,10 @@ function SchedulePage() {
     queryKey: ["whapi-targets"],
     queryFn: () => targetsFn(),
   });
-  const allTargets = [
-    ...((targets?.groups ?? []).map((g: any) => ({ id: g.id, name: `👥 ${g.name}` }))),
-    ...((targets?.chats ?? []).filter((c: any) => !c.id.endsWith("@g.us")).map((c: any) => ({ id: c.id, name: `👤 ${c.name}` }))),
-  ];
+  const allTargets = mergeTargets(targets ?? {}).map((t) => ({
+    id: t.id,
+    name: t.isGroup ? `👥 ${t.name}` : `👤 ${t.name}`,
+  }));
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled-messages"] });
 

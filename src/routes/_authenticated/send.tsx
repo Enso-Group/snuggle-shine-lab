@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { ChevronsUpDown, Check, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listWhapiGroups, sendManualMessage } from "@/lib/bot.functions";
+import { mergeTargets } from "@/lib/targets";
 
 function normalizeChatId(input: string): string {
   const v = input.trim();
@@ -49,10 +50,15 @@ function SendPage() {
 
   const pendingText = mode === "ai" ? "ה-AI מכין את ההודעה ובודק מקורות..." : "שולח הודעה...";
 
-  const allTargets = useMemo(() => [
-    ...(data?.groups ?? []).map((g) => ({ id: g.id, name: `👥 ${g.name}`, type: "group" as const })),
-    ...(data?.chats ?? []).filter((c) => !c.id.endsWith("@g.us")).map((c) => ({ id: c.id, name: `👤 ${c.name}`, type: "chat" as const })),
-  ], [data]);
+  const allTargets = useMemo(
+    () =>
+      mergeTargets(data ?? {}).map((t) => ({
+        id: t.id,
+        name: t.isGroup ? `👥 ${t.name}` : `👤 ${t.name}`,
+        type: t.isGroup ? ("group" as const) : ("chat" as const),
+      })),
+    [data],
+  );
 
   const trimmed = search.trim();
   const normalized = normalizeChatId(trimmed);
