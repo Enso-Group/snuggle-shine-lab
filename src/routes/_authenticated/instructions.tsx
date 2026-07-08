@@ -19,6 +19,19 @@ function InstructionsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>איך להתחיל?</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>1. גשי ל-<a href="https://whapi.cloud" target="_blank" className="text-primary underline">whapi.cloud</a> ופתחי trial חינמי (5 ימים)</p>
+          <p>2. סרקי QR עם המספר החדש שלך</p>
+          <p>3. העתיקי את ה-API Token והכניסי אותו בעמוד <strong>הגדרות</strong></p>
+          <p>4. הגדירי את ה-Webhook URL ב-Whapi (תמצאי אותו בהגדרות)</p>
+          <p>5. הבוט יתחיל לענות אוטומטית 🚀</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>חיבור ל-Whapi</CardTitle>
           <CardDescription>הטוקן נשמר בצורה מאובטחת בשרת (לא ניתן לראות אותו דרך הדפדפן)</CardDescription>
         </CardHeader>
@@ -36,6 +49,17 @@ function InstructionsPage() {
               <p className="text-xs">בחרי events: <code>messages</code></p>
             </AlertDescription>
           </Alert>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>היסטוריה מלאה מ-WhatsApp</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>כדי לראות את כל ההודעות מהטלפון (ולא רק את אלו שנשמרו במאגר), הפעל היסטוריה מלאה ואז חבר מחדש את WhatsApp.</p>
+          <p>כשההיסטוריה המלאה פעילה — היא מתחילה להביא הודעות ישנות רק אחרי חיבור מחדש של WhatsApp. הקבוצה מתעדכנת אוטומטית כל 10 שניות.</p>
+          <p className="text-muted-foreground">את הפעולות (הפעלת היסטוריה מלאה / חיבור מחדש) מבצעים בעמוד <strong>משתתפים</strong>.</p>
         </CardContent>
       </Card>
     </div>

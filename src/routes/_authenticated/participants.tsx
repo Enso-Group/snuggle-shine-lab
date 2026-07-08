@@ -358,9 +358,7 @@ function ParticipantsPage() {
         </AlertTitle>
         <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
           <span>
-            {fullHistory === true
-              ? "האפשרות פעילה, אבל היא מתחילה להביא הודעות ישנות רק אחרי חיבור מחדש של WhatsApp. הקבוצה מתעדכנת אוטומטית כל 10 שניות."
-              : "כדי לראות את כל ההודעות מהטלפון (ולא רק את אלו שנשמרו במאגר), הפעל היסטוריה מלאה ואז חבר מחדש את WhatsApp."}
+            {fullHistory === true ? "היסטוריה מלאה פעילה." : "היסטוריה מלאה לא פעילה."} להסבר מלא ראה עמוד <strong>הוראות</strong>.
             {connectionStatus && <span className="block mt-1 text-xs">סטטוס חיבור: {connectionStatus}</span>}
           </span>
           <div className="flex flex-wrap gap-2">

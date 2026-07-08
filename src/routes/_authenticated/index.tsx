@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { getDashboardStats, checkIsAdmin } from "@/lib/bot.functions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MessageSquare, Users, Send } from "lucide-react";
@@ -49,18 +49,6 @@ function Dashboard() {
         <StatCard icon={Send} label="פקודות שנשלחו" value={stats.data?.commands ?? 0} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>איך להתחיל?</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <p>1. גשי ל-<a href="https://whapi.cloud" target="_blank" className="text-primary underline">whapi.cloud</a> ופתחי trial חינמי (5 ימים)</p>
-          <p>2. סרקי QR עם המספר החדש שלך</p>
-          <p>3. העתיקי את ה-API Token והכניסי אותו בעמוד <strong>הגדרות</strong></p>
-          <p>4. הגדירי את ה-Webhook URL ב-Whapi (תמצאי אותו בהגדרות)</p>
-          <p>5. הבוט יתחיל לענות אוטומטית 🚀</p>
-        </CardContent>
-      </Card>
     </div>
   );
 }
