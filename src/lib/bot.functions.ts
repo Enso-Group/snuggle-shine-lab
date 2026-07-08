@@ -76,10 +76,12 @@ export const listWhapiGroups = createServerFn({ method: "POST" })
     const { listGroups, listChats, listContacts } = await import("./whapi.server");
     // Include the full contact book, not just recent chats, so people you
     // haven't messaged yet are still searchable in the target pickers.
+    // listContacts can re-throw on Whapi trial limits; keep it non-fatal so the
+    // groups/chats pickers still load and only the contact book is skipped.
     const [groups, chats, contacts] = await Promise.all([
       listGroups(),
       listChats(),
-      listContacts(),
+      listContacts().catch(() => []),
     ]);
     return { groups, chats, contacts };
   });
