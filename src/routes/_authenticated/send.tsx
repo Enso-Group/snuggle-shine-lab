@@ -104,7 +104,7 @@ function SendPage() {
         <CardHeader>
           <CardTitle>הודעה חדשה</CardTitle>
           <CardDescription>
-            {isLoading ? "טוען רשימת קבוצות..." : data ? `${data.groups.length} קבוצות, ${data.chats.length} צ'אטים` : "החיבור ל-Whapi לא פעיל — בדקי בהגדרות"}
+            {isLoading ? "טוען רשימת קבוצות..." : data ? `${data.groups.length} קבוצות, ${data.chats.length} צ'אטים` : "בחרי יעד וכתבי את ההודעה"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

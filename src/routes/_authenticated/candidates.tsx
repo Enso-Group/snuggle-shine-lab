@@ -219,7 +219,7 @@ function CandidatesPage() {
                   </p>
                 ) : groups.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No WhatsApp groups found. Make sure the bot is connected.
+                    No groups to display.
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">

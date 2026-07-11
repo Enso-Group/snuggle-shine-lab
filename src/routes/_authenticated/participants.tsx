@@ -82,7 +82,7 @@ function ParticipantsPage() {
     setLoadingGroups(true);
     listGroupConversations()
       .then((r) => setGroups(r as Group[]))
-      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי לטעון קבוצות.")))
+      .catch(() => {})
       .finally(() => setLoadingGroups(false));
   }
 
@@ -358,8 +358,7 @@ function ParticipantsPage() {
         </AlertTitle>
         <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
           <span>
-            {fullHistory === true ? "היסטוריה מלאה פעילה." : "היסטוריה מלאה לא פעילה."} להסבר מלא ראה עמוד <strong>הוראות</strong>.
-            {connectionStatus && <span className="block mt-1 text-xs">סטטוס חיבור: {connectionStatus}</span>}
+            לניהול היסטוריה מלאה וחיבור WhatsApp — ראה עמוד <strong>הוראות</strong>.
           </span>
           <div className="flex flex-wrap gap-2">
             <Button
