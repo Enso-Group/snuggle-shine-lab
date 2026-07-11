@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { listAiUsage, getAiUsageSummary, getAiUsageFilters } from "@/lib/usage.functions";
+import { useWhatsAppConnection } from "@/hooks/use-connection";
 import {
   Activity,
   Coins,
@@ -76,6 +77,7 @@ function UsagePage() {
   const [tool, setTool] = useState<string>("all");
   const [selected, setSelected] = useState<any | null>(null);
 
+  const { connected } = useWhatsAppConnection();
   const summaryFn = useServerFn(getAiUsageSummary);
   const listFn = useServerFn(listAiUsage);
   const filtersFn = useServerFn(getAiUsageFilters);
@@ -83,12 +85,14 @@ function UsagePage() {
   const summary = useQuery({
     queryKey: ["ai-usage-summary", rangeHours],
     queryFn: () => summaryFn({ data: { rangeHours } }),
+    enabled: connected,
     refetchInterval: 30_000,
   });
 
   const filters = useQuery({
     queryKey: ["ai-usage-filters"],
     queryFn: () => filtersFn(),
+    enabled: connected,
   });
 
   const list = useQuery({
@@ -105,6 +109,7 @@ function UsagePage() {
           tool: tool === "all" ? undefined : tool,
         },
       }),
+    enabled: connected,
     refetchInterval: 30_000,
   });
 
@@ -129,6 +134,9 @@ function UsagePage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">מעקב שימוש AI</h1>
           <p className="text-muted-foreground mt-1">כל קריאת מודל וכלי — טוקנים, עלות, זמן, סטטוס.</p>
+          {!connected && (
+            <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Tabs value={String(rangeHours)} onValueChange={(v) => { setRangeHours(Number(v)); setPage(1); }}>
@@ -317,7 +325,7 @@ function UsagePage() {
               <TableBody>
                 {list.isLoading ? (
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">טוען...</TableCell></TableRow>
-                ) : list.data?.rows.length === 0 ? (
+                ) : !list.data?.rows?.length ? (
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">אין רשומות בטווח/בפילטר הנבחר.</TableCell></TableRow>
                 ) : list.data?.rows.map((r: any) => (
                   <TableRow key={r.id} className="hover:bg-muted/50">

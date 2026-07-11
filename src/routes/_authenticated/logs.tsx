@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
-import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/logs")({
   head: () => ({ meta: [{ title: "לוגים — בוט WhatsApp" }] }),
@@ -36,12 +35,10 @@ function LogsPage() {
       <div>
         <h1 className="text-3xl font-bold">לוגים</h1>
         <p className="text-muted-foreground mt-1">פקודות אחרונות שנשלחו מהדשבורד</p>
+        {!connected && !connLoading && (
+          <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+        )}
       </div>
-      {connLoading ? (
-        <p className="text-muted-foreground">טוען...</p>
-      ) : !connected ? (
-        <NotConnected description="חבר חשבון WhatsApp כדי לראות את פעילות הבוט." />
-      ) : (
       <div className="space-y-3">
         {logs.length === 0 && <p className="text-muted-foreground">אין לוגים עדיין.</p>}
         {logs.map((l) => (
@@ -62,7 +59,6 @@ function LogsPage() {
           </Card>
         ))}
       </div>
-      )}
     </div>
   );
 }

@@ -6,7 +6,6 @@ import { getDashboardStats, checkIsAdmin } from "@/lib/bot.functions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MessageSquare, Users, Send } from "lucide-react";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
-import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "סקירה — בוט WhatsApp" }] }),
@@ -45,19 +44,16 @@ function Dashboard() {
       <div>
         <h1 className="text-3xl font-bold">סקירה</h1>
         <p className="text-muted-foreground mt-1">סטטוס הבוט שלך במבט אחד</p>
+        {!connected && !connLoading && (
+          <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+        )}
       </div>
 
-      {connLoading ? (
-        <p className="text-muted-foreground">טוען...</p>
-      ) : !connected ? (
-        <NotConnected description="חבר חשבון WhatsApp כדי לראות סטטיסטיקות ופעילות." />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard icon={Users} label="שיחות" value={stats.data?.conversations ?? 0} />
-          <StatCard icon={MessageSquare} label="הודעות" value={stats.data?.messages ?? 0} />
-          <StatCard icon={Send} label="פקודות שנשלחו" value={stats.data?.commands ?? 0} />
-        </div>
-      )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard icon={Users} label="שיחות" value={stats.data?.conversations ?? 0} />
+        <StatCard icon={MessageSquare} label="הודעות" value={stats.data?.messages ?? 0} />
+        <StatCard icon={Send} label="פקודות שנשלחו" value={stats.data?.commands ?? 0} />
+      </div>
     </div>
   );
 }

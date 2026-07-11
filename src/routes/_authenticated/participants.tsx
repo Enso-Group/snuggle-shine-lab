@@ -13,7 +13,6 @@ import {
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useWhatsAppConnection, WA_CONNECTION_QUERY_KEY } from "@/hooks/use-connection";
-import { NotConnected } from "@/components/not-connected";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -282,6 +281,9 @@ function ParticipantsPage() {
           <p className="text-sm text-muted-foreground mt-1">
             כל הקבוצות והמשתתפים מתעדכנים בזמן אמת מ-WhatsApp.
           </p>
+          {!connected && (
+            <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {lastRefresh && (
@@ -302,15 +304,6 @@ function ParticipantsPage() {
         </div>
       </div>
 
-      {!connected && (
-        <NotConnected
-          compact
-          showConnectButton={false}
-          description="חבר חשבון WhatsApp למטה כדי לראות קבוצות ומשתתפים."
-        />
-      )}
-
-      {connected && (
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Popover>
@@ -380,7 +373,6 @@ function ParticipantsPage() {
           </Button>
         )}
       </div>
-      )}
 
       <Alert>
         <AlertTriangle className="size-4" />

@@ -5,7 +5,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Users, User } from "lucide-react";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
-import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/conversations")({
   head: () => ({ meta: [{ title: "שיחות — בוט WhatsApp" }] }),
@@ -70,23 +69,14 @@ function ConvLayout() {
     };
   }, [connected]);
 
-  if (connLoading) {
-    return <div className="p-8 text-muted-foreground">טוען...</div>;
-  }
-  if (!connected) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-2">שיחות</h1>
-        <NotConnected description="חבר חשבון WhatsApp כדי לראות שיחות והיסטוריית הודעות." />
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-screen">
       <div className="w-80 border-l bg-card flex flex-col">
         <div className="p-4 border-b">
           <h2 className="font-semibold">שיחות ({convs.length})</h2>
+          {!connected && !connLoading && (
+            <p className="text-xs text-muted-foreground mt-0.5">אין חשבון WhatsApp מחובר.</p>
+          )}
         </div>
         <ScrollArea className="flex-1">
           {convs.length === 0 && <p className="p-4 text-sm text-muted-foreground">אין שיחות עדיין. כשמישהו ישלח הודעה לבוט, היא תופיע כאן.</p>}

@@ -19,7 +19,6 @@ import {
 } from "@/lib/sourcing.functions";
 import type { EnrichedCandidate } from "@/lib/sourcing.functions";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
-import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/candidates")({
   head: () => ({ meta: [{ title: "Candidates — Talent Sourcing" }] }),
@@ -152,14 +151,11 @@ function CandidatesPage() {
         <p className="text-muted-foreground mt-1">
           Scan WhatsApp groups with AI, then enrich matches via Apollo & Apify
         </p>
+        {!connected && !connLoading && (
+          <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
+        )}
       </div>
 
-      {connLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
-      ) : !connected ? (
-        <NotConnected description="חבר חשבון WhatsApp כדי לסרוק קבוצות ולמצוא מועמדים." />
-      ) : (
-      <>
       {/* Search + group picker */}
       <Card>
         <CardContent className="pt-6 space-y-4">
@@ -332,8 +328,6 @@ function CandidatesPage() {
             </p>
           </CardContent>
         </Card>
-      )}
-      </>
       )}
     </div>
   );
