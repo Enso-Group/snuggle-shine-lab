@@ -2,12 +2,39 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
 import { z } from "zod";
 
+// Resolve the text to actually send for a scheduled row. In "ai" mode the stored
+// body is a prompt and a fresh message is generated at send time using the same
+// logic/model/settings as the manual Send flow (runCommand → gemini-2.5-flash).
+async function resolveScheduledBody(
+  supabase: any,
+  row: { body: string; mode?: string | null },
+): Promise<string> {
+  if (row.mode !== "ai") return row.body;
+  const { data: settings } = await supabase
+    .from("bot_settings")
+    .select("system_prompt")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const { runCommand } = await import("./ai-brain.server");
+  const generated = await runCommand(
+    row.body,
+    settings?.system_prompt ?? "אתה עוזר חכם בעברית.",
+    "schedule",
+  );
+  const text = (generated || "").trim();
+  if (!text) throw new Error("ה-AI לא הצליח לייצר הודעה מהפרומפט");
+  return text;
+}
+
 const scheduleSchema = z.object({
   day_of_week: z.number().int().min(0).max(6),
   send_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   target_chat_id: z.string().min(1),
   target_name: z.string().nullable().optional(),
+  // In "direct" mode body is the message text; in "ai" mode body is the prompt.
   body: z.string().min(1).max(4000),
+  mode: z.enum(["direct", "ai"]).optional(),
   enabled: z.boolean().optional(),
   require_approval: z.boolean().optional(),
 });
@@ -77,8 +104,9 @@ export const sendScheduledNow = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("לא נמצא");
+    const body = await resolveScheduledBody(context.supabase, row);
     const { sendTextMessage } = await import("./whapi.server");
-    await sendTextMessage(row.target_chat_id, row.body);
+    await sendTextMessage(row.target_chat_id, body);
     await context.supabase
       .from("scheduled_messages")
       .update({ last_sent_at: new Date().toISOString() })

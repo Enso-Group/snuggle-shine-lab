@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -16,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { mergeTargets } from "@/lib/targets";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown } from "lucide-react";
+import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown, Sparkles } from "lucide-react";
 import {
   listScheduledMessages,
   createScheduledMessage,
@@ -43,6 +44,7 @@ type Row = {
   target_chat_id: string;
   target_name: string | null;
   body: string;
+  mode: string;
   enabled: boolean;
   require_approval: boolean;
   last_sent_at: string | null;
@@ -182,11 +184,18 @@ function SchedulePage() {
                     {r.target_name ?? r.target_chat_id}
                   </p>
                   <p className="line-clamp-2 whitespace-pre-wrap" title={r.body}>{r.body}</p>
-                  {r.require_approval && (
-                    <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400">
-                      <ShieldQuestion className="size-3" />דורש אישור
-                    </Badge>
-                  )}
+                  <div className="flex flex-wrap gap-1">
+                    {r.mode === "ai" && (
+                      <Badge variant="outline" className="text-[10px] gap-1 border-primary/40 text-primary">
+                        <Sparkles className="size-3" />הודעת AI
+                      </Badge>
+                    )}
+                    {r.require_approval && (
+                      <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400">
+                        <ShieldQuestion className="size-3" />דורש אישור
+                      </Badge>
+                    )}
+                  </div>
                   <div className="flex gap-1 pt-1">
                     <ScheduleDialog targets={allTargets} onSaved={invalidate} existing={r}>
                       <Button size="icon" variant="ghost" className="h-6 w-6"><Pencil className="size-3" /></Button>
@@ -234,18 +243,20 @@ function ScheduleDialog({
   const [targetOpen, setTargetOpen] = useState(false);
   const [targetSearch, setTargetSearch] = useState("");
   const [body, setBody] = useState(existing?.body ?? "");
+  const [mode, setMode] = useState<"direct" | "ai">((existing?.mode as "direct" | "ai") ?? "direct");
   const [requireApproval, setRequireApproval] = useState(existing?.require_approval ?? false);
 
   const save = useMutation({
     mutationFn: async () => {
       if (!target) throw new Error("בחר יעד");
-      if (!body.trim()) throw new Error("הוסף תוכן");
+      if (!body.trim()) throw new Error(mode === "ai" ? "הוסף פרומפט" : "הוסף תוכן");
       const payload = {
         day_of_week: day,
         send_time: time.length === 5 ? `${time}:00` : time,
         target_chat_id: target,
         target_name: targetName || targets.find((t) => t.id === target)?.name || null,
         body,
+        mode,
         require_approval: requireApproval,
       };
       if (existing) await updateFn({ data: { id: existing.id, ...payload } });
@@ -335,8 +346,39 @@ function ScheduleDialog({
             </Popover>
           </div>
           <div>
-            <Label>תוכן ההודעה</Label>
-            <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} />
+            <Label>סוג ההודעה</Label>
+            <RadioGroup
+              value={mode}
+              onValueChange={(v) => setMode(v as "direct" | "ai")}
+              className="flex gap-4 mt-2"
+            >
+              <label className="flex items-center gap-2 cursor-pointer">
+                <RadioGroupItem value="direct" />
+                <span className="text-sm">הודעה קבועה</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <RadioGroupItem value="ai" />
+                <span className="text-sm">הודעת AI</span>
+              </label>
+            </RadioGroup>
+          </div>
+          <div>
+            <Label>{mode === "ai" ? "פרומפט ל-AI" : "תוכן ההודעה"}</Label>
+            <Textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={6}
+              placeholder={
+                mode === "ai"
+                  ? 'לדוגמה: כתוב ברכת בוקר טוב קצרה ומחממת לקבוצה, עם טיפ אחד ליום'
+                  : ""
+              }
+            />
+            {mode === "ai" && (
+              <p className="text-xs text-muted-foreground mt-1">
+                ההודעה תיווצר מחדש על ידי ה-AI בכל שליחה מתוזמנת, כך שהיא שונה בכל פעם.
+              </p>
+            )}
           </div>
           <div className="flex items-center justify-between rounded-md border p-3">
             <div className="space-y-0.5">

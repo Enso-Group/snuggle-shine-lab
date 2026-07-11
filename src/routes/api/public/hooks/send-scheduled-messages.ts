@@ -60,25 +60,37 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < minTs);
 
           // Global approval gate — when on, every scheduled send is queued too.
+          // Also grab the system prompt for AI-mode generation.
           const { data: botSettings } = await supabase
             .from("bot_settings")
-            .select("require_approval_all")
+            .select("require_approval_all, system_prompt")
             .order("created_at", { ascending: true })
             .limit(1)
             .maybeSingle();
           const globalApproval = !!botSettings?.require_approval_all;
+          const systemPrompt = botSettings?.system_prompt ?? "אתה עוזר חכם בעברית.";
 
           const { sendTextMessage } = await import("@/lib/whapi.server");
+          const { runCommand } = await import("@/lib/ai-brain.server");
           const results: any[] = [];
           for (const r of due) {
             try {
+              // In "ai" mode the stored body is a prompt — generate a fresh
+              // message NOW (same logic/model as the manual Send flow) so each
+              // weekly send can be unique.
+              let body = r.body;
+              if (r.mode === "ai") {
+                body = (await runCommand(r.body, systemPrompt, "schedule")).trim();
+                if (!body) throw new Error("ה-AI לא הצליח לייצר הודעה מהפרומפט");
+              }
+
               if (r.require_approval || globalApproval) {
                 await supabase.from("scheduled_approvals").insert({
                   scheduled_message_id: r.id,
                   user_id: r.user_id,
                   target_chat_id: r.target_chat_id,
                   target_name: r.target_name,
-                  body: r.body,
+                  body,
                   status: "pending",
                 });
                 await supabase
@@ -87,7 +99,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
                   .eq("id", r.id);
                 results.push({ id: r.id, queued: true });
               } else {
-                await sendTextMessage(r.target_chat_id, r.body);
+                await sendTextMessage(r.target_chat_id, body);
                 await supabase
                   .from("scheduled_messages")
                   .update({ last_sent_at: new Date().toISOString() })
