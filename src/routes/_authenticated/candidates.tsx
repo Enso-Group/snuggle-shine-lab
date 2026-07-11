@@ -18,6 +18,8 @@ import {
   listGroupsForSourcing,
 } from "@/lib/sourcing.functions";
 import type { EnrichedCandidate } from "@/lib/sourcing.functions";
+import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/candidates")({
   head: () => ({ meta: [{ title: "Candidates — Talent Sourcing" }] }),
@@ -39,12 +41,20 @@ function CandidatesPage() {
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [groupSearch, setGroupSearch] = useState("");
 
+  const { connected, isLoading: connLoading } = useWhatsAppConnection();
   const listGroupsFn = useServerFn(listGroupsForSourcing);
   const scanFn = useServerFn(scanGroupsForCandidates);
   const enrichFn = useServerFn(enrichCandidate);
 
-  // Load groups on mount
+  // Load groups on mount — only when a WhatsApp account is connected.
   useEffect(() => {
+    if (!connected) {
+      setGroups([]);
+      setSelectedGroups(new Set());
+      setLoadingGroups(false);
+      return;
+    }
+    setLoadingGroups(true);
     listGroupsFn()
       .then((gs) => {
         setGroups(gs);
@@ -52,7 +62,7 @@ function CandidatesPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingGroups(false));
-  }, []);
+  }, [connected]);
 
   function toggleGroup(id: string) {
     setSelectedGroups((prev) => {
@@ -144,6 +154,12 @@ function CandidatesPage() {
         </p>
       </div>
 
+      {connLoading ? (
+        <p className="text-muted-foreground">Loading…</p>
+      ) : !connected ? (
+        <NotConnected description="חבר חשבון WhatsApp כדי לסרוק קבוצות ולמצוא מועמדים." />
+      ) : (
+      <>
       {/* Search + group picker */}
       <Card>
         <CardContent className="pt-6 space-y-4">
@@ -316,6 +332,8 @@ function CandidatesPage() {
             </p>
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   );

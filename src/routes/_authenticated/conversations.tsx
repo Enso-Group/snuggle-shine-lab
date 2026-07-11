@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Users, User } from "lucide-react";
+import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/conversations")({
   head: () => ({ meta: [{ title: "שיחות — בוט WhatsApp" }] }),
@@ -13,10 +15,16 @@ export const Route = createFileRoute("/_authenticated/conversations")({
 type Conv = { id: string; name: string | null; whapi_chat_id: string; is_group: boolean; last_message_at: string | null };
 
 function ConvLayout() {
+  const { connected, isLoading: connLoading } = useWhatsAppConnection();
   const [convs, setConvs] = useState<Conv[]>([]);
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
+    // Never show cached conversations without a live connection.
+    if (!connected) {
+      setConvs([]);
+      return;
+    }
     let mounted = true;
     async function load() {
       // Only show conversations the user actually participated in:
@@ -60,7 +68,19 @@ function ConvLayout() {
       mounted = false;
       supabase.removeChannel(ch);
     };
-  }, []);
+  }, [connected]);
+
+  if (connLoading) {
+    return <div className="p-8 text-muted-foreground">טוען...</div>;
+  }
+  if (!connected) {
+    return (
+      <div className="p-8">
+        <h1 className="text-3xl font-bold mb-2">שיחות</h1>
+        <NotConnected description="חבר חשבון WhatsApp כדי לראות שיחות והיסטוריית הודעות." />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen">

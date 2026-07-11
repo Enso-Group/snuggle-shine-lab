@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   listGroupConversations,
   listGroupParticipants,
@@ -11,6 +12,8 @@ import {
   resetWhatsAppPipeline,
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useWhatsAppConnection, WA_CONNECTION_QUERY_KEY } from "@/hooks/use-connection";
+import { NotConnected } from "@/components/not-connected";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -57,6 +60,9 @@ type Participant = {
 type Msg = { id: string; body: string; created_at: string; source: "live" | "db" };
 
 function ParticipantsPage() {
+  const { connected } = useWhatsAppConnection();
+  const qc = useQueryClient();
+  const wasConnected = useRef<boolean | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string>("");
   const [groupName, setGroupName] = useState<string>("");
@@ -117,13 +123,30 @@ function ParticipantsPage() {
       setFullHistory(r.fullHistory);
       setConnectionStatus(r.status);
       if (r.connected) setQrImage("");
+      // On any connect/disconnect transition, refresh the shared status so every
+      // page updates right away.
+      if (wasConnected.current !== r.connected) {
+        wasConnected.current = r.connected;
+        qc.invalidateQueries({ queryKey: WA_CONNECTION_QUERY_KEY });
+      }
     });
   }
 
   useEffect(() => {
-    loadGroups();
     loadConnectionStatus();
   }, []);
+
+  // Load groups only while connected; clear the (now stale) list otherwise.
+  useEffect(() => {
+    if (connected) {
+      loadGroups();
+    } else {
+      setGroups([]);
+      setGroupId("");
+      setLoadingGroups(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
 
   function enableFullHistory() {
     setEnablingHistory(true);
@@ -279,6 +302,15 @@ function ParticipantsPage() {
         </div>
       </div>
 
+      {!connected && (
+        <NotConnected
+          compact
+          showConnectButton={false}
+          description="חבר חשבון WhatsApp למטה כדי לראות קבוצות ומשתתפים."
+        />
+      )}
+
+      {connected && (
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Popover>
@@ -348,6 +380,7 @@ function ParticipantsPage() {
           </Button>
         )}
       </div>
+      )}
 
       <Alert>
         <AlertTriangle className="size-4" />

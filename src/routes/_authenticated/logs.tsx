@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { NotConnected } from "@/components/not-connected";
 
 export const Route = createFileRoute("/_authenticated/logs")({
   head: () => ({ meta: [{ title: "לוגים — בוט WhatsApp" }] }),
@@ -12,16 +14,22 @@ export const Route = createFileRoute("/_authenticated/logs")({
 type Log = { id: string; prompt: string; target_chat_id: string; target_name: string | null; result: string | null; status: string; created_at: string };
 
 function LogsPage() {
+  const { connected, isLoading: connLoading } = useWhatsAppConnection();
   const [logs, setLogs] = useState<Log[]>([]);
 
   useEffect(() => {
+    // Don't show stale log history when no account is connected.
+    if (!connected) {
+      setLogs([]);
+      return;
+    }
     supabase
       .from("commands_log")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(100)
       .then(({ data }) => setLogs((data ?? []) as Log[]));
-  }, []);
+  }, [connected]);
 
   return (
     <div className="p-8 max-w-4xl space-y-6">
@@ -29,6 +37,11 @@ function LogsPage() {
         <h1 className="text-3xl font-bold">לוגים</h1>
         <p className="text-muted-foreground mt-1">פקודות אחרונות שנשלחו מהדשבורד</p>
       </div>
+      {connLoading ? (
+        <p className="text-muted-foreground">טוען...</p>
+      ) : !connected ? (
+        <NotConnected description="חבר חשבון WhatsApp כדי לראות את פעילות הבוט." />
+      ) : (
       <div className="space-y-3">
         {logs.length === 0 && <p className="text-muted-foreground">אין לוגים עדיין.</p>}
         {logs.map((l) => (
@@ -49,6 +62,7 @@ function LogsPage() {
           </Card>
         ))}
       </div>
+      )}
     </div>
   );
 }
