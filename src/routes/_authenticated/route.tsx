@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCheck } from "lucide-react";
+import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCheck, UserCog } from "lucide-react";
 import { isAdminEmail } from "@/lib/admin";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -47,6 +47,7 @@ const NAV = [
 
 // Behind-the-scenes / system pages — admin only.
 const SYSTEM_NAV = [
+  { to: "/user-management", label: "User Management", icon: UserCog },
   { to: "/approval-requests", label: "Approval Requests", icon: UserCheck },
   { to: "/instructions", label: "Instructions", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: SettingsIcon },

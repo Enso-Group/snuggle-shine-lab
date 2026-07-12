@@ -15,6 +15,7 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
 import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedApprovalRequestsRouteImport } from './routes/_authenticated/approval-requests'
+import { Route as AuthenticatedUserManagementRouteImport } from './routes/_authenticated/user-management'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSendRouteImport } from './routes/_authenticated/send'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
@@ -57,6 +58,11 @@ const AuthenticatedInstructionsRoute = AuthenticatedInstructionsRouteImport.upda
 const AuthenticatedApprovalRequestsRoute = AuthenticatedApprovalRequestsRouteImport.update({
   id: '/approval-requests',
   path: '/approval-requests',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedUserManagementRoute = AuthenticatedUserManagementRouteImport.update({
+  id: '/user-management',
+  path: '/user-management',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/approval-requests': typeof AuthenticatedApprovalRequestsRoute
+  '/user-management': typeof AuthenticatedUserManagementRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
@@ -169,6 +176,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/approval-requests': typeof AuthenticatedApprovalRequestsRoute
+  '/user-management': typeof AuthenticatedUserManagementRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/approval-requests': typeof AuthenticatedApprovalRequestsRoute
+  '/_authenticated/user-management': typeof AuthenticatedUserManagementRoute
   '/_authenticated/usage': typeof AuthenticatedUsageRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/instructions'
     | '/approval-requests'
+    | '/user-management'
     | '/usage'
     | '/chat/$threadId'
     | '/conversations/$id'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/instructions'
     | '/approval-requests'
+    | '/user-management'
     | '/usage'
     | '/'
     | '/chat/$threadId'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/instructions'
     | '/_authenticated/approval-requests'
+    | '/_authenticated/user-management'
     | '/_authenticated/usage'
     | '/_authenticated/'
     | '/_authenticated/chat/$threadId'
@@ -315,6 +327,13 @@ declare module '@tanstack/react-router' {
       path: '/approval-requests'
       fullPath: '/approval-requests'
       preLoaderRoute: typeof AuthenticatedApprovalRequestsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/user-management': {
+      id: '/_authenticated/user-management'
+      path: '/user-management'
+      fullPath: '/user-management'
+      preLoaderRoute: typeof AuthenticatedUserManagementRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -457,6 +476,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedApprovalRequestsRoute: typeof AuthenticatedApprovalRequestsRoute
+  AuthenticatedUserManagementRoute: typeof AuthenticatedUserManagementRoute
   AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
@@ -473,6 +493,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedApprovalRequestsRoute: AuthenticatedApprovalRequestsRoute,
+  AuthenticatedUserManagementRoute: AuthenticatedUserManagementRoute,
   AuthenticatedUsageRoute: AuthenticatedUsageRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
