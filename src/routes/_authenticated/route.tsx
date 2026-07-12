@@ -29,18 +29,18 @@ export const Route = createFileRoute("/_authenticated")({
 
 
 const NAV = [
-  { to: "/", label: "סקירה", icon: LayoutDashboard },
-  { to: "/conversations", label: "שיחות", icon: MessageSquare },
-  { to: "/participants", label: "משתתפים", icon: Users },
-  { to: "/chat", label: "צ'אט AI", icon: Bot },
-  { to: "/send", label: "שלח הודעה", icon: Send },
-  { to: "/schedule", label: "תזמון שבועי", icon: CalendarClock },
-  { to: "/approvals", label: "אישור הודעות", icon: Inbox },
-  { to: "/usage", label: "שימוש ועלויות", icon: Gauge },
-  { to: "/settings", label: "הגדרות", icon: SettingsIcon },
-  { to: "/logs", label: "לוגים", icon: ScrollText },
-  { to: "/instructions", label: "הוראות", icon: BookOpen },
-  { to: "/candidates", label: "מועמדים", icon: UserSearch },
+  { to: "/", label: "Overview", icon: LayoutDashboard },
+  { to: "/conversations", label: "Chats", icon: MessageSquare },
+  { to: "/participants", label: "Participants", icon: Users },
+  { to: "/chat", label: "AI Chat", icon: Bot },
+  { to: "/send", label: "Send Message", icon: Send },
+  { to: "/schedule", label: "Weekly Scheduler", icon: CalendarClock },
+  { to: "/approvals", label: "Approvals", icon: Inbox },
+  { to: "/usage", label: "Usage & Costs", icon: Gauge },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/logs", label: "Logs", icon: ScrollText },
+  { to: "/instructions", label: "Instructions", icon: BookOpen },
+  { to: "/candidates", label: "Candidates", icon: UserSearch },
 ] as const;
 
 function AuthedLayout() {
@@ -56,8 +56,8 @@ function AuthedLayout() {
     <div dir="rtl" className="min-h-screen flex bg-background text-foreground">
       <aside className="w-60 border-l bg-card flex flex-col">
         <div className="p-4 border-b">
-          <h1 className="font-bold text-lg">🤖 בוט WhatsApp</h1>
-          <p className="text-xs text-muted-foreground mt-1">דשבורד ניהול</p>
+          <h1 className="font-bold text-lg">🤖 WhatsApp Bot</h1>
+          <p className="text-xs text-muted-foreground mt-1">Management Dashboard</p>
         </div>
         <nav className="flex-1 p-2 space-y-1">
           {NAV.map((n) => {
@@ -80,7 +80,7 @@ function AuthedLayout() {
         <div className="p-2 border-t">
           <Button variant="ghost" className="w-full justify-start" onClick={signOut}>
             <LogOut className="size-4 ms-2" />
-            התנתקות
+            Log out
           </Button>
         </div>
       </aside>

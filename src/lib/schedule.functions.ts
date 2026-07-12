@@ -23,7 +23,7 @@ async function resolveScheduledBody(
     "schedule",
   );
   const text = (generated || "").trim();
-  if (!text) throw new Error("ה-AI לא הצליח לייצר הודעה מהפרומפט");
+  if (!text) throw new Error("The AI couldn't generate a message from the prompt");
   return text;
 }
 
@@ -103,7 +103,7 @@ export const sendScheduledNow = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!row) throw new Error("לא נמצא");
+    if (!row) throw new Error("Not found");
     const body = await resolveScheduledBody(context.supabase, row);
     const { sendTextMessage } = await import("./whapi.server");
     await sendTextMessage(row.target_chat_id, body);
@@ -139,7 +139,7 @@ export const approvePending = createServerFn({ method: "POST" })
       .eq("status", "pending")
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!row) throw new Error("לא נמצא");
+    if (!row) throw new Error("Not found");
     const body = data.body ?? row.body;
     const { sendTextMessage } = await import("./whapi.server");
     const sendRes: any = await sendTextMessage(row.target_chat_id, body);
@@ -154,7 +154,7 @@ export const approvePending = createServerFn({ method: "POST" })
         conversation_id: row.conversation_id,
         whapi_message_id: sendRes?.message?.id ?? null,
         direction: "outbound",
-        sender_name: "הבוט",
+        sender_name: "Bot",
         sender_id: "bot",
         body,
         raw: sendRes,

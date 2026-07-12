@@ -59,20 +59,20 @@ export async function checkOutboundAllowed(
   options: GuardOptions = {},
 ): Promise<GuardResult> {
   if (conv.blocked) {
-    return { ok: false, code: "blocked", reason: "איש קשר חסום (ביקש להפסיק או הוסר ידנית)." };
+    return { ok: false, code: "blocked", reason: "Contact is blocked (asked to stop or was removed manually)." };
   }
   if (!options.allowColdContact && (!conv.inbound_count || conv.inbound_count <= 0)) {
     return {
       ok: false,
       code: "cold_contact",
-      reason: "אסור לשלוח לאיש קשר שלא יזם שיחה. שלחי רק למי שכתב לבוט קודם.",
+      reason: "You can't message a contact who didn't start a conversation. Only message people who wrote to the bot first.",
     };
   }
   if ((conv.consecutive_outbound ?? 0) >= MAX_CONSECUTIVE_OUTBOUND) {
     return {
       ok: false,
       code: "consecutive_limit",
-      reason: `כבר נשלחו ${MAX_CONSECUTIVE_OUTBOUND} הודעות ברצף ללא תשובה. ממתינים לתגובה.`,
+      reason: `${MAX_CONSECUTIVE_OUTBOUND} messages were already sent in a row without a reply. Waiting for a response.`,
     };
   }
   // Min-gap only applies when we're piling outbound on top of outbound.
@@ -84,7 +84,7 @@ export async function checkOutboundAllowed(
       return {
         ok: false,
         code: "min_gap",
-        reason: `יש להמתין לפחות 3 דקות בין הודעות לאותו צ'אט. נסי שוב בעוד ${wait} שניות.`,
+        reason: `You must wait at least 3 minutes between messages to the same chat. Try again in ${wait} seconds.`,
       };
     }
   }
@@ -93,7 +93,7 @@ export async function checkOutboundAllowed(
     return {
       ok: false,
       code: "duplicate",
-      reason: "אסור לשלוח את אותו טקסט פעמיים ברצף — שני נוסח קצת.",
+      reason: "You can't send the same text twice in a row — vary the wording a bit.",
     };
   }
 
@@ -109,7 +109,7 @@ export async function checkOutboundAllowed(
     return {
       ok: false,
       code: "hourly_cap",
-      reason: `הגעת לתקרה של ${MAX_DISTINCT_CHATS_PER_HOUR} אנשי קשר חדשים בשעה האחרונה. המתיני.`,
+      reason: `You've reached the cap of ${MAX_DISTINCT_CHATS_PER_HOUR} new contacts in the past hour. Please wait.`,
     };
   }
 
@@ -209,7 +209,7 @@ export async function raiseAdminAlert(
       user_id: admin.user_id,
       prompt: "[ALERT] " + message.slice(0, 500),
       target_chat_id: "system",
-      target_name: "התראת מערכת",
+      target_name: "System alert",
       status: "alert",
       result: message.slice(0, 2000),
     });

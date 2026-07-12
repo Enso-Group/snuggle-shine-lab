@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>) => ({ next: typeof s.next === "string" ? s.next : "/" }),
-  head: () => ({ meta: [{ title: "התחברות — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Sign in — WhatsApp Bot" }] }),
   component: AuthPage,
 });
 
@@ -33,7 +33,7 @@ function AuthPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) return toast.error(error.message);
-    toast.success("התחברת בהצלחה");
+    toast.success("Signed in successfully");
     nav({ to: next || "/" });
   }
 
@@ -47,49 +47,49 @@ function AuthPage() {
     });
     setLoading(false);
     if (error) return toast.error(error.message);
-    toast.success("נרשמת! ייתכן שתידרשי לאשר מייל. המשתמש הראשון הופך אוטומטית למנהל.");
+    toast.success("Signed up! You may need to confirm your email. The first user automatically becomes the admin.");
   }
 
   return (
     <div dir="rtl" className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">בוט WhatsApp 🤖</CardTitle>
-          <CardDescription>ניהול הבוט שלך</CardDescription>
+          <CardTitle className="text-2xl">WhatsApp Bot 🤖</CardTitle>
+          <CardDescription>Manage your bot</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">התחברות</TabsTrigger>
-              <TabsTrigger value="signup">הרשמה</TabsTrigger>
+              <TabsTrigger value="signin">Sign in</TabsTrigger>
+              <TabsTrigger value="signup">Sign up</TabsTrigger>
             </TabsList>
             <TabsContent value="signin">
               <form onSubmit={signIn} className="space-y-4 mt-4">
                 <div>
-                  <Label htmlFor="e1">אימייל</Label>
+                  <Label htmlFor="e1">Email</Label>
                   <Input id="e1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 </div>
                 <div>
-                  <Label htmlFor="p1">סיסמה</Label>
+                  <Label htmlFor="p1">Password</Label>
                   <Input id="p1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "מתחבר..." : "התחברות"}
+                  {loading ? "Signing in..." : "Sign in"}
                 </Button>
               </form>
             </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={signUp} className="space-y-4 mt-4">
                 <div>
-                  <Label htmlFor="e2">אימייל</Label>
+                  <Label htmlFor="e2">Email</Label>
                   <Input id="e2" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 </div>
                 <div>
-                  <Label htmlFor="p2">סיסמה (לפחות 6 תווים)</Label>
+                  <Label htmlFor="p2">Password (at least 6 characters)</Label>
                   <Input id="p2" type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "נרשם..." : "הרשמה"}
+                  {loading ? "Signing up..." : "Sign up"}
                 </Button>
               </form>
             </TabsContent>

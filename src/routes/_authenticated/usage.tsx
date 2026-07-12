@@ -47,25 +47,25 @@ import {
 } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/usage")({
-  head: () => ({ meta: [{ title: "שימוש ועלויות — מעקב AI" }] }),
+  head: () => ({ meta: [{ title: "Usage & Costs — AI Tracking" }] }),
   component: UsagePage,
 });
 
 const RANGES = [
-  { label: "24 שעות", hours: 24 },
-  { label: "7 ימים", hours: 24 * 7 },
-  { label: "30 ימים", hours: 24 * 30 },
-  { label: "90 ימים", hours: 24 * 90 },
+  { label: "24 hours", hours: 24 },
+  { label: "7 days", hours: 24 * 7 },
+  { label: "30 days", hours: 24 * 30 },
+  { label: "90 days", hours: 24 * 90 },
 ];
 
 function fmtNum(n: number) {
-  return new Intl.NumberFormat("he-IL").format(n);
+  return new Intl.NumberFormat("en-US").format(n);
 }
 function fmtUSD(n: number) {
   return `$${n.toFixed(n < 1 ? 4 : 2)}`;
 }
 function fmtTime(s: string) {
-  return new Date(s).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "medium" });
+  return new Date(s).toLocaleString("en-US", { dateStyle: "short", timeStyle: "medium" });
 }
 
 function UsagePage() {
@@ -135,10 +135,10 @@ function UsagePage() {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">מעקב שימוש AI</h1>
-          <p className="text-muted-foreground mt-1">כל קריאת מודל וכלי — טוקנים, עלות, זמן, סטטוס.</p>
+          <h1 className="text-3xl font-bold tracking-tight">AI Usage Tracking</h1>
+          <p className="text-muted-foreground mt-1">Every model and tool call — tokens, cost, time, status.</p>
           {!connected && (
-            <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+            <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -159,27 +159,27 @@ function UsagePage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryCard
           icon={Activity}
-          label="סך קריאות"
+          label="Total calls"
           value={fmtNum(summary.data?.totals.calls ?? 0)}
-          sub={`${fmtNum(summary.data?.totals.llmCalls ?? 0)} LLM · ${fmtNum(summary.data?.totals.toolCalls ?? 0)} כלים`}
+          sub={`${fmtNum(summary.data?.totals.llmCalls ?? 0)} LLM · ${fmtNum(summary.data?.totals.toolCalls ?? 0)} tools`}
         />
         <SummaryCard
           icon={Coins}
-          label="עלות משוערת"
+          label="Estimated cost"
           value={fmtUSD(summary.data?.totals.totalCostUsd ?? 0)}
-          sub={`${fmtNum(summary.data?.totals.totalTokens ?? 0)} טוקנים`}
+          sub={`${fmtNum(summary.data?.totals.totalTokens ?? 0)} tokens`}
           accent="primary"
         />
         <SummaryCard
           icon={AlertCircle}
-          label="שגיאות"
+          label="Errors"
           value={fmtNum(summary.data?.totals.errorCount ?? 0)}
-          sub={summary.data?.totals.calls ? `${(((summary.data.totals.errorCount) / summary.data.totals.calls) * 100).toFixed(1)}% מכלל הקריאות` : "—"}
+          sub={summary.data?.totals.calls ? `${(((summary.data.totals.errorCount) / summary.data.totals.calls) * 100).toFixed(1)}% of all calls` : "—"}
           accent={summary.data && summary.data.totals.errorCount > 0 ? "destructive" : undefined}
         />
         <SummaryCard
           icon={Clock}
-          label="זמן ממוצע לקריאה"
+          label="Average time per call"
           value={`${fmtNum(summary.data?.totals.avgLatencyMs ?? 0)}ms`}
         />
       </div>
@@ -187,7 +187,7 @@ function UsagePage() {
       {/* Chart */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">פעילות יומית</CardTitle>
+          <CardTitle className="text-base">Daily activity</CardTitle>
         </CardHeader>
         <CardContent className="h-64">
           {summary.data?.series.length ? (
@@ -206,12 +206,12 @@ function UsagePage() {
                   contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                   formatter={(v: any, k: string) => (k === "cost" ? fmtUSD(Number(v)) : fmtNum(Number(v)))}
                 />
-                <Area type="monotone" dataKey="calls" stroke="hsl(var(--primary))" fill="url(#g1)" name="קריאות" />
-                <Area type="monotone" dataKey="tokens" stroke="hsl(var(--muted-foreground))" fill="transparent" name="טוקנים" />
+                <Area type="monotone" dataKey="calls" stroke="hsl(var(--primary))" fill="url(#g1)" name="Calls" />
+                <Area type="monotone" dataKey="tokens" stroke="hsl(var(--muted-foreground))" fill="transparent" name="Tokens" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">אין נתונים בטווח הנבחר</div>
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No data in the selected range</div>
           )}
         </CardContent>
       </Card>
@@ -220,19 +220,19 @@ function UsagePage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><Cpu className="size-4" /> פילוח לפי מודל</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><Cpu className="size-4" /> Breakdown by model</CardTitle>
           </CardHeader>
           <CardContent>
             {modelEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין קריאות LLM בטווח.</p>
+              <p className="text-sm text-muted-foreground">No LLM calls in this range.</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>מודל</TableHead>
-                    <TableHead className="text-right">קריאות</TableHead>
-                    <TableHead className="text-right">טוקנים</TableHead>
-                    <TableHead className="text-right">עלות</TableHead>
+                    <TableHead>Model</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Tokens</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -255,18 +255,18 @@ function UsagePage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><Wrench className="size-4" /> פילוח לפי כלי</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><Wrench className="size-4" /> Breakdown by tool</CardTitle>
           </CardHeader>
           <CardContent>
             {toolEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין קריאות כלים בטווח.</p>
+              <p className="text-sm text-muted-foreground">No tool calls in this range.</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>כלי</TableHead>
-                    <TableHead className="text-right">קריאות</TableHead>
-                    <TableHead className="text-right">שגיאות</TableHead>
+                    <TableHead>Tool</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Errors</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -290,21 +290,21 @@ function UsagePage() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <CardTitle className="text-base">יומן מפורט</CardTitle>
+            <CardTitle className="text-base">Detailed log</CardTitle>
             <div className="flex flex-wrap gap-2">
-              <FilterSelect label="סוג" value={kind} onChange={(v) => { setKind(v as any); setPage(1); }} options={[["all","הכל"],["llm","LLM"],["tool","כלי"]]} />
-              <FilterSelect label="סטטוס" value={status} onChange={(v) => { setStatus(v as any); setPage(1); }} options={[["all","הכל"],["success","הצלחה"],["error","שגיאה"]]} />
+              <FilterSelect label="Type" value={kind} onChange={(v) => { setKind(v as any); setPage(1); }} options={[["all","All"],["llm","LLM"],["tool","Tool"]]} />
+              <FilterSelect label="Status" value={status} onChange={(v) => { setStatus(v as any); setPage(1); }} options={[["all","All"],["success","Success"],["error","Error"]]} />
               <FilterSelect
-                label="מודל"
+                label="Model"
                 value={model}
                 onChange={(v) => { setModel(v); setPage(1); }}
-                options={[["all","הכל"], ...(filters.data?.models ?? []).map((m) => [m, m] as [string,string])]}
+                options={[["all","All"], ...(filters.data?.models ?? []).map((m) => [m, m] as [string,string])]}
               />
               <FilterSelect
-                label="כלי"
+                label="Tool"
                 value={tool}
                 onChange={(v) => { setTool(v); setPage(1); }}
-                options={[["all","הכל"], ...(filters.data?.tools ?? []).map((m) => [m, m] as [string,string])]}
+                options={[["all","All"], ...(filters.data?.tools ?? []).map((m) => [m, m] as [string,string])]}
               />
             </div>
           </div>
@@ -314,22 +314,22 @@ function UsagePage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>זמן</TableHead>
-                  <TableHead>סוג</TableHead>
-                  <TableHead>מודל / כלי</TableHead>
-                  <TableHead>מקור</TableHead>
-                  <TableHead className="text-right">טוקנים</TableHead>
-                  <TableHead className="text-right">עלות</TableHead>
-                  <TableHead className="text-right">זמן</TableHead>
-                  <TableHead>סטטוס</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Model / Tool</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead className="text-right">Tokens</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead className="text-right">Time</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {list.isLoading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">טוען...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                 ) : !list.data?.rows?.length ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">אין רשומות בטווח/בפילטר הנבחר.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No records in the selected range/filter.</TableCell></TableRow>
                 ) : list.data?.rows.map((r: any) => (
                   <TableRow key={r.id} className="hover:bg-muted/50">
                     <TableCell className="text-xs whitespace-nowrap">{fmtTime(r.created_at)}</TableCell>
@@ -364,13 +364,13 @@ function UsagePage() {
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4 text-sm">
             <div className="text-muted-foreground">
-              {list.data ? `${fmtNum(list.data.total)} רשומות · עמוד ${list.data.page} מתוך ${totalPages}` : ""}
+              {list.data ? `${fmtNum(list.data.total)} records · page ${list.data.page} of ${totalPages}` : ""}
             </div>
             <div className="flex items-center gap-2">
               <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
                 <SelectTrigger className="w-24 h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {[10, 25, 50, 100].map((n) => <SelectItem key={n} value={String(n)}>{n} / עמוד</SelectItem>)}
+                  {[10, 25, 50, 100].map((n) => <SelectItem key={n} value={String(n)}>{n} / page</SelectItem>)}
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
@@ -388,21 +388,21 @@ function UsagePage() {
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
           <DialogHeader>
-            <DialogTitle>פרטי קריאה</DialogTitle>
+            <DialogTitle>Call details</DialogTitle>
           </DialogHeader>
           {selected && (
             <div className="space-y-3 text-sm">
-              <Detail k="זמן" v={fmtTime(selected.created_at)} />
-              <Detail k="סוג" v={selected.kind} />
-              <Detail k="מודל" v={selected.model ?? "—"} />
-              <Detail k="כלי" v={selected.tool_name ?? "—"} />
-              <Detail k="ספק" v={selected.provider ?? "—"} />
-              <Detail k="מקור" v={selected.source ?? "—"} />
-              <Detail k="סטטוס" v={`${selected.status}${selected.http_status ? ` (${selected.http_status})` : ""}`} />
-              <Detail k="טוקנים (prompt/completion/total)" v={`${selected.prompt_tokens ?? 0} / ${selected.completion_tokens ?? 0} / ${selected.total_tokens ?? 0}`} />
-              <Detail k="עלות" v={selected.cost_usd ? fmtUSD(Number(selected.cost_usd)) : "—"} />
-              <Detail k="זמן ביצוע" v={selected.duration_ms ? `${selected.duration_ms}ms` : "—"} />
-              {selected.error_message && <Detail k="שגיאה" v={selected.error_message} mono />}
+              <Detail k="Time" v={fmtTime(selected.created_at)} />
+              <Detail k="Type" v={selected.kind} />
+              <Detail k="Model" v={selected.model ?? "—"} />
+              <Detail k="Tool" v={selected.tool_name ?? "—"} />
+              <Detail k="Provider" v={selected.provider ?? "—"} />
+              <Detail k="Source" v={selected.source ?? "—"} />
+              <Detail k="Status" v={`${selected.status}${selected.http_status ? ` (${selected.http_status})` : ""}`} />
+              <Detail k="Tokens (prompt/completion/total)" v={`${selected.prompt_tokens ?? 0} / ${selected.completion_tokens ?? 0} / ${selected.total_tokens ?? 0}`} />
+              <Detail k="Cost" v={selected.cost_usd ? fmtUSD(Number(selected.cost_usd)) : "—"} />
+              <Detail k="Duration" v={selected.duration_ms ? `${selected.duration_ms}ms` : "—"} />
+              {selected.error_message && <Detail k="Error" v={selected.error_message} mono />}
               {selected.meta && (
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Metadata</div>

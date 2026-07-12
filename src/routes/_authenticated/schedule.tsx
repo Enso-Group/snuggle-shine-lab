@@ -32,11 +32,11 @@ import {
 import { listWhapiGroups } from "@/lib/bot.functions";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
-  head: () => ({ meta: [{ title: "תזמון שבועי — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Weekly Scheduler — WhatsApp Bot" }] }),
   component: SchedulePage,
 });
 
-const DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 type Row = {
   id: string;
@@ -92,12 +92,12 @@ function SchedulePage() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => { if (DEMO_MODE) return; return deleteFn({ data: { id } }); },
-    onSuccess: () => { invalidate(); toast.success("נמחק"); },
+    onSuccess: () => { invalidate(); toast.success("Deleted"); },
     onError: (e: any) => toast.error(e.message),
   });
   const sendNow = useMutation({
     mutationFn: async (id: string) => { if (DEMO_MODE) return; return sendNowFn({ data: { id } }); },
-    onSuccess: () => { invalidate(); toast.success("נשלח"); },
+    onSuccess: () => { invalidate(); toast.success("Sent"); },
     onError: (e: any) => toast.error(e.message),
   });
   const toggle = useMutation({
@@ -118,12 +118,12 @@ function SchedulePage() {
   const invalidateApprovals = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
   const approve = useMutation({
     mutationFn: async (id: string) => { if (DEMO_MODE) return; return approveFn({ data: { id } }); },
-    onSuccess: () => { invalidateApprovals(); toast.success("נשלח"); },
+    onSuccess: () => { invalidateApprovals(); toast.success("Sent"); },
     onError: (e: any) => toast.error(e.message),
   });
   const reject = useMutation({
     mutationFn: async (id: string) => { if (DEMO_MODE) return; return rejectFn({ data: { id } }); },
-    onSuccess: () => { invalidateApprovals(); toast.success("נדחה"); },
+    onSuccess: () => { invalidateApprovals(); toast.success("Rejected"); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -133,11 +133,11 @@ function SchedulePage() {
     <div className="p-8 space-y-6">
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold">תזמון שבועי</h1>
-          <p className="text-muted-foreground mt-1">קבעי הודעות שיישלחו אוטומטית לפי יום ושעה (שעון ישראל)</p>
+          <h1 className="text-3xl font-bold">Weekly Scheduler</h1>
+          <p className="text-muted-foreground mt-1">Set messages to send automatically by day and time (Israel time)</p>
         </div>
         <ScheduleDialog targets={allTargets} onSaved={invalidate}>
-          <Button><Plus className="size-4 ms-2" />הודעה חדשה</Button>
+          <Button><Plus className="size-4 ms-2" />New message</Button>
         </ScheduleDialog>
       </div>
 
@@ -146,22 +146,22 @@ function SchedulePage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <ShieldQuestion className="size-4 text-amber-600" />
-              ממתינות לאישור ({pending.length})
+              Waiting for approval ({pending.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {pending.map((p) => (
               <div key={p.id} className="rounded-md border bg-background p-3 space-y-2">
                 <div className="text-xs text-muted-foreground">
-                  {p.target_name ?? p.target_chat_id} · {new Date(p.created_at).toLocaleString("he-IL")}
+                  {p.target_name ?? p.target_chat_id} · {new Date(p.created_at).toLocaleString("en-US")}
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{p.body}</p>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={() => approve.mutate(p.id)} disabled={approve.isPending}>
-                    <Check className="size-3 ms-1" />אשר ושלח
+                    <Check className="size-3 ms-1" />Approve and send
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => reject.mutate(p.id)} disabled={reject.isPending}>
-                    <X className="size-3 ms-1" />דחה
+                    <X className="size-3 ms-1" />Reject
                   </Button>
                 </div>
               </div>
@@ -181,7 +181,7 @@ function SchedulePage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {byDay[i].length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4">אין הודעות</p>
+                <p className="text-xs text-muted-foreground text-center py-4">No messages</p>
               )}
               {byDay[i].map((r) => (
                 <div key={r.id} className={`rounded-md border p-2 text-xs space-y-1 ${r.enabled ? "" : "opacity-50"}`}>
@@ -196,12 +196,12 @@ function SchedulePage() {
                   <div className="flex flex-wrap gap-1">
                     {r.mode === "ai" && (
                       <Badge variant="outline" className="text-[10px] gap-1 border-primary/40 text-primary">
-                        <Sparkles className="size-3" />הודעת AI
+                        <Sparkles className="size-3" />AI message
                       </Badge>
                     )}
                     {r.require_approval && (
                       <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400">
-                        <ShieldQuestion className="size-3" />דורש אישור
+                        <ShieldQuestion className="size-3" />Requires approval
                       </Badge>
                     )}
                   </div>
@@ -209,7 +209,7 @@ function SchedulePage() {
                     <ScheduleDialog targets={allTargets} onSaved={invalidate} existing={r}>
                       <Button size="icon" variant="ghost" className="h-6 w-6"><Pencil className="size-3" /></Button>
                     </ScheduleDialog>
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => sendNow.mutate(r.id)} title="שלח עכשיו">
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => sendNow.mutate(r.id)} title="Send now">
                       <Send className="size-3" />
                     </Button>
                     <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => remove.mutate(r.id)}>
@@ -219,7 +219,7 @@ function SchedulePage() {
                 </div>
               ))}
               <ScheduleDialog targets={allTargets} onSaved={invalidate} defaultDay={i}>
-                <Button size="sm" variant="ghost" className="w-full text-xs"><Plus className="size-3 ms-1" />הוסף</Button>
+                <Button size="sm" variant="ghost" className="w-full text-xs"><Plus className="size-3 ms-1" />Add</Button>
               </ScheduleDialog>
             </CardContent>
           </Card>
@@ -257,8 +257,8 @@ function ScheduleDialog({
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!target) throw new Error("בחר יעד");
-      if (!body.trim()) throw new Error(mode === "ai" ? "הוסף פרומפט" : "הוסף תוכן");
+      if (!target) throw new Error("Choose a target");
+      if (!body.trim()) throw new Error(mode === "ai" ? "Add a prompt" : "Add content");
       const payload = {
         day_of_week: day,
         send_time: time.length === 5 ? `${time}:00` : time,
@@ -273,7 +273,7 @@ function ScheduleDialog({
       else await createFn({ data: payload });
     },
     onSuccess: () => {
-      toast.success(existing ? "עודכן" : "נוצר");
+      toast.success(existing ? "Updated" : "Created");
       setOpen(false);
       onSaved();
     },
@@ -285,12 +285,12 @@ function ScheduleDialog({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent dir="rtl">
         <DialogHeader>
-          <DialogTitle>{existing ? "עריכת תזמון" : "תזמון חדש"}</DialogTitle>
+          <DialogTitle>{existing ? "Edit schedule" : "New schedule"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>יום</Label>
+              <Label>Day</Label>
               <Select value={String(day)} onValueChange={(v) => setDay(Number(v))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -299,17 +299,17 @@ function ScheduleDialog({
               </Select>
             </div>
             <div>
-              <Label>שעה</Label>
+              <Label>Time</Label>
               <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
             </div>
           </div>
           <div>
-            <Label>יעד</Label>
+            <Label>Target</Label>
             <Popover open={targetOpen} onOpenChange={setTargetOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
                   <span className={cn("truncate", !target && "text-muted-foreground")}>
-                    {target ? (targetName || target) : "בחר או חפש קבוצה / איש קשר..."}
+                    {target ? (targetName || target) : "Choose or search a group / contact..."}
                   </span>
                   <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
                 </Button>
@@ -317,7 +317,7 @@ function ScheduleDialog({
               <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                 <Command shouldFilter={false}>
                   <CommandInput
-                    placeholder="חיפוש לפי שם..."
+                    placeholder="Search by name..."
                     value={targetSearch}
                     onValueChange={setTargetSearch}
                   />
@@ -329,8 +329,8 @@ function ScheduleDialog({
                         : targets;
                       return (
                         <>
-                          {filtered.length === 0 && <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>}
-                          <CommandGroup heading="קבוצות ואנשי קשר">
+                          {filtered.length === 0 && <CommandEmpty>No results found</CommandEmpty>}
+                          <CommandGroup heading="Groups and contacts">
                             {filtered.map((t) => (
                         <CommandItem
                           key={t.id}
@@ -356,7 +356,7 @@ function ScheduleDialog({
             </Popover>
           </div>
           <div>
-            <Label>סוג ההודעה</Label>
+            <Label>Message type</Label>
             <RadioGroup
               value={mode}
               onValueChange={(v) => setMode(v as "direct" | "ai")}
@@ -364,39 +364,39 @@ function ScheduleDialog({
             >
               <label className="flex items-center gap-2 cursor-pointer">
                 <RadioGroupItem value="direct" />
-                <span className="text-sm">הודעה קבועה</span>
+                <span className="text-sm">Fixed message</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <RadioGroupItem value="ai" />
-                <span className="text-sm">הודעת AI</span>
+                <span className="text-sm">AI message</span>
               </label>
             </RadioGroup>
           </div>
           <div>
-            <Label>{mode === "ai" ? "פרומפט ל-AI" : "תוכן ההודעה"}</Label>
+            <Label>{mode === "ai" ? "Prompt for the AI" : "Message content"}</Label>
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={6}
               placeholder={
                 mode === "ai"
-                  ? 'לדוגמה: כתוב ברכת בוקר טוב קצרה ומחממת לקבוצה, עם טיפ אחד ליום'
+                  ? 'For example: write a short, warm good-morning greeting for the group, with one tip for the day'
                   : ""
               }
             />
             {mode === "ai" && (
               <p className="text-xs text-muted-foreground mt-1">
-                ההודעה תיווצר מחדש על ידי ה-AI בכל שליחה מתוזמנת, כך שהיא שונה בכל פעם.
+                The message is regenerated by the AI on every scheduled send, so it's different each time.
               </p>
             )}
           </div>
           <div className="flex items-center justify-between rounded-md border p-3">
             <div className="space-y-0.5">
               <Label className="text-sm font-medium flex items-center gap-2">
-                <ShieldQuestion className="size-4" />דרוש אישור לפני שליחה
+                <ShieldQuestion className="size-4" />Require approval before sending
               </Label>
               <p className="text-xs text-muted-foreground">
-                כשמופעל, הבוט יבקש ממך אישור במסך זה במקום לשלוח אוטומטית.
+                When on, the bot will ask you for approval on this screen instead of sending automatically.
               </p>
             </div>
             <Switch checked={requireApproval} onCheckedChange={setRequireApproval} />
@@ -404,7 +404,7 @@ function ScheduleDialog({
         </div>
         <DialogFooter>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending ? "שומר..." : "שמור"}
+            {save.isPending ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

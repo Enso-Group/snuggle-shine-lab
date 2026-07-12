@@ -76,9 +76,9 @@ export const createThread = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const titleMap: Record<string, string> = {
-      "test-bot": "בדיקת הבוט",
-      admin: "שאלת ניהול",
-      general: "שיחה חדשה",
+      "test-bot": "Bot test",
+      admin: "Admin question",
+      general: "New conversation",
     };
     const { data: row, error } = await supabase
       .from("chat_threads")
@@ -341,7 +341,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           .eq("conversation_id", conversation.id)
           .order("created_at", { ascending: false })
           .limit(limit);
-        if (error) return `שגיאה: ${error.message}`;
+        if (error) return `Error: ${error.message}`;
 
         const ordered = (data ?? []).reverse();
         const conversationName = conversation.name ?? conversation.whapi_chat_id;
@@ -444,7 +444,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
             .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count, blocked")
             .order("last_message_at", { ascending: false, nullsFirst: false })
             .limit(limit);
-          if (error) return `שגיאה: ${error.message}`;
+          if (error) return `Error: ${error.message}`;
           return JSON.stringify(data ?? [], null, 2);
         }
         if (name === "get_messages") {
@@ -477,7 +477,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           toolExecutor,
         });
     } catch (e: any) {
-      replyText = `שגיאה: ${String(e?.message ?? e)}`;
+      replyText = `Error: ${String(e?.message ?? e)}`;
     }
 
 

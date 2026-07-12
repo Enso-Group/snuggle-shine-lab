@@ -81,7 +81,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
               let body = r.body;
               if (r.mode === "ai") {
                 body = (await runCommand(r.body, systemPrompt, "schedule")).trim();
-                if (!body) throw new Error("ה-AI לא הצליח לייצר הודעה מהפרומפט");
+                if (!body) throw new Error("The AI couldn't generate a message from the prompt");
               }
 
               if (r.require_approval || globalApproval) {

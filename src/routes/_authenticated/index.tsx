@@ -9,7 +9,7 @@ import { useWhatsAppConnection } from "@/hooks/use-connection";
 import { DEMO_MODE, demoDashboardStats } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/")({
-  head: () => ({ meta: [{ title: "סקירה — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Overview — WhatsApp Bot" }] }),
   component: Dashboard,
 });
 
@@ -27,13 +27,13 @@ function Dashboard() {
     refetchInterval: 10000,
   });
 
-  if (admin.isLoading) return <div className="p-8">טוען...</div>;
+  if (admin.isLoading) return <div className="p-8">Loading...</div>;
   if (!admin.data?.isAdmin) {
     return (
       <div className="p-8">
         <Alert variant="destructive">
           <AlertDescription>
-            אין לך הרשאת מנהל. רק המשתמש הראשון שנרשם הופך למנהל. אם זה לא את — צרי קשר עם המנהל הקיים.
+            You don't have admin permissions. Only the first user who signs up becomes the admin. If that isn't you, please contact the existing admin.
           </AlertDescription>
         </Alert>
       </div>
@@ -43,17 +43,17 @@ function Dashboard() {
   return (
     <div className="p-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">סקירה</h1>
-        <p className="text-muted-foreground mt-1">סטטוס הבוט שלך במבט אחד</p>
+        <h1 className="text-3xl font-bold">Overview</h1>
+        <p className="text-muted-foreground mt-1">Your bot status at a glance</p>
         {!connected && !connLoading && (
-          <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+          <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard icon={Users} label="שיחות" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.conversations ?? 0} />
-        <StatCard icon={MessageSquare} label="הודעות" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.messages ?? 0} />
-        <StatCard icon={Send} label="פקודות שנשלחו" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.commands ?? 0} />
+        <StatCard icon={Users} label="Conversations" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.conversations ?? 0} />
+        <StatCard icon={MessageSquare} label="Messages" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.messages ?? 0} />
+        <StatCard icon={Send} label="Commands sent" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.commands ?? 0} />
       </div>
     </div>
   );

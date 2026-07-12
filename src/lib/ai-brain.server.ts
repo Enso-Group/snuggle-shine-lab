@@ -24,12 +24,12 @@ function checkRateLimit(chatId?: string): void {
   const now = Date.now();
   if (now > globalBucket.resetAt) globalBucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
   globalBucket.count++;
-  if (globalBucket.count > RATE_LIMIT_GLOBAL) throw new Error("יותר מדי בקשות AI — נסה שוב בעוד דקה.");
+  if (globalBucket.count > RATE_LIMIT_GLOBAL) throw new Error("Too many AI requests — try again in a minute.");
   if (chatId) {
     let b = chatRateBuckets.get(chatId);
     if (!b || now > b.resetAt) { b = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }; chatRateBuckets.set(chatId, b); }
     b.count++;
-    if (b.count > RATE_LIMIT_PER_CHAT) throw new Error("יותר מדי הודעות — אנא המתן דקה.");
+    if (b.count > RATE_LIMIT_PER_CHAT) throw new Error("Too many messages — please wait a minute.");
   }
   if (globalBucket.count % 500 === 0) {
     const now2 = Date.now();
@@ -374,8 +374,8 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
     if (!res.ok) {
       const txt = await res.text();
       logUsage({ kind: "llm", provider: providerFromModel(DEFAULT_MODEL), model: DEFAULT_MODEL, source, status: "error", http_status: res.status, duration_ms: Date.now() - start, error_message: txt.slice(0, 500), meta: { step } });
-      if (res.status === 429) throw new Error("יותר מדי בקשות — נסי שוב בעוד דקה.");
-      if (res.status === 402) throw new Error("נגמרו הקרדיטים. הוסיפי קרדיטים בהגדרות.");
+      if (res.status === 429) throw new Error("Too many requests — try again in a minute.");
+      if (res.status === 402) throw new Error("You're out of credits. Add credits in settings.");
       throw new Error(`AI error ${res.status}: ${txt.slice(0, 200)}`);
     }
 

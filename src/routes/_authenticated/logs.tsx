@@ -7,7 +7,7 @@ import { useWhatsAppConnection } from "@/hooks/use-connection";
 import { DEMO_MODE, demoLogs } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/logs")({
-  head: () => ({ meta: [{ title: "לוגים — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Logs — WhatsApp Bot" }] }),
   component: LogsPage,
 });
 
@@ -38,14 +38,14 @@ function LogsPage() {
   return (
     <div className="p-8 max-w-4xl space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">לוגים</h1>
-        <p className="text-muted-foreground mt-1">פקודות אחרונות שנשלחו מהדשבורד</p>
+        <h1 className="text-3xl font-bold">Logs</h1>
+        <p className="text-muted-foreground mt-1">Recent commands sent from the dashboard</p>
         {!connected && !connLoading && (
-          <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+          <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
         )}
       </div>
       <div className="space-y-3">
-        {logs.length === 0 && <p className="text-muted-foreground">אין לוגים עדיין.</p>}
+        {logs.length === 0 && <p className="text-muted-foreground">No logs yet.</p>}
         {logs.map((l) => (
           <Card key={l.id}>
             <CardContent className="p-4 space-y-2">
@@ -53,13 +53,13 @@ function LogsPage() {
                 <span className="text-sm font-medium">→ {l.target_name || l.target_chat_id}</span>
                 <div className="flex gap-2 items-center">
                   <Badge variant={l.status === "sent" ? "default" : l.status === "error" ? "destructive" : "secondary"}>
-                    {l.status === "sent" ? "נשלח" : l.status === "error" ? "שגיאה" : "ממתין"}
+                    {l.status === "sent" ? "Sent" : l.status === "error" ? "Error" : "Pending"}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{new Date(l.created_at).toLocaleString("he-IL")}</span>
+                  <span className="text-xs text-muted-foreground">{new Date(l.created_at).toLocaleString("en-US")}</span>
                 </div>
               </div>
-              <p className="text-sm"><strong>בקשה:</strong> {l.prompt}</p>
-              {l.result && <p className="text-sm bg-muted p-2 rounded whitespace-pre-wrap"><strong>תוצאה:</strong> {l.result}</p>}
+              <p className="text-sm"><strong>Request:</strong> {l.prompt}</p>
+              {l.result && <p className="text-sm bg-muted p-2 rounded whitespace-pre-wrap"><strong>Result:</strong> {l.result}</p>}
             </CardContent>
           </Card>
         ))}

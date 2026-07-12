@@ -52,7 +52,7 @@ function CandidatesPage() {
       setGroups(demoSourcingGroups);
       setSelectedGroups(new Set(demoSourcingGroups.map((g) => g.id)));
       setLoadingGroups(false);
-      setDescription("מפתחי React ומנהלי מוצר עם ניסיון");
+      setDescription("Experienced React developers and product managers");
       setCandidates(demoCandidates as CandidateState[]);
       setPhase("done");
       return;
@@ -237,7 +237,7 @@ function CandidatesPage() {
                     <Input
                       value={groupSearch}
                       onChange={(e) => setGroupSearch(e.target.value)}
-                      placeholder="חיפוש קבוצה לפי שם..."
+                      placeholder="Search a group by name..."
                       className="h-8 pr-8 text-sm"
                       dir="rtl"
                     />

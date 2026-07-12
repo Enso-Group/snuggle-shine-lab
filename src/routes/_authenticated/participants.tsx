@@ -119,7 +119,7 @@ function ParticipantsPage() {
         setMessagesScanned(r.messagesScanned ?? 0);
         setLastRefresh(new Date());
       })
-      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי לרענן את הקבוצה.")))
+      .catch((e: any) => setHistoryNotice(String(e?.message ?? "Couldn't refresh the group.")))
       .finally(() => setLoadingParts(false));
   }
 
@@ -177,14 +177,14 @@ function ParticipantsPage() {
     enableHistorySync()
       .then((r: any) => {
         setFullHistory(r.fullHistory);
-        setHistoryNotice("ההגדרה הופעלה. עכשיו חייבים לחבר מחדש את WhatsApp כדי שההיסטוריה הישנה תיכנס לחיבור.");
+        setHistoryNotice("The setting is enabled. Now you must reconnect WhatsApp so the old history is pulled into the connection.");
       })
-      .catch(() => setHistoryNotice("לא הצלחתי להפעיל היסטוריה מלאה. נסה שוב בעוד רגע."))
+      .catch(() => setHistoryNotice("Couldn't enable full history. Please try again in a moment."))
       .finally(() => setEnablingHistory(false));
   }
 
   function reconnectWhatsApp() {
-    if (!window.confirm("זה ינתק לרגע את חיבור WhatsApp ויציג QR חדש לסריקה. להמשיך?")) return;
+    if (!window.confirm("This will briefly disconnect WhatsApp and show a new QR code to scan. Continue?")) return;
     setReconnecting(true);
     setHistoryNotice("");
     setQrImage("");
@@ -194,17 +194,17 @@ function ParticipantsPage() {
         setConnectionStatus(r.status);
         if (r.qrImage) {
           setQrImage(r.qrImage);
-          setHistoryNotice("נוצר QR. סרוק אותו מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+          setHistoryNotice("A QR code was created. Scan it from your phone. Once the status returns to connected, select the group and refresh it.");
         } else {
-          setHistoryNotice(`ממתין ל-QR (סטטוס: ${r.qrStatus || "WAITING"})... ינסה שוב אוטומטית.`);
+          setHistoryNotice(`Waiting for QR (status: ${r.qrStatus || "WAITING"})... will retry automatically.`);
         }
       })
-      .catch((e: any) => setHistoryNotice(String(e?.message ?? "לא הצלחתי ליצור QR אמיתי. נסה שוב בעוד רגע.")))
+      .catch((e: any) => setHistoryNotice(String(e?.message ?? "Couldn't generate a real QR code. Please try again in a moment.")))
       .finally(() => setReconnecting(false));
   }
 
   function resetPipeline() {
-    if (!window.confirm("זה יאפס את כל זרימת הנתונים: יפעיל היסטוריה מלאה ויחבר את ה-Webhook ל-Whapi כך שכל הודעה חדשה תיכנס אוטומטית לאתר. להמשיך?")) return;
+    if (!window.confirm("This will reset the entire data flow: it enables full history and connects the Webhook to Whapi so every new message flows automatically into the site. Continue?")) return;
     setResetting(true);
     setHistoryNotice("");
     const webhookUrl = `${window.location.origin}/api/public/whapi-webhook`;
@@ -213,28 +213,28 @@ function ParticipantsPage() {
         setFullHistory(r.fullHistory);
         setConnectionStatus(r.status);
         const parts: string[] = [];
-        parts.push(r.fullHistory ? "✓ היסטוריה מלאה פעילה" : "✗ היסטוריה מלאה לא הופעלה");
-        parts.push(r.webhookUrl ? `✓ Webhook רשום: ${r.webhookUrl}` : "✗ Webhook לא נרשם");
-        parts.push(r.connected ? `✓ מחובר${r.userName ? ` כ-${r.userName}` : ""}` : `סטטוס: ${r.status ?? "לא מחובר"} — סרוק QR או חבר מחדש`);
-        parts.push("מעכשיו כל הודעה חדשה תזרום אוטומטית לאתר. אם תרצה גם היסטוריה ישנה — נתק את הטלפון וחבר מחדש.");
+        parts.push(r.fullHistory ? "✓ Full history active" : "✗ Full history not enabled");
+        parts.push(r.webhookUrl ? `✓ Webhook registered: ${r.webhookUrl}` : "✗ Webhook not registered");
+        parts.push(r.connected ? `✓ Connected${r.userName ? ` as ${r.userName}` : ""}` : `Status: ${r.status ?? "not connected"} — scan QR or reconnect`);
+        parts.push("From now on, every new message flows automatically into the site. If you also want old history — disconnect the phone and reconnect.");
         setHistoryNotice(parts.join("\n"));
       })
-      .catch((e: any) => setHistoryNotice(`איפוס נכשל: ${e?.message ?? e}`))
+      .catch((e: any) => setHistoryNotice(`Reset failed: ${e?.message ?? e}`))
       .finally(() => setResetting(false));
   }
 
   // Poll for QR while waiting (after reconnect started but QR not yet available)
   useEffect(() => {
-    if (qrImage || !historyNotice.includes("ממתין ל-QR")) return;
+    if (qrImage || !historyNotice.includes("Waiting for QR")) return;
     const interval = setInterval(() => {
       fetchWhatsAppQr()
         .then((r: any) => {
           setConnectionStatus(r.status);
           if (r.qrImage) {
             setQrImage(r.qrImage);
-            setHistoryNotice("נוצר QR. סרוק אותו מהטלפון. אחרי שהסטטוס יחזור למחובר, בחר את הקבוצה ורענן אותה.");
+            setHistoryNotice("A QR code was created. Scan it from your phone. Once the status returns to connected, select the group and refresh it.");
           } else {
-            setHistoryNotice(`ממתין ל-QR (סטטוס: ${r.qrStatus || "WAITING"})... ינסה שוב אוטומטית.`);
+            setHistoryNotice(`Waiting for QR (status: ${r.qrStatus || "WAITING"})... will retry automatically.`);
           }
         })
         .catch(() => {});
@@ -301,20 +301,20 @@ function ParticipantsPage() {
       <div className="flex items-start justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="size-6" /> משתתפים בקבוצה
+            <Users className="size-6" /> Group participants
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            כל הקבוצות והמשתתפים מתעדכנים בזמן אמת מ-WhatsApp.
+            All groups and participants update in real time from WhatsApp.
           </p>
           {!connected && (
-            <p className="text-xs text-muted-foreground mt-1">אין חשבון WhatsApp מחובר.</p>
+            <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
           )}
         </div>
         <div className="flex items-center gap-2">
           {lastRefresh && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Radio className="size-3 text-green-500" />
-              עודכן {lastRefresh.toLocaleTimeString("he-IL")}
+              Updated {lastRefresh.toLocaleTimeString("en-US")}
             </span>
           )}
           <Button
@@ -324,7 +324,7 @@ function ParticipantsPage() {
             disabled={loadingParts}
           >
             <RefreshCw className={`size-3 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
-            רענן
+            Refresh
           </Button>
         </div>
       </div>
@@ -341,10 +341,10 @@ function ParticipantsPage() {
               >
                 <span className="truncate">
                   {loadingGroups
-                    ? "טוען קבוצות מ-WhatsApp…"
+                    ? "Loading groups from WhatsApp…"
                     : groupId
-                    ? groups.find((g) => g.whapi_chat_id === groupId)?.name ?? "בחר קבוצה"
-                    : `בחר קבוצה (${groups.length})`}
+                    ? groups.find((g) => g.whapi_chat_id === groupId)?.name ?? "Select a group"
+                    : `Select a group (${groups.length})`}
                 </span>
                 <ChevronsUpDown className="size-4 opacity-50 shrink-0" />
               </Button>
@@ -355,9 +355,9 @@ function ParticipantsPage() {
                   value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
                 }
               >
-                <CommandInput placeholder="חפש קבוצה…" />
+                <CommandInput placeholder="Search a group…" />
                 <CommandList>
-                  <CommandEmpty>לא נמצאו קבוצות.</CommandEmpty>
+                  <CommandEmpty>No groups found.</CommandEmpty>
                   <CommandGroup>
                     {groups.map((g) => (
                       <CommandItem
@@ -381,7 +381,7 @@ function ParticipantsPage() {
           </Popover>
         </div>
         <Input
-          placeholder="סנן משתתפים…"
+          placeholder="Filter participants…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="sm:max-w-xs"
@@ -394,7 +394,7 @@ function ParticipantsPage() {
             disabled={loadingParts}
           >
             <RefreshCw className={`size-4 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
-            רענן קבוצה
+            Refresh group
           </Button>
         )}
       </div>
@@ -403,12 +403,12 @@ function ParticipantsPage() {
         <AlertTriangle className="size-4" />
         <AlertTitle>
           {fullHistory === true
-            ? "היסטוריה מלאה פעילה"
-            : "סנכרון היסטוריה מלאה מ-WhatsApp"}
+            ? "Full history active"
+            : "Sync full history from WhatsApp"}
         </AlertTitle>
         <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
           <span>
-            לניהול היסטוריה מלאה וחיבור WhatsApp — ראה עמוד <strong>הוראות</strong>.
+            To manage full history and the WhatsApp connection — see the <strong>Instructions</strong> page.
           </span>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -418,7 +418,7 @@ function ParticipantsPage() {
               variant="default"
             >
               <RefreshCw className={`size-3 ms-1 ${resetting ? "animate-spin" : ""}`} />
-              אפס את כל זרימת הנתונים
+              Reset all data flow
             </Button>
             <Button
               size="sm"
@@ -427,7 +427,7 @@ function ParticipantsPage() {
               variant="outline"
             >
               <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
-              {fullHistory === true ? "הפעל שוב" : "הפעל היסטוריה מלאה"}
+              {fullHistory === true ? "Enable again" : "Enable full history"}
             </Button>
             <Button
               size="sm"
@@ -436,7 +436,7 @@ function ParticipantsPage() {
               variant="outline"
             >
               <RefreshCw className={`size-3 ms-1 ${reconnecting ? "animate-spin" : ""}`} />
-              חבר מחדש עם QR
+              Reconnect with QR
             </Button>
           </div>
         </AlertDescription>
@@ -444,10 +444,10 @@ function ParticipantsPage() {
 
       {qrImage && (
         <Alert>
-          <AlertTitle>סרוק QR כדי לאשר מחדש את החיבור</AlertTitle>
+          <AlertTitle>Scan the QR to re-authorize the connection</AlertTitle>
           <AlertDescription className="space-y-3">
-            <p>פתח WhatsApp בטלפון ← מכשירים מקושרים ← קישור מכשיר, וסרוק את הקוד. לאחר החיבור ההיסטוריה תתחיל להסתנכרן.</p>
-            <img src={qrImage} alt="QR לחיבור WhatsApp" className="w-64 max-w-full rounded-lg border bg-background p-2" />
+            <p>Open WhatsApp on your phone → Linked devices → Link a device, and scan the code. After connecting, the history will start syncing.</p>
+            <img src={qrImage} alt="QR for WhatsApp connection" className="w-64 max-w-full rounded-lg border bg-background p-2" />
           </AlertDescription>
         </Alert>
       )}
@@ -463,21 +463,21 @@ function ParticipantsPage() {
         <>
 
           <div className="text-sm text-muted-foreground">
-            {groupName} · {participantsCount} משתתפים בקבוצה · {participants.length} ידועים · נמצאו {messagesScanned} הודעות זמינות בחיבור
+            {groupName} · {participantsCount} participants in the group · {participants.length} known · {messagesScanned} messages available in the connection
           </div>
           <div className="border rounded-lg overflow-hidden bg-card">
             {loadingParts && participants.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">טוען משתתפים…</div>
+              <div className="p-6 text-sm text-muted-foreground">Loading participants…</div>
             ) : participants.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">לא נמצאו משתתפים.</div>
+              <div className="p-6 text-sm text-muted-foreground">No participants found.</div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-right">משתתף</TableHead>
-                    <TableHead className="text-right">מזהה</TableHead>
-                    <TableHead className="text-right">מס׳ הודעות</TableHead>
-                    <TableHead className="text-right">הודעה אחרונה</TableHead>
+                    <TableHead className="text-right">Participant</TableHead>
+                    <TableHead className="text-right">ID</TableHead>
+                    <TableHead className="text-right"># Messages</TableHead>
+                    <TableHead className="text-right">Last message</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -493,7 +493,7 @@ function ParticipantsPage() {
                       </TableCell>
                       <TableCell>{p.message_count}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {p.last_message_at ? new Date(p.last_message_at).toLocaleString("he-IL") : "—"}
+                        {p.last_message_at ? new Date(p.last_message_at).toLocaleString("en-US") : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -512,18 +512,18 @@ function ParticipantsPage() {
               {selected?.sender_name}
             </SheetTitle>
             <SheetDescription>
-              הודעות בקבוצה {groupName} ({msgs?.length ?? 0})
+              Messages in group {groupName} ({msgs?.length ?? 0})
             </SheetDescription>
           </SheetHeader>
           <div className="flex-1 overflow-auto mt-4 space-y-2 pl-1">
-            {loadingMsgs && <div className="text-sm text-muted-foreground">טוען הודעות…</div>}
+            {loadingMsgs && <div className="text-sm text-muted-foreground">Loading messages…</div>}
             {!loadingMsgs && msgs?.length === 0 && (
-              <div className="text-sm text-muted-foreground">אין הודעות זמינות.</div>
+              <div className="text-sm text-muted-foreground">No messages available.</div>
             )}
             {msgs?.map((m) => (
               <div key={m.id} className="rounded-lg border bg-muted/30 px-3 py-2">
                 <div className="text-[11px] text-muted-foreground mb-1 flex items-center justify-between">
-                  <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
+                  <span>{new Date(m.created_at).toLocaleString("en-US")}</span>
                   <span className="opacity-60">{m.source === "live" ? "WhatsApp" : "DB"}</span>
                 </div>
                 <div className="text-sm whitespace-pre-wrap break-words">{m.body || "—"}</div>

@@ -15,9 +15,9 @@ type Msg = { id: string; role: "user" | "assistant"; content: string; created_at
 type Thread = { id: string; title: string; mode: string };
 
 const MODE_LABEL: Record<string, string> = {
-  "test-bot": "🤖 בדיקת הבוט (משיב כמו ב-WhatsApp)",
-  admin: "📊 שאלות ניהול על המערכת",
-  general: "💬 עוזר AI כללי",
+  "test-bot": "🤖 Bot test (replies like on WhatsApp)",
+  admin: "📊 Admin questions about the system",
+  general: "💬 General AI assistant",
 };
 
 function ChatThread() {
@@ -81,7 +81,7 @@ function ChatThread() {
         {
           id: "demo-reply-" + Date.now(),
           role: "assistant",
-          content: "בטח! זו תצוגת דמו — כך הבוט היה משיב על ההודעה שלך בצורה טבעית וקצרה 🙂",
+          content: "Sure! This is a demo — this is how the bot would reply to your message, naturally and briefly 🙂",
           created_at: new Date().toISOString(),
         },
       ]);
@@ -98,7 +98,7 @@ function ChatThread() {
         {
           id: "err-" + Date.now(),
           role: "assistant",
-          content: `שגיאה: ${String(e?.message ?? e)}`,
+          content: `Error: ${String(e?.message ?? e)}`,
           created_at: new Date().toISOString(),
         },
       ]);
@@ -124,10 +124,10 @@ function ChatThread() {
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3">
-        {loading && <div className="text-sm text-muted-foreground">טוען…</div>}
+        {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
         {!loading && messages.length === 0 && (
           <div className="text-sm text-muted-foreground text-center mt-12">
-            התחל בשליחת הודעה למטה ↓
+            Start by sending a message below ↓
           </div>
         )}
         {messages.map((m) => (
@@ -149,7 +149,7 @@ function ChatThread() {
         {sending && (
           <div className="flex justify-end">
             <div className="bg-muted rounded-2xl px-4 py-2 text-sm text-muted-foreground">
-              חושב…
+              Thinking…
             </div>
           </div>
         )}
@@ -162,7 +162,7 @@ function ChatThread() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKey}
-            placeholder="שאל אותי משהו…"
+            placeholder="Ask me anything…"
             rows={2}
             disabled={sending}
             className="resize-none"
@@ -172,7 +172,7 @@ function ChatThread() {
           </Button>
         </div>
         <div className="text-[10px] text-muted-foreground mt-1">
-          Enter לשליחה · Shift+Enter לשורה חדשה
+          Enter to send · Shift+Enter for a new line
         </div>
       </div>
     </div>

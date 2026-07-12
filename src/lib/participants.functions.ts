@@ -168,7 +168,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       return resolveSenderKey(m.from ?? m.author ?? "") || m.from || m.author || data.whapiChatId;
     };
     const getSenderName = (m: any) => {
-      if (m.from_me) return health.userName || contactBook.get(ownPhone) || "אני";
+      if (m.from_me) return health.userName || contactBook.get(ownPhone) || "Me";
       return m.from_name ?? m.author_name ?? m.pushname ?? "";
     };
     const resolveName = (id: string, fallback?: string) => {
@@ -176,7 +176,7 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       const fromBook = contactBook.get(phone);
       if (fromBook) return fromBook;
       if (fallback && fallback !== id && fallback !== phone) return fallback;
-      return phone || id || "אנונימי";
+      return phone || id || "Anonymous";
     };
 
     const upsertConversation = async () => {
@@ -373,7 +373,7 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
     const live = await listAllMessagesByChatId(data.whapiChatId);
     for (const m of live ?? []) {
       const senderId = getSenderId(m);
-      const senderName = m.from_me ? health.userName ?? "אני" : m.from_name ?? m.author_name ?? "";
+      const senderName = m.from_me ? health.userName ?? "Me" : m.from_name ?? m.author_name ?? "";
       if (!isSelectedSender(senderId, senderName)) continue;
       const id = String(m.id ?? `${m.timestamp}-${senderId}`);
       if (seen.has(id)) continue;
@@ -460,7 +460,7 @@ export const syncConversationHistory = createServerFn({ method: "POST" })
           ? resolveKey(m.from ?? m.author ?? ownPhone) || ownPhone
           : resolveKey(m.from ?? m.author ?? "") || m.from || m.author || conv.whapi_chat_id;
         const senderName = fromMe
-          ? health.userName || "אני"
+          ? health.userName || "Me"
           : m.from_name ?? m.author_name ?? m.pushname ?? "";
         return {
           conversation_id: conv.id,

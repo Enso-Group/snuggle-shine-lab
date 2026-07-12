@@ -12,7 +12,7 @@ import { deleteConversation } from "@/lib/conversations.functions";
 import { DEMO_MODE, demoConversations } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/conversations")({
-  head: () => ({ meta: [{ title: "שיחות — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Chats — WhatsApp Bot" }] }),
   component: ConvLayout,
 });
 
@@ -81,23 +81,23 @@ function ConvLayout() {
     e.stopPropagation();
     if (
       !window.confirm(
-        `למחוק את השיחה "${c.name || c.whapi_chat_id}"? הפעולה תמחק גם את כל ההודעות בשיחה ולא ניתנת לביטול.`,
+        `Delete the chat "${c.name || c.whapi_chat_id}"? This will also delete all messages in the chat and cannot be undone.`,
       )
     )
       return;
     // Optimistic removal; reconcile from the server on failure.
     setConvs((prev) => prev.filter((x) => x.id !== c.id));
     if (DEMO_MODE) {
-      toast.success("השיחה נמחקה");
+      toast.success("Chat deleted");
       if (path.endsWith("/" + c.id)) nav({ to: "/conversations" });
       return;
     }
     try {
       await deleteFn({ data: { id: c.id } });
-      toast.success("השיחה נמחקה");
+      toast.success("Chat deleted");
       if (path.endsWith("/" + c.id)) nav({ to: "/conversations" });
     } catch (err: any) {
-      toast.error(err?.message ?? "מחיקת השיחה נכשלה");
+      toast.error(err?.message ?? "Failed to delete the chat");
       load();
     }
   }
@@ -106,15 +106,15 @@ function ConvLayout() {
     <div className="flex h-screen">
       <div className="w-80 border-l bg-card flex flex-col">
         <div className="p-4 border-b">
-          <h2 className="font-semibold">שיחות ({convs.length})</h2>
+          <h2 className="font-semibold">Chats ({convs.length})</h2>
           {!connected && !connLoading && (
-            <p className="text-xs text-muted-foreground mt-0.5">אין חשבון WhatsApp מחובר.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">No WhatsApp account connected.</p>
           )}
         </div>
         <ScrollArea className="flex-1">
           {convs.length === 0 && (
             <p className="p-4 text-sm text-muted-foreground">
-              אין שיחות עדיין. כשמישהו ישלח הודעה לבוט, היא תופיע כאן.
+              No chats yet. When someone messages the bot, it will appear here.
             </p>
           )}
           {convs.map((c) => {
@@ -135,17 +135,17 @@ function ConvLayout() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{c.name || c.whapi_chat_id}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {c.last_message_at ? new Date(c.last_message_at).toLocaleString("he-IL") : "—"}
+                      {c.last_message_at ? new Date(c.last_message_at).toLocaleString("en-US") : "—"}
                     </p>
                   </div>
-                  {c.is_group && <Badge variant="secondary" className="text-xs shrink-0">קבוצה</Badge>}
+                  {c.is_group && <Badge variant="secondary" className="text-xs shrink-0">Group</Badge>}
                 </Link>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="me-1 size-8 shrink-0 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 focus:opacity-100"
-                  title="מחק שיחה"
-                  aria-label="מחק שיחה"
+                  title="Delete chat"
+                  aria-label="Delete chat"
                   onClick={(e) => handleDelete(e, c)}
                 >
                   <Trash2 className="size-4" />

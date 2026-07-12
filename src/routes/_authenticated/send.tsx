@@ -28,7 +28,7 @@ function normalizeChatId(input: string): string {
 }
 
 export const Route = createFileRoute("/_authenticated/send")({
-  head: () => ({ meta: [{ title: "שליחה — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Send — WhatsApp Bot" }] }),
   component: SendPage,
 });
 
@@ -51,7 +51,7 @@ function SendPage() {
   const [mode, setMode] = useState<"direct" | "ai">("ai");
   const [sendNotice, setSendNotice] = useState<{ type: "blocked" | "error" | "success"; title: string; message: string } | null>(null);
 
-  const pendingText = mode === "ai" ? "ה-AI מכין את ההודעה ובודק מקורות..." : "שולח הודעה...";
+  const pendingText = mode === "ai" ? "The AI is preparing the message and checking sources..." : "Sending message...";
 
   const allTargets = useMemo(
     () =>
@@ -80,25 +80,25 @@ function SendPage() {
     mutationFn: async () => {
       if (DEMO_MODE) {
         await new Promise((r) => setTimeout(r, 600));
-        const body = mode === "ai" ? `${prompt}\n\n(תצוגה: ההודעה נכתבה על ידי ה-AI)` : prompt;
+        const body = mode === "ai" ? `${prompt}\n\n(Demo: this message was written by the AI)` : prompt;
         return { ok: true as const, body };
       }
       return sendFn({ data: { target_chat_id: target, target_name: targetName || target, prompt, mode } });
     },
     onSuccess: (result) => {
       if (!result.ok) {
-        const title = result.blocked ? "השליחה נחסמה להגנה על החשבון" : "השליחה נכשלה";
+        const title = result.blocked ? "Sending was blocked to protect the account" : "Sending failed";
         setSendNotice({ type: result.blocked ? "blocked" : "error", title, message: result.reason });
         toast[result.blocked ? "warning" : "error"](result.reason);
         return;
       }
-      toast.success("נשלח!");
-      setSendNotice({ type: "success", title: "נשלח בהצלחה", message: result.body });
+      toast.success("Sent!");
+      setSendNotice({ type: "success", title: "Sent successfully", message: result.body });
       setPrompt("");
     },
     onError: (e: any) => {
-      const message = e.message || "שגיאה לא צפויה בשליחה";
-      setSendNotice({ type: "error", title: "השליחה נכשלה", message });
+      const message = e.message || "Unexpected error while sending";
+      setSendNotice({ type: "error", title: "Sending failed", message });
       toast.error(message);
     },
   });
@@ -106,15 +106,15 @@ function SendPage() {
   return (
     <div className="p-8 max-w-3xl space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">שליחת הודעה</h1>
-        <p className="text-muted-foreground mt-1">שלחי הודעה ישירה או בקשי מה-AI ליצור תוכן ולשלוח</p>
+        <h1 className="text-3xl font-bold">Send Message</h1>
+        <p className="text-muted-foreground mt-1">Send a direct message, or ask the AI to create content and send it</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>הודעה חדשה</CardTitle>
+          <CardTitle>New message</CardTitle>
           <CardDescription>
-            {isLoading ? "טוען רשימת קבוצות..." : data ? `${data.groups.length} קבוצות, ${data.chats.length} צ'אטים` : "בחרי יעד וכתבי את ההודעה"}
+            {isLoading ? "Loading groups list..." : data ? `${data.groups.length} groups, ${data.chats.length} chats` : "Choose a target and write your message"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -129,7 +129,7 @@ function SendPage() {
           )}
 
           <div>
-            <Label>בחרי יעד</Label>
+            <Label>Choose a target</Label>
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
                 <Button
@@ -138,7 +138,7 @@ function SendPage() {
                   className="w-full justify-between font-normal"
                 >
                   <span className={cn("truncate", !target && "text-muted-foreground")}>
-                    {target ? (targetName || target) : "בחרי או הקלידי מספר/Chat ID..."}
+                    {target ? (targetName || target) : "Choose or type a number/Chat ID..."}
                   </span>
                   <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
                 </Button>
@@ -146,13 +146,13 @@ function SendPage() {
               <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                 <Command shouldFilter={false}>
                   <CommandInput
-                    placeholder="חיפוש לפי שם, או הקלידי מספר טלפון/Chat ID..."
+                    placeholder="Search by name, or type a phone number/Chat ID..."
                     value={search}
                     onValueChange={setSearch}
                   />
                   <CommandList>
                     {showManualOption && (
-                      <CommandGroup heading="שימוש בערך שהוקלד">
+                      <CommandGroup heading="Use the typed value">
                         <CommandItem
                           value={`__manual__${trimmed}`}
                           onSelect={() => {
@@ -162,12 +162,12 @@ function SendPage() {
                             setSearch("");
                           }}
                         >
-                          <span dir="ltr">שלח אל: {normalized}</span>
+                          <span dir="ltr">Send to: {normalized}</span>
                         </CommandItem>
                       </CommandGroup>
                     )}
-                    {filteredTargets.length === 0 && <CommandEmpty>לא נמצאו תוצאות</CommandEmpty>}
-                    <CommandGroup heading="קבוצות ואנשי קשר">
+                    {filteredTargets.length === 0 && <CommandEmpty>No results found</CommandEmpty>}
+                    <CommandGroup heading="Groups and contacts">
                       {filteredTargets.map((t) => (
                         <CommandItem
                           key={t.id}
@@ -188,26 +188,26 @@ function SendPage() {
                 </Command>
               </PopoverContent>
             </Popover>
-            <Button variant="link" size="sm" onClick={() => refetch()} className="p-0 h-auto mt-1">רענן רשימה</Button>
+            <Button variant="link" size="sm" onClick={() => refetch()} className="p-0 h-auto mt-1">Refresh list</Button>
           </div>
 
           <div>
-            <Label>מצב</Label>
+            <Label>Mode</Label>
             <RadioGroup value={mode} onValueChange={(v) => setMode(v as any)} className="flex gap-4 mt-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <RadioGroupItem value="ai" />
-                <span>🧠 AI — תני הוראה, ה-AI יכתוב וישלח</span>
+                <span>🧠 AI — give an instruction, the AI writes and sends</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <RadioGroupItem value="direct" />
-                <span>✍️ ישיר — נשלח בדיוק מה שכתבת</span>
+                <span>✍️ Direct — sends exactly what you wrote</span>
               </label>
             </RadioGroup>
           </div>
 
           <div>
             <Label htmlFor="msg">
-              {mode === "ai" ? "הוראה ל-AI" : "טקסט ההודעה"}
+              {mode === "ai" ? "Instruction for the AI" : "Message text"}
             </Label>
             <Textarea
               id="msg"
@@ -216,8 +216,8 @@ function SendPage() {
               rows={6}
               placeholder={
                 mode === "ai"
-                  ? "לדוגמה: חפש 10 כתבות חדשות על AI מהשבוע האחרון ותכתוב סיכום קצר עם קישורים"
-                  : "ההודעה שתישלח כמו שהיא..."
+                  ? "For example: find 10 recent AI news articles from the past week and write a short summary with links"
+                  : "The message that will be sent as-is..."
               }
             />
           </div>
@@ -227,7 +227,7 @@ function SendPage() {
             disabled={!target || !prompt.trim() || send.isPending}
             className="w-full"
           >
-            {send.isPending ? pendingText : mode === "ai" ? "🧠 צור ושלח" : "📤 שלח"}
+            {send.isPending ? pendingText : mode === "ai" ? "🧠 Create and send" : "📤 Send"}
           </Button>
         </CardContent>
       </Card>

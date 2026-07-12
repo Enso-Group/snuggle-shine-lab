@@ -24,24 +24,24 @@ const daysAgo = (d: number) => new Date(now - d * 86_400_000).toISOString();
 
 // --- people & groups ----------------------------------------------------------
 const CONTACTS = [
-  { phone: "972501234567", name: "דנה כהן" },
-  { phone: "972502345678", name: "יוסי לוי" },
-  { phone: "972503456789", name: "מיכל אברהם" },
-  { phone: "972504567890", name: "אבי פרידמן" },
-  { phone: "972505678901", name: "נועה שפירא" },
-  { phone: "972506789012", name: "רון ביטון" },
-  { phone: "972507890123", name: "שירה מזרחי" },
-  { phone: "972508901234", name: "עומר גולן" },
-  { phone: "972509012345", name: "טל רוזן" },
-  { phone: "972521112233", name: "ליאור אלון" },
+  { phone: "972501234567", name: "Dana Cohen" },
+  { phone: "972502345678", name: "Yossi Levi" },
+  { phone: "972503456789", name: "Michal Abraham" },
+  { phone: "972504567890", name: "Avi Friedman" },
+  { phone: "972505678901", name: "Noa Shapira" },
+  { phone: "972506789012", name: "Ron Biton" },
+  { phone: "972507890123", name: "Shira Mizrahi" },
+  { phone: "972508901234", name: "Omer Golan" },
+  { phone: "972509012345", name: "Tal Rosen" },
+  { phone: "972521112233", name: "Lior Alon" },
 ];
 
 const GROUPS = [
-  { id: "120363011111111111@g.us", name: "לקוחות VIP" },
-  { id: "120363022222222222@g.us", name: "צוות מכירות" },
-  { id: "120363033333333333@g.us", name: "עדכוני מוצר" },
-  { id: "120363044444444444@g.us", name: "תמיכה טכנית" },
-  { id: "120363055555555555@g.us", name: "מנהלי קהילה" },
+  { id: "120363011111111111@g.us", name: "VIP Customers" },
+  { id: "120363022222222222@g.us", name: "Sales Team" },
+  { id: "120363033333333333@g.us", name: "Product Updates" },
+  { id: "120363044444444444@g.us", name: "Technical Support" },
+  { id: "120363055555555555@g.us", name: "Community Managers" },
 ];
 
 const contactChatId = (phone: string) => `${phone}@s.whatsapp.net`;
@@ -80,44 +80,44 @@ type DemoConv = {
 };
 
 export const demoConversations: DemoConv[] = [
-  { id: "demo-conv-1", name: "דנה כהן", whapi_chat_id: contactChatId("972501234567"), is_group: false, last_message_at: minsAgo(4) },
-  { id: "demo-conv-2", name: "לקוחות VIP", whapi_chat_id: GROUPS[0].id, is_group: true, last_message_at: minsAgo(18) },
-  { id: "demo-conv-3", name: "יוסי לוי", whapi_chat_id: contactChatId("972502345678"), is_group: false, last_message_at: hoursAgo(1) },
-  { id: "demo-conv-4", name: "מיכל אברהם", whapi_chat_id: contactChatId("972503456789"), is_group: false, last_message_at: hoursAgo(3) },
-  { id: "demo-conv-5", name: "צוות מכירות", whapi_chat_id: GROUPS[1].id, is_group: true, last_message_at: hoursAgo(5) },
-  { id: "demo-conv-6", name: "אבי פרידמן", whapi_chat_id: contactChatId("972504567890"), is_group: false, last_message_at: hoursAgo(9) },
-  { id: "demo-conv-7", name: "נועה שפירא", whapi_chat_id: contactChatId("972505678901"), is_group: false, last_message_at: daysAgo(1) },
-  { id: "demo-conv-8", name: "עדכוני מוצר", whapi_chat_id: GROUPS[2].id, is_group: true, last_message_at: daysAgo(2) },
+  { id: "demo-conv-1", name: "Dana Cohen", whapi_chat_id: contactChatId("972501234567"), is_group: false, last_message_at: minsAgo(4) },
+  { id: "demo-conv-2", name: "VIP Customers", whapi_chat_id: GROUPS[0].id, is_group: true, last_message_at: minsAgo(18) },
+  { id: "demo-conv-3", name: "Yossi Levi", whapi_chat_id: contactChatId("972502345678"), is_group: false, last_message_at: hoursAgo(1) },
+  { id: "demo-conv-4", name: "Michal Abraham", whapi_chat_id: contactChatId("972503456789"), is_group: false, last_message_at: hoursAgo(3) },
+  { id: "demo-conv-5", name: "Sales Team", whapi_chat_id: GROUPS[1].id, is_group: true, last_message_at: hoursAgo(5) },
+  { id: "demo-conv-6", name: "Avi Friedman", whapi_chat_id: contactChatId("972504567890"), is_group: false, last_message_at: hoursAgo(9) },
+  { id: "demo-conv-7", name: "Noa Shapira", whapi_chat_id: contactChatId("972505678901"), is_group: false, last_message_at: daysAgo(1) },
+  { id: "demo-conv-8", name: "Product Updates", whapi_chat_id: GROUPS[2].id, is_group: true, last_message_at: daysAgo(2) },
 ];
 
 type DemoMsg = { id: string; direction: string; sender_name: string | null; body: string | null; created_at: string };
 
 const CONVERSATION_SCRIPTS: Record<string, Array<[dir: "in" | "out", name: string, body: string, mins: number]>> = {
   "demo-conv-1": [
-    ["in", "דנה כהן", "היי, אפשר לקבל פרטים על החבילה העסקית?", 60],
-    ["out", "הבוט", "בטח! החבילה העסקית כוללת ניהול שיחות אוטומטי, תזמון הודעות ודוחות. רוצה שאשלח מחירון?", 59],
-    ["in", "דנה כהן", "כן בבקשה", 58],
-    ["out", "הבוט", "מעולה, שלחתי לך מייל עם כל הפרטים 😊 יש עוד משהו שאפשר לעזור?", 57],
-    ["in", "דנה כהן", "מושלם, תודה רבה!", 4],
+    ["in", "Dana Cohen", "Hi, can I get details about the business package?", 60],
+    ["out", "Bot", "Sure! The business package includes automatic conversation management, message scheduling, and reports. Want me to send a price list?", 59],
+    ["in", "Dana Cohen", "Yes please", 58],
+    ["out", "Bot", "Great, I sent you an email with all the details 😊 Is there anything else I can help with?", 57],
+    ["in", "Dana Cohen", "Perfect, thank you so much!", 4],
   ],
   "demo-conv-2": [
-    ["in", "רון ביטון", "מתי המבצע החדש מתחיל?", 40],
-    ["out", "הבוט", "המבצע יוצא ביום ראשון הקרוב, עם 20% הנחה לכל חברי ה-VIP 🎉", 39],
-    ["in", "שירה מזרחי", "אפשר לשמור לי פריט מראש?", 20],
-    ["out", "הבוט", "כמובן שירה, שמרתי לך. נעדכן אותך ברגע שהמבצע נפתח.", 18],
+    ["in", "Ron Biton", "When does the new sale start?", 40],
+    ["out", "Bot", "The sale goes live this coming Sunday, with 20% off for all VIP members 🎉", 39],
+    ["in", "Shira Mizrahi", "Can you set an item aside for me in advance?", 20],
+    ["out", "Bot", "Of course Shira, I've set one aside. We'll let you know the moment the sale opens.", 18],
   ],
   "demo-conv-3": [
-    ["in", "יוסי לוי", "ההזמנה שלי עדיין לא הגיעה", 70],
-    ["out", "הבוט", "מצטער לשמוע! בדקתי — המשלוח יצא אתמול ואמור להגיע היום עד הערב 📦", 69],
-    ["in", "יוסי לוי", "אחלה, תודה על העדכון המהיר", 61],
+    ["in", "Yossi Levi", "My order still hasn't arrived", 70],
+    ["out", "Bot", "Sorry to hear that! I checked — the shipment went out yesterday and should arrive today by the evening 📦", 69],
+    ["in", "Yossi Levi", "Great, thanks for the quick update", 61],
   ],
 };
 
 const DEFAULT_SCRIPT: Array<[dir: "in" | "out", name: string, body: string, mins: number]> = [
-  ["in", "לקוח", "שלום, יש לי שאלה", 30],
-  ["out", "הבוט", "היי! אני כאן, איך אפשר לעזור?", 29],
-  ["in", "לקוח", "רק רציתי לבדוק סטטוס", 28],
-  ["out", "הבוט", "הכל תקין ומעודכן ✅ משהו נוסף?", 27],
+  ["in", "Customer", "Hi, I have a question", 30],
+  ["out", "Bot", "Hi! I'm here, how can I help?", 29],
+  ["in", "Customer", "I just wanted to check a status", 28],
+  ["out", "Bot", "Everything is fine and up to date ✅ Anything else?", 27],
 ];
 
 export function demoConversationMessages(convId: string): DemoMsg[] {
@@ -133,21 +133,21 @@ export function demoConversationMessages(convId: string): DemoMsg[] {
 
 export function demoConversationMeta(convId: string) {
   const c = demoConversations.find((x) => x.id === convId);
-  return { name: c?.name ?? "שיחה", whapi_chat_id: c?.whapi_chat_id ?? "" };
+  return { name: c?.name ?? "Chat", whapi_chat_id: c?.whapi_chat_id ?? "" };
 }
 
 // --- participants -------------------------------------------------------------
 export const demoGroupConversations = GROUPS.map((g) => ({ whapi_chat_id: g.id, name: g.name }));
 
 const PARTICIPANT_LINES = [
-  "תודה על העזרה!",
-  "מתי המבצע מתחיל?",
-  "אפשר לקבל פרטים נוספים?",
-  "מעולה, נשמע מצוין",
-  "אני מעוניין בחבילה העסקית",
-  "מצטרף לפגישה מחר",
-  "שלחתי את המסמכים",
-  "אחלה, תודה רבה 🙏",
+  "Thanks for the help!",
+  "When does the sale start?",
+  "Can I get more details?",
+  "Great, sounds excellent",
+  "I'm interested in the business package",
+  "Joining the meeting tomorrow",
+  "I sent the documents",
+  "Awesome, thank you so much 🙏",
 ];
 
 export function demoParticipants(groupId: string) {
@@ -185,8 +185,8 @@ export const demoScheduledMessages = [
     day_of_week: 0,
     send_time: "09:00:00",
     target_chat_id: GROUPS[0].id,
-    target_name: "לקוחות VIP",
-    body: "בוקר טוב! מזכירים שהמבצע השבועי מתחיל היום ☀️",
+    target_name: "VIP Customers",
+    body: "Good morning! A reminder that this week's sale starts today ☀️",
     mode: "direct",
     enabled: true,
     require_approval: false,
@@ -197,8 +197,8 @@ export const demoScheduledMessages = [
     day_of_week: 3,
     send_time: "12:30:00",
     target_chat_id: GROUPS[2].id,
-    target_name: "עדכוני מוצר",
-    body: "כתוב עדכון קצר וידידותי על פיצ'ר חדש שיצא השבוע",
+    target_name: "Product Updates",
+    body: "Write a short, friendly update about a new feature released this week",
     mode: "ai",
     enabled: true,
     require_approval: true,
@@ -209,8 +209,8 @@ export const demoScheduledMessages = [
     day_of_week: 4,
     send_time: "17:00:00",
     target_chat_id: GROUPS[1].id,
-    target_name: "צוות מכירות",
-    body: "סיכום יעדי מכירות לשבוע — כל הכבוד על העבודה! 💪",
+    target_name: "Sales Team",
+    body: "Weekly sales targets summary — great work everyone! 💪",
     mode: "direct",
     enabled: false,
     require_approval: false,
@@ -223,24 +223,24 @@ export const demoApprovals = [
   {
     id: "demo-appr-1",
     target_chat_id: contactChatId("972503456789"),
-    target_name: "מיכל אברהם",
-    body: "היי מיכל! ראיתי שהתעניינת בחבילה העסקית — רוצה שנקבע שיחה קצרה השבוע?",
+    target_name: "Michal Abraham",
+    body: "Hi Michal! I saw you were interested in the business package — want to set up a quick call this week?",
     source: "ai_reply",
     created_at: minsAgo(6),
   },
   {
     id: "demo-appr-2",
     target_chat_id: GROUPS[2].id,
-    target_name: "עדכוני מוצר",
-    body: "עדכון: השבוע השקנו תזמון הודעות חכם — אפשר לתזמן הודעות AI שנכתבות מחדש בכל שליחה ✨",
+    target_name: "Product Updates",
+    body: "Update: this week we launched smart message scheduling — you can now schedule AI messages that are rewritten on every send ✨",
     source: "schedule",
     created_at: minsAgo(35),
   },
   {
     id: "demo-appr-3",
     target_chat_id: contactChatId("972506789012"),
-    target_name: "רון ביטון",
-    body: "תודה על הפנייה רון! צוות התמיכה יחזור אליך תוך שעה 🙏",
+    target_name: "Ron Biton",
+    body: "Thanks for reaching out Ron! The support team will get back to you within an hour 🙏",
     source: "manual",
     created_at: hoursAgo(2),
   },
@@ -248,12 +248,12 @@ export const demoApprovals = [
 
 // --- logs ---------------------------------------------------------------------
 export const demoLogs = [
-  { id: "demo-log-1", prompt: "שלח תזכורת מבצע לקבוצת VIP", target_chat_id: GROUPS[0].id, target_name: "לקוחות VIP", result: "בוקר טוב! מזכירים שהמבצע השבועי מתחיל היום ☀️", status: "sent", created_at: minsAgo(12) },
-  { id: "demo-log-2", prompt: "תשובת AI ללקוח", target_chat_id: contactChatId("972501234567"), target_name: "דנה כהן", result: "שלחתי לך מייל עם כל הפרטים 😊", status: "sent", created_at: minsAgo(57) },
-  { id: "demo-log-3", prompt: "הודעה מתוזמנת (AI)", target_chat_id: GROUPS[2].id, target_name: "עדכוני מוצר", result: "ממתין לאישור מנהל", status: "pending", created_at: hoursAgo(2) },
-  { id: "demo-log-4", prompt: "שלח סיכום מכירות", target_chat_id: GROUPS[1].id, target_name: "צוות מכירות", result: "סיכום יעדי מכירות לשבוע — כל הכבוד! 💪", status: "sent", created_at: hoursAgo(6) },
-  { id: "demo-log-5", prompt: "תשובת AI ללקוח", target_chat_id: contactChatId("972502345678"), target_name: "יוסי לוי", result: "המשלוח יצא אתמול ואמור להגיע היום עד הערב 📦", status: "sent", created_at: hoursAgo(9) },
-  { id: "demo-log-6", prompt: "שליחה ידנית", target_chat_id: contactChatId("972509012345"), target_name: "טל רוזן", result: "Whapi 429: rate limit — נסה שוב", status: "error", created_at: daysAgo(1) },
+  { id: "demo-log-1", prompt: "Send sale reminder to the VIP group", target_chat_id: GROUPS[0].id, target_name: "VIP Customers", result: "Good morning! A reminder that this week's sale starts today ☀️", status: "sent", created_at: minsAgo(12) },
+  { id: "demo-log-2", prompt: "AI reply to a customer", target_chat_id: contactChatId("972501234567"), target_name: "Dana Cohen", result: "I sent you an email with all the details 😊", status: "sent", created_at: minsAgo(57) },
+  { id: "demo-log-3", prompt: "Scheduled message (AI)", target_chat_id: GROUPS[2].id, target_name: "Product Updates", result: "Waiting for admin approval", status: "pending", created_at: hoursAgo(2) },
+  { id: "demo-log-4", prompt: "Send sales summary", target_chat_id: GROUPS[1].id, target_name: "Sales Team", result: "Weekly sales targets summary — great work! 💪", status: "sent", created_at: hoursAgo(6) },
+  { id: "demo-log-5", prompt: "AI reply to a customer", target_chat_id: contactChatId("972502345678"), target_name: "Yossi Levi", result: "The shipment went out yesterday and should arrive today by the evening 📦", status: "sent", created_at: hoursAgo(9) },
+  { id: "demo-log-6", prompt: "Manual send", target_chat_id: contactChatId("972509012345"), target_name: "Tal Rosen", result: "Whapi 429: rate limit — try again", status: "error", created_at: daysAgo(1) },
 ];
 
 // --- usage & costs ------------------------------------------------------------
@@ -321,23 +321,23 @@ export const demoUsageList = {
 
 // --- AI chat ------------------------------------------------------------------
 export const demoThreads = [
-  { id: "demo-thread-1", title: "בדיקת סגנון הבוט", mode: "test-bot", updated_at: minsAgo(10) },
-  { id: "demo-thread-2", title: "כמה שיחות היו השבוע?", mode: "admin", updated_at: hoursAgo(2) },
-  { id: "demo-thread-3", title: "רעיונות לקמפיין חג", mode: "general", updated_at: daysAgo(1) },
+  { id: "demo-thread-1", title: "Testing the bot's style", mode: "test-bot", updated_at: minsAgo(10) },
+  { id: "demo-thread-2", title: "How many chats this week?", mode: "admin", updated_at: hoursAgo(2) },
+  { id: "demo-thread-3", title: "Holiday campaign ideas", mode: "general", updated_at: daysAgo(1) },
 ];
 
 const THREAD_MESSAGES: Record<string, Array<[role: "user" | "assistant", content: string, mins: number]>> = {
   "demo-thread-1": [
-    ["user", "תכתוב בסגנון של הבוט: לקוח שואל אם אתם פתוחים בשישי", 12],
-    ["assistant", "היי! בשישי אנחנו פה עד 14:00, אחרי זה חוזרים ראשון בבוקר 🙂 אפשר לעזור במשהו לפני?", 12],
+    ["user", "Write in the bot's style: a customer asks if you're open on Friday", 12],
+    ["assistant", "Hi! On Friday we're here until 2 PM, then we're back Sunday morning 🙂 Anything I can help with before then?", 12],
   ],
   "demo-thread-2": [
-    ["user", "כמה שיחות פעילות היו לנו השבוע?", 120],
-    ["assistant", "השבוע היו 128 שיחות פעילות, מתוכן 41 בקבוצות. הכי פעילה: \"לקוחות VIP\". רוצה פירוט לפי יום?", 119],
+    ["user", "How many active chats did we have this week?", 120],
+    ["assistant", "This week there were 128 active chats, 41 of them in groups. The most active: \"VIP Customers\". Want a breakdown by day?", 119],
   ],
   "demo-thread-3": [
-    ["user", "תן לי 3 רעיונות להודעת חג ללקוחות", 1440],
-    ["assistant", "1) \"חג שמח! הכנו לכם 15% הנחה לכבוד החג 🎁\"\n2) \"מאחלים חג של שקט ואור — ונתראה עם המון חדשות בקרוב ✨\"\n3) \"מתנה קטנה לכבוד החג בפנים — הצצה?\"", 1439],
+    ["user", "Give me 3 ideas for a holiday message to customers", 1440],
+    ["assistant", "1) \"Happy holidays! We've prepared 15% off just for the holiday 🎁\"\n2) \"Wishing you a holiday of calm and light — and see you with lots of news soon ✨\"\n3) \"A little holiday gift inside — take a peek?\"", 1439],
   ],
 };
 
@@ -359,15 +359,15 @@ export function demoThreadMessages(threadId: string) {
 export const demoCandidates = [
   {
     id: "demo-cand-1",
-    name: "עדי שרון",
+    name: "Adi Sharon",
     role: "Frontend Developer",
     title: "Senior Frontend Engineer",
     company: "Wix",
     companyFull: "Wix.com",
-    matchReason: "הזכירה ניסיון של 5 שנים ב-React ו-TypeScript, ומחפשת אתגר חדש.",
-    groupName: "מנהלי קהילה",
+    matchReason: "Mentioned 5 years of experience with React and TypeScript, and is looking for a new challenge.",
+    groupName: "Community Managers",
     groupId: GROUPS[4].id,
-    sourceMessage: "עובדת על React כבר 5 שנים, אשמח לשמוע על הזדמנויות",
+    sourceMessage: "I've worked with React for 5 years, happy to hear about opportunities",
     email: "adi.sharon@example.com",
     phone: "+972 50-123-4567",
     linkedinUrl: "https://linkedin.com/in/adi-sharon",
@@ -375,15 +375,15 @@ export const demoCandidates = [
   },
   {
     id: "demo-cand-2",
-    name: "מור לוין",
+    name: "Mor Levin",
     role: "Product Manager",
     title: "Product Manager",
     company: "Monday",
     companyFull: "monday.com",
-    matchReason: "כתב על ניהול מוצר ב-B2B SaaS והובלת צוות של 6 אנשים.",
-    groupName: "מנהלי קהילה",
+    matchReason: "Wrote about product management in B2B SaaS and leading a team of 6.",
+    groupName: "Community Managers",
     groupId: GROUPS[4].id,
-    sourceMessage: "מנהל מוצר ב-SaaS, מוביל צוות של 6",
+    sourceMessage: "Product manager in SaaS, leading a team of 6",
     email: "mor.levin@example.com",
     phone: "+972 52-987-6543",
     linkedinUrl: "https://linkedin.com/in/mor-levin",
@@ -391,15 +391,15 @@ export const demoCandidates = [
   },
   {
     id: "demo-cand-3",
-    name: "יעל דרור",
+    name: "Yael Dror",
     role: "Data Scientist",
     title: "Data Scientist",
     company: undefined,
     companyFull: undefined,
-    matchReason: "הזכירה עבודה עם Python ו-ML models בתחום הפינטק.",
-    groupName: "עדכוני מוצר",
+    matchReason: "Mentioned working with Python and ML models in fintech.",
+    groupName: "Product Updates",
     groupId: GROUPS[2].id,
-    sourceMessage: "עוסקת ב-ML models בפינטק, בעיקר Python",
+    sourceMessage: "Working on ML models in fintech, mostly Python",
     linkedinUrl: "https://linkedin.com/in/yael-dror",
     enrichedVia: ["apify"],
   },

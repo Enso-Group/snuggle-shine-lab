@@ -72,13 +72,13 @@ function ConvView() {
     <div className="flex flex-col h-screen">
       <div className="p-4 border-b bg-card flex items-center justify-between">
         <div>
-          <h2 className="font-semibold">{conv?.name || conv?.whapi_chat_id || "שיחה"}</h2>
+          <h2 className="font-semibold">{conv?.name || conv?.whapi_chat_id || "Chat"}</h2>
           <p className="text-xs text-muted-foreground">{conv?.whapi_chat_id}</p>
         </div>
         {syncing && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
-            טוען היסטוריה...
+            Loading history...
           </div>
         )}
       </div>
@@ -91,12 +91,12 @@ function ConvView() {
                 <div className={`max-w-[70%] rounded-lg px-3 py-2 ${out ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
                   {m.sender_name && !out && <p className="text-xs font-semibold mb-1 opacity-75">{m.sender_name}</p>}
                   <p className="whitespace-pre-wrap text-sm">{m.body}</p>
-                  <p className="text-[10px] opacity-60 mt-1">{new Date(m.created_at).toLocaleTimeString("he-IL")}</p>
+                  <p className="text-[10px] opacity-60 mt-1">{new Date(m.created_at).toLocaleTimeString("en-US")}</p>
                 </div>
               </div>
             );
           })}
-          {msgs.length === 0 && <p className="text-center text-muted-foreground py-12">אין הודעות בשיחה</p>}
+          {msgs.length === 0 && <p className="text-center text-muted-foreground py-12">No messages in this chat</p>}
         </div>
       </ScrollArea>
     </div>

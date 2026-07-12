@@ -29,7 +29,7 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch (e: any) {
     if (e?.name === "AbortError") {
-      throw new Error("החיבור ל-WhatsApp לקח יותר מדי זמן. בדקי שהחיבור פעיל ונסי שוב.");
+      throw new Error("The connection to WhatsApp took too long. Check that the connection is active and try again.");
     }
     throw e;
   } finally {
@@ -38,7 +38,7 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   if (!res.ok) {
     if (res.status === 402 && text.includes("trial version limit exceeded")) {
-      throw new Error("Whapi חסם כרגע את משיכת הנתונים בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
+      throw new Error("Whapi is currently blocking data retrieval due to the Trial limit. You need to upgrade/remove the limit in Whapi and then refresh the group.");
     }
     throw new Error(`Whapi ${res.status}: ${text.slice(0, 500)}`);
   }
@@ -51,7 +51,7 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
 
 function isWhapiTrialLimitError(e: unknown) {
   const msg = String((e as any)?.message ?? e);
-  return msg.includes("trial version limit exceeded") || msg.includes("מגבלת Trial");
+  return msg.includes("trial version limit exceeded") || msg.includes("Trial limit");
 }
 
 function normalizePhoneLocalPart(local: string): string {
@@ -79,7 +79,7 @@ export async function sendTextMessage(chatId: string, body: string) {
   const to = sanitizeWhapiTo(chatId);
   const localPart = to.split("@")[0] ?? "";
   if (!/^[\d-]{9,31}$/.test(localPart)) {
-    throw new Error(`נמען לא תקין לשליחה ב-WhatsApp: "${chatId}". יש לבחור איש קשר או קבוצה אמיתיים (מספר טלפון או מזהה קבוצה), לא שם.`);
+    throw new Error(`Invalid recipient for WhatsApp: "${chatId}". Please choose a real contact or group (a phone number or group ID), not a name.`);
   }
   return whapi("/messages/text", {
     method: "POST",
@@ -121,7 +121,7 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
   } catch (e) {
     console.error("[whapi] listAllMessagesByChatId failed", e);
     if (isWhapiTrialLimitError(e)) {
-      throw new Error("Whapi חסם כרגע את משיכת ההודעות בגלל מגבלת Trial. צריך לשדרג/להסיר את המגבלה ב-Whapi ואז לרענן את הקבוצה.");
+      throw new Error("Whapi is currently blocking message retrieval due to the Trial limit. You need to upgrade/remove the limit in Whapi and then refresh the group.");
     }
   }
 
@@ -333,7 +333,7 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
     } catch (e: any) {
       lastError = String(e?.message ?? e);
       if (lastError.includes("Whapi 409")) {
-        throw new Error("החיבור עדיין מחובר. נתק את המכשיר המקושר מ-WhatsApp או נסה שוב בעוד כמה שניות.");
+        throw new Error("The connection is still active. Unlink the linked device from WhatsApp or try again in a few seconds.");
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -343,7 +343,7 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
   if (lastStatus) {
     return { image: "", status: lastStatus };
   }
-  throw new Error(`לא נוצר QR אמיתי עדיין. ${lastError || "נסה שוב בעוד מספר שניות."}`);
+  throw new Error(`No real QR code was generated yet. ${lastError || "Try again in a few seconds."}`);
 }
 
 

@@ -125,7 +125,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
         .select("id, whapi_chat_id, inbound_count, consecutive_outbound, blocked, last_outbound_at, last_outbound_body")
         .single();
       if (convErr || !created) {
-        throw new Error(`לא ניתן ליצור שיחה חדשה: ${convErr?.message ?? "unknown"}`);
+        throw new Error(`Couldn't create a new conversation: ${convErr?.message ?? "unknown"}`);
       }
       conv = created as NonNullable<typeof conv>;
     }
@@ -216,7 +216,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
       await supabaseAdmin.from("messages").insert({
         conversation_id: conv.id,
         direction: "outbound",
-        sender_name: "מנהל",
+        sender_name: "Admin",
         sender_id: "manual",
         body,
       });

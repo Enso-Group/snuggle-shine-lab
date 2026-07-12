@@ -17,9 +17,9 @@ export const Route = createFileRoute("/_authenticated/chat")({
 type Thread = { id: string; title: string; mode: string; updated_at: string };
 
 const MODE_LABEL: Record<string, string> = {
-  "test-bot": "🤖 בדיקה",
-  admin: "📊 ניהול",
-  general: "💬 כללי",
+  "test-bot": "🤖 Test",
+  admin: "📊 Admin",
+  general: "💬 General",
 };
 
 function ChatLayout() {
@@ -59,7 +59,7 @@ function ChatLayout() {
   async function remove(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    if (!confirm("למחוק את השיחה?")) return;
+    if (!confirm("Delete this conversation?")) return;
     if (DEMO_MODE) {
       setThreads((prev) => prev.filter((t) => t.id !== id));
       nav({ to: "/chat" });
@@ -75,26 +75,26 @@ function ChatLayout() {
     <div className="flex h-screen">
       <aside className="w-64 border-l bg-card flex flex-col">
         <div className="p-3 border-b space-y-2">
-          <div className="text-sm font-semibold">שיחות חדשות</div>
+          <div className="text-sm font-semibold">New conversations</div>
           <div className="grid grid-cols-3 gap-1">
-            <Button size="sm" variant="outline" onClick={() => newThread("general")} title="שיחה כללית">
+            <Button size="sm" variant="outline" onClick={() => newThread("general")} title="General chat">
               💬
             </Button>
-            <Button size="sm" variant="outline" onClick={() => newThread("test-bot")} title="בדוק את הבוט">
+            <Button size="sm" variant="outline" onClick={() => newThread("test-bot")} title="Test the bot">
               🤖
             </Button>
-            <Button size="sm" variant="outline" onClick={() => newThread("admin")} title="שאל על המערכת">
+            <Button size="sm" variant="outline" onClick={() => newThread("admin")} title="Ask about the system">
               📊
             </Button>
           </div>
           <Button size="sm" className="w-full" onClick={() => newThread("general")}>
-            <Plus className="size-3 ms-1" /> שיחה חדשה
+            <Plus className="size-3 ms-1" /> New conversation
           </Button>
         </div>
         <div className="flex-1 overflow-auto p-2 space-y-1">
-          {loading && <div className="text-xs text-muted-foreground p-2">טוען…</div>}
+          {loading && <div className="text-xs text-muted-foreground p-2">Loading…</div>}
           {!loading && threads.length === 0 && (
-            <div className="text-xs text-muted-foreground p-2">אין שיחות עדיין</div>
+            <div className="text-xs text-muted-foreground p-2">No conversations yet</div>
           )}
           {threads.map((t) => (
             <Link
@@ -112,7 +112,7 @@ function ChatLayout() {
               <button
                 onClick={(e) => remove(t.id, e)}
                 className="opacity-0 group-hover:opacity-100 hover:text-destructive"
-                aria-label="מחק"
+                aria-label="Delete"
               >
                 <Trash2 className="size-3" />
               </button>

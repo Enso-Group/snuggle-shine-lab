@@ -17,7 +17,7 @@ import {
 import { DEMO_MODE, demoApprovals } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/approvals")({
-  head: () => ({ meta: [{ title: "אישור הודעות — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Approvals — WhatsApp Bot" }] }),
   component: ApprovalsPage,
 });
 
@@ -31,9 +31,9 @@ type Approval = {
 };
 
 const SOURCE_LABEL: Record<string, string> = {
-  ai_reply: "תשובת AI",
-  schedule: "תזמון",
-  manual: "ידני",
+  ai_reply: "AI reply",
+  schedule: "Scheduled",
+  manual: "Manual",
 };
 
 function ApprovalsPage() {
@@ -55,17 +55,17 @@ function ApprovalsPage() {
 
   const approve = useMutation({
     mutationFn: async ({ id, body }: { id: string; body?: string }) => { if (DEMO_MODE) return; return approveFn({ data: { id, body } }); },
-    onSuccess: () => { invalidate(); toast.success("נשלח"); },
+    onSuccess: () => { invalidate(); toast.success("Sent"); },
     onError: (e: any) => toast.error(e.message),
   });
   const reject = useMutation({
     mutationFn: async (id: string) => { if (DEMO_MODE) return; return rejectFn({ data: { id } }); },
-    onSuccess: () => { invalidate(); toast.success("נמחק"); },
+    onSuccess: () => { invalidate(); toast.success("Deleted"); },
     onError: (e: any) => toast.error(e.message),
   });
   const updateBody = useMutation({
     mutationFn: async ({ id, body }: { id: string; body: string }) => { if (DEMO_MODE) return; return updateFn({ data: { id, body } }); },
-    onSuccess: () => { invalidate(); toast.success("עודכן"); },
+    onSuccess: () => { invalidate(); toast.success("Updated"); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -74,17 +74,17 @@ function ApprovalsPage() {
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-2">
           <Inbox className="size-7" />
-          אישור הודעות
+          Approvals
         </h1>
         <p className="text-muted-foreground mt-1">
-          כל הודעה שהבוט רוצה לשלוח כשמופעל "דרוש אישור" תופיע כאן. אפשר לשלוח, לערוך ולשלוח, או למחוק.
+          When "Require approval" is on, every message the bot wants to send appears here. You can send, edit and send, or delete.
         </p>
       </div>
 
       {rows.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            אין הודעות שממתינות לאישור 🎉
+            No messages waiting for approval 🎉
           </CardContent>
         </Card>
       )}
@@ -129,7 +129,7 @@ function ApprovalCard({
           <div className="flex items-center gap-2 shrink-0">
             <Badge variant="outline" className="text-xs">{SOURCE_LABEL[row.source] ?? row.source}</Badge>
             <span className="text-xs text-muted-foreground font-normal">
-              {new Date(row.created_at).toLocaleString("he-IL")}
+              {new Date(row.created_at).toLocaleString("en-US")}
             </span>
           </div>
         </CardTitle>
@@ -145,25 +145,25 @@ function ApprovalCard({
           {editing ? (
             <>
               <Button size="sm" onClick={() => onApprove(draft)} disabled={pending || !draft.trim()}>
-                <Check className="size-3 ms-1" />שמור ושלח
+                <Check className="size-3 ms-1" />Save and send
               </Button>
               <Button size="sm" variant="outline" onClick={() => { onSaveEdit(draft); setEditing(false); }} disabled={pending || !draft.trim()}>
-                שמור בלי לשלוח
+                Save without sending
               </Button>
               <Button size="sm" variant="ghost" onClick={() => { setDraft(row.body); setEditing(false); }}>
-                <X className="size-3 ms-1" />בטל
+                <X className="size-3 ms-1" />Cancel
               </Button>
             </>
           ) : (
             <>
               <Button size="sm" onClick={() => onApprove()} disabled={pending}>
-                <Send className="size-3 ms-1" />שלח
+                <Send className="size-3 ms-1" />Send
               </Button>
               <Button size="sm" variant="outline" onClick={() => { setDraft(row.body); setEditing(true); }}>
-                <Pencil className="size-3 ms-1" />ערוך
+                <Pencil className="size-3 ms-1" />Edit
               </Button>
               <Button size="sm" variant="ghost" className="text-destructive" onClick={onReject} disabled={pending}>
-                <Trash2 className="size-3 ms-1" />מחק
+                <Trash2 className="size-3 ms-1" />Delete
               </Button>
             </>
           )}

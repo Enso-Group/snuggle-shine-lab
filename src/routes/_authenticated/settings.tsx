@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { getBotSettings, updateBotSettings, checkWhapiConnection } from "@/lib/bot.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
-  head: () => ({ meta: [{ title: "הגדרות — בוט WhatsApp" }] }),
+  head: () => ({ meta: [{ title: "Settings — WhatsApp Bot" }] }),
   component: SettingsPage,
 });
 
@@ -42,7 +42,7 @@ function SettingsPage() {
     mutationFn: () =>
       upFn({ data: { id: settings!.id, system_prompt: systemPrompt, bot_name: botName, enabled, require_approval_all: requireApprovalAll } }),
     onSuccess: () => {
-      toast.success("נשמר!");
+      toast.success("Saved!");
       qc.invalidateQueries({ queryKey: ["botSettings"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -51,65 +51,65 @@ function SettingsPage() {
   const check = useMutation({
     mutationFn: () => checkFn(),
     onSuccess: (r) => {
-      if (r.ok) toast.success(`חיבור תקין! סטטוס: ${r.status ?? "אונליין"}`);
-      else toast.error(`חיבור נכשל: ${r.error}`);
+      if (r.ok) toast.success(`Connection OK! Status: ${r.status ?? "online"}`);
+      else toast.error(`Connection failed: ${r.error}`);
     },
     onError: (e: any) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="p-8">טוען...</div>;
+  if (isLoading) return <div className="p-8">Loading...</div>;
 
   return (
     <div className="p-8 space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-3xl font-bold">הגדרות</h1>
-        <p className="text-muted-foreground mt-1">הגדרות הבוט והחיבור ל-Whapi</p>
+        <h1 className="text-3xl font-bold">Settings</h1>
+        <p className="text-muted-foreground mt-1">Bot settings and Whapi connection</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>חיבור ל-Whapi</CardTitle>
-          <CardDescription>הטוקן נשמר בצורה מאובטחת בשרת (לא ניתן לראות אותו דרך הדפדפן)</CardDescription>
+          <CardTitle>Whapi connection</CardTitle>
+          <CardDescription>The token is stored securely on the server (it can't be viewed from the browser)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            הוראות ההתקנה והחיבור עברו לעמוד <strong>הוראות</strong> בתפריט.
+            Setup and connection instructions moved to the <strong>Instructions</strong> page in the menu.
           </p>
           <Button onClick={() => check.mutate()} disabled={check.isPending} variant="outline">
-            {check.isPending ? "בודק..." : "בדוק חיבור"}
+            {check.isPending ? "Checking..." : "Check connection"}
           </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>אישיות הבוט</CardTitle>
-          <CardDescription>איך הבוט ידבר וענה. שינוי משפיע מיד על הודעות חדשות.</CardDescription>
+          <CardTitle>Bot personality</CardTitle>
+          <CardDescription>How the bot talks and responds. Changes take effect immediately on new messages.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-3 border rounded-md">
             <div>
-              <Label>הבוט פעיל</Label>
-              <p className="text-xs text-muted-foreground">כשמכובה — הוא לא יענה אבל ימשיך לשמור הודעות</p>
+              <Label>Bot active</Label>
+              <p className="text-xs text-muted-foreground">When off, it won't reply but will keep saving messages</p>
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </div>
           <div className="flex items-center justify-between p-3 border rounded-md border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
             <div>
-              <Label>דרוש אישור לכל הודעה יוצאת</Label>
+              <Label>Require approval for every outgoing message</Label>
               <p className="text-xs text-muted-foreground">
-                כשמופעל, כל הודעה שהבוט רוצה לשלוח (תשובה, תזמון או ידנית) תיכנס לעמוד "אישור הודעות" עם שלח / ערוך / מחק.
+                When on, every message the bot wants to send (reply, scheduled, or manual) goes to the "Approvals" page with send / edit / delete.
               </p>
             </div>
             <Switch checked={requireApprovalAll} onCheckedChange={setRequireApprovalAll} />
           </div>
           <div>
-            <Label htmlFor="botName">שם הבוט (לזיהוי בקבוצות)</Label>
+            <Label htmlFor="botName">Bot name (for recognition in groups)</Label>
             <Input id="botName" value={botName} onChange={(e) => setBotName(e.target.value)} />
-            <p className="text-xs text-muted-foreground mt-1">בקבוצות, הבוט יענה רק אם מישהו מזכיר את השם הזה או מתייג אותו</p>
+            <p className="text-xs text-muted-foreground mt-1">In groups, the bot replies only if someone mentions this name or tags it</p>
           </div>
           <div>
-            <Label htmlFor="prompt">סגנון ואישיות (system prompt)</Label>
+            <Label htmlFor="prompt">Style and personality (system prompt)</Label>
             <Textarea
               id="prompt"
               value={systemPrompt}
@@ -118,11 +118,11 @@ function SettingsPage() {
               className="font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              טיפ נגד חסימה: בקשי מהבוט לכתוב קצר, טבעי, עם וריאציות, ולא להגיב לכל הודעה.
+              Anti-ban tip: ask the bot to write short, natural messages with variety, and not to reply to every message.
             </p>
           </div>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending ? "שומר..." : "שמירה"}
+            {save.isPending ? "Saving..." : "Save"}
           </Button>
         </CardContent>
       </Card>
