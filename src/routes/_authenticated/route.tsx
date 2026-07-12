@@ -47,9 +47,14 @@ const SYSTEM_NAV = [
   { to: "/logs", label: "Logs", icon: ScrollText },
 ] as const;
 
+// Only this user sees the "Behind the scenes" section.
+const SYSTEM_NAV_EMAIL = "itamar.lw@icloud.com";
+
 function AuthedLayout() {
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { user } = Route.useRouteContext();
+  const canSeeSystem = (user?.email ?? "").trim().toLowerCase() === SYSTEM_NAV_EMAIL;
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -81,25 +86,29 @@ function AuthedLayout() {
             );
           })}
 
-          <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Behind the scenes
-          </div>
-          {SYSTEM_NAV.map((n) => {
-            const Icon = n.icon;
-            const active = pathname === n.to || (n.to !== "/" && pathname.startsWith(n.to));
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                  active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
-                }`}
-              >
-                <Icon className="size-4" />
-                {n.label}
-              </Link>
-            );
-          })}
+          {canSeeSystem && (
+            <>
+              <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Behind the scenes
+              </div>
+              {SYSTEM_NAV.map((n) => {
+                const Icon = n.icon;
+                const active = pathname === n.to || (n.to !== "/" && pathname.startsWith(n.to));
+                return (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                      active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                    }`}
+                  >
+                    <Icon className="size-4" />
+                    {n.label}
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </nav>
         <div className="p-2 border-t">
           <Button variant="ghost" className="w-full justify-start" onClick={signOut}>
