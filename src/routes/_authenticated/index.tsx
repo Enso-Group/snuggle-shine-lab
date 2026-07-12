@@ -2,8 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
-import { getDashboardStats, checkIsAdmin } from "@/lib/bot.functions";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getDashboardStats } from "@/lib/bot.functions";
 import { MessageSquare, Users, Send } from "lucide-react";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
 import { DEMO_MODE, demoDashboardStats } from "@/lib/demo";
@@ -15,30 +14,15 @@ export const Route = createFileRoute("/_authenticated/")({
 
 function Dashboard() {
   const statsFn = useServerFn(getDashboardStats);
-  const adminFn = useServerFn(checkIsAdmin);
 
   const { connected, isLoading: connLoading } = useWhatsAppConnection();
-  const admin = useQuery({ queryKey: ["isAdmin"], queryFn: () => adminFn() });
   const stats = useQuery({
     queryKey: ["stats"],
     queryFn: () => statsFn(),
     // Don't fetch (or show) stats unless a WhatsApp account is actually connected.
-    enabled: admin.data?.isAdmin === true && connected,
+    enabled: connected,
     refetchInterval: 10000,
   });
-
-  if (admin.isLoading) return <div className="p-8">Loading...</div>;
-  if (!admin.data?.isAdmin) {
-    return (
-      <div className="p-8">
-        <Alert variant="destructive">
-          <AlertDescription>
-            You don't have admin permissions. Only the first user who signs up becomes the admin. If that isn't you, please contact the existing admin.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
 
   return (
     <div className="p-8 space-y-6">
