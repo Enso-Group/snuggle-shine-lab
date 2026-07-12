@@ -1,9 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export const Route = createFileRoute("/_authenticated/instructions")({
   head: () => ({ meta: [{ title: "Instructions — WhatsApp Bot" }] }),
+  beforeLoad: ({ context }) => {
+    if (!(context as any).isAdmin) throw redirect({ to: "/" });
+  },
   component: InstructionsPage,
 });
 

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -13,6 +13,9 @@ import { getBotSettings, updateBotSettings, checkWhapiConnection } from "@/lib/b
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — WhatsApp Bot" }] }),
+  beforeLoad: ({ context }) => {
+    if (!(context as any).isAdmin) throw redirect({ to: "/" });
+  },
   component: SettingsPage,
 });
 

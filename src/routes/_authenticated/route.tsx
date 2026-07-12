@@ -1,7 +1,9 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCheck } from "lucide-react";
+import { isAdminEmail } from "@/lib/admin";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -10,19 +12,23 @@ export const Route = createFileRoute("/_authenticated")({
     if (error || !data.user) {
       throw redirect({ to: "/auth", search: { next: location.pathname } });
     }
-    // Dashboard is admin-only. RLS lets a user read their own roles, so this is
-    // a safe client-side gate; the server functions enforce admin independently.
-    const { data: adminRole } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", data.user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (!adminRole) {
-      await supabase.auth.signOut();
-      throw redirect({ to: "/auth", search: { next: location.pathname } });
+    // Access model:
+    //  - admin: identified purely by email (sees the behind-the-scenes pages).
+    //  - approved: has any row in user_roles (granted when the admin approves).
+    //  - pending: signed in but no role row yet -> shown a "pending" screen.
+    // No sign-out/redirect here, so nobody gets stuck in a login loop.
+    const isAdmin = isAdminEmail(data.user.email);
+    let approved = isAdmin;
+    if (!approved) {
+      const { data: roleRow } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("user_id", data.user.id)
+        .limit(1)
+        .maybeSingle();
+      approved = !!roleRow;
     }
-    return { user: data.user };
+    return { user: data.user, isAdmin, approved };
   },
   component: AuthedLayout,
 });
@@ -39,26 +45,46 @@ const NAV = [
   { to: "/candidates", label: "Candidates", icon: UserSearch },
 ] as const;
 
-// Behind-the-scenes / system pages, grouped under one section.
+// Behind-the-scenes / system pages — admin only.
 const SYSTEM_NAV = [
+  { to: "/approval-requests", label: "Approval Requests", icon: UserCheck },
   { to: "/instructions", label: "Instructions", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
   { to: "/usage", label: "Usage & Costs", icon: Gauge },
   { to: "/logs", label: "Logs", icon: ScrollText },
 ] as const;
 
-// Only this user sees the "Behind the scenes" section.
-const SYSTEM_NAV_EMAIL = "itamar.lw@icloud.com";
-
 function AuthedLayout() {
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { user } = Route.useRouteContext();
-  const canSeeSystem = (user?.email ?? "").trim().toLowerCase() === SYSTEM_NAV_EMAIL;
+  const { isAdmin, approved } = Route.useRouteContext();
 
   async function signOut() {
     await supabase.auth.signOut();
     nav({ to: "/auth" });
+  }
+
+  // Signed in but not yet approved by the admin.
+  if (!approved) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <CardTitle className="text-2xl">Awaiting approval</CardTitle>
+            <CardDescription>
+              Your account was created and is waiting for the administrator to approve it.
+              You'll be able to access the dashboard once it's approved.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" onClick={signOut}>
+              <LogOut className="size-4 ms-2" />
+              Log out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -86,7 +112,7 @@ function AuthedLayout() {
             );
           })}
 
-          {canSeeSystem && (
+          {isAdmin && (
             <>
               <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Behind the scenes

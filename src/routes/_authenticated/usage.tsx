@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
@@ -48,6 +48,9 @@ import {
 
 export const Route = createFileRoute("/_authenticated/usage")({
   head: () => ({ meta: [{ title: "Usage & Costs — AI Tracking" }] }),
+  beforeLoad: ({ context }) => {
+    if (!(context as any).isAdmin) throw redirect({ to: "/" });
+  },
   component: UsagePage,
 });
 

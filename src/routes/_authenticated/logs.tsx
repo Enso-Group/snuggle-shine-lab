@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,6 +8,9 @@ import { DEMO_MODE, demoLogs } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/logs")({
   head: () => ({ meta: [{ title: "Logs — WhatsApp Bot" }] }),
+  beforeLoad: ({ context }) => {
+    if (!(context as any).isAdmin) throw redirect({ to: "/" });
+  },
   component: LogsPage,
 });
 
