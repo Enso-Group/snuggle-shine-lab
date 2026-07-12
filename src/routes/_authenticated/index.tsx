@@ -6,6 +6,7 @@ import { getDashboardStats, checkIsAdmin } from "@/lib/bot.functions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MessageSquare, Users, Send } from "lucide-react";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { DEMO_MODE, demoDashboardStats } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "סקירה — בוט WhatsApp" }] }),
@@ -50,9 +51,9 @@ function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard icon={Users} label="שיחות" value={stats.data?.conversations ?? 0} />
-        <StatCard icon={MessageSquare} label="הודעות" value={stats.data?.messages ?? 0} />
-        <StatCard icon={Send} label="פקודות שנשלחו" value={stats.data?.commands ?? 0} />
+        <StatCard icon={Users} label="שיחות" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.conversations ?? 0} />
+        <StatCard icon={MessageSquare} label="הודעות" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.messages ?? 0} />
+        <StatCard icon={Send} label="פקודות שנשלחו" value={(DEMO_MODE ? demoDashboardStats : stats.data)?.commands ?? 0} />
       </div>
     </div>
   );

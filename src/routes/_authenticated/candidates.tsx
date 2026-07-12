@@ -19,6 +19,7 @@ import {
 } from "@/lib/sourcing.functions";
 import type { EnrichedCandidate } from "@/lib/sourcing.functions";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { DEMO_MODE, demoCandidates, demoSourcingGroups } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/candidates")({
   head: () => ({ meta: [{ title: "Candidates — Talent Sourcing" }] }),
@@ -47,6 +48,15 @@ function CandidatesPage() {
 
   // Load groups on mount — only when a WhatsApp account is connected.
   useEffect(() => {
+    if (DEMO_MODE) {
+      setGroups(demoSourcingGroups);
+      setSelectedGroups(new Set(demoSourcingGroups.map((g) => g.id)));
+      setLoadingGroups(false);
+      setDescription("מפתחי React ומנהלי מוצר עם ניסיון");
+      setCandidates(demoCandidates as CandidateState[]);
+      setPhase("done");
+      return;
+    }
     if (!connected) {
       setGroups([]);
       setSelectedGroups(new Set());
@@ -86,6 +96,16 @@ function CandidatesPage() {
     setPhase("scanning");
     setScanError(null);
     setCandidates([]);
+
+    if (DEMO_MODE) {
+      await new Promise((r) => setTimeout(r, 700));
+      setCandidates(demoCandidates.map((c) => ({ ...c, enriching: true })) as CandidateState[]);
+      setPhase("enriching");
+      await new Promise((r) => setTimeout(r, 900));
+      setCandidates(demoCandidates as CandidateState[]);
+      setPhase("done");
+      return;
+    }
 
     let rawCandidates: any[] = [];
     try {

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { listAiUsage, getAiUsageSummary, getAiUsageFilters } from "@/lib/usage.functions";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { DEMO_MODE, demoUsageSummary, demoUsageList, demoUsageFilters } from "@/lib/demo";
 import {
   Activity,
   Coins,
@@ -84,31 +85,33 @@ function UsagePage() {
 
   const summary = useQuery({
     queryKey: ["ai-usage-summary", rangeHours],
-    queryFn: () => summaryFn({ data: { rangeHours } }),
+    queryFn: () => (DEMO_MODE ? Promise.resolve(demoUsageSummary as any) : summaryFn({ data: { rangeHours } })),
     enabled: connected,
     refetchInterval: 30_000,
   });
 
   const filters = useQuery({
     queryKey: ["ai-usage-filters"],
-    queryFn: () => filtersFn(),
+    queryFn: () => (DEMO_MODE ? Promise.resolve(demoUsageFilters) : filtersFn()),
     enabled: connected,
   });
 
   const list = useQuery({
     queryKey: ["ai-usage-list", rangeHours, page, pageSize, kind, status, model, tool],
     queryFn: () =>
-      listFn({
-        data: {
-          rangeHours,
-          page,
-          pageSize,
-          kind,
-          status,
-          model: model === "all" ? undefined : model,
-          tool: tool === "all" ? undefined : tool,
-        },
-      }),
+      DEMO_MODE
+        ? Promise.resolve(demoUsageList as any)
+        : listFn({
+            data: {
+              rangeHours,
+              page,
+              pageSize,
+              kind,
+              status,
+              model: model === "all" ? undefined : model,
+              tool: tool === "all" ? undefined : tool,
+            },
+          }),
     enabled: connected,
     refetchInterval: 30_000,
   });

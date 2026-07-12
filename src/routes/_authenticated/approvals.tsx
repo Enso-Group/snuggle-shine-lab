@@ -14,6 +14,7 @@ import {
   rejectPending,
   updatePendingBody,
 } from "@/lib/schedule.functions";
+import { DEMO_MODE, demoApprovals } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/approvals")({
   head: () => ({ meta: [{ title: "אישור הודעות — בוט WhatsApp" }] }),
@@ -42,26 +43,28 @@ function ApprovalsPage() {
   const rejectFn = useServerFn(rejectPending);
   const updateFn = useServerFn(updatePendingBody);
 
-  const { data: rows = [] } = useQuery({
+  const { data: realRows = [] } = useQuery({
     queryKey: ["scheduled-approvals"],
     queryFn: () => listFn() as Promise<Approval[]>,
     refetchInterval: 15000,
+    enabled: !DEMO_MODE,
   });
+  const rows = DEMO_MODE ? (demoApprovals as unknown as Approval[]) : realRows;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
 
   const approve = useMutation({
-    mutationFn: ({ id, body }: { id: string; body?: string }) => approveFn({ data: { id, body } }),
+    mutationFn: async ({ id, body }: { id: string; body?: string }) => { if (DEMO_MODE) return; return approveFn({ data: { id, body } }); },
     onSuccess: () => { invalidate(); toast.success("נשלח"); },
     onError: (e: any) => toast.error(e.message),
   });
   const reject = useMutation({
-    mutationFn: (id: string) => rejectFn({ data: { id } }),
+    mutationFn: async (id: string) => { if (DEMO_MODE) return; return rejectFn({ data: { id } }); },
     onSuccess: () => { invalidate(); toast.success("נמחק"); },
     onError: (e: any) => toast.error(e.message),
   });
   const updateBody = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: string }) => updateFn({ data: { id, body } }),
+    mutationFn: async ({ id, body }: { id: string; body: string }) => { if (DEMO_MODE) return; return updateFn({ data: { id, body } }); },
     onSuccess: () => { invalidate(); toast.success("עודכן"); },
     onError: (e: any) => toast.error(e.message),
   });

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send } from "lucide-react";
 import { getThreadMessages, sendChatMessage } from "@/lib/chat.functions";
+import { DEMO_MODE, demoThreadMessages } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/chat/$threadId")({
   ssr: false,
@@ -32,6 +33,13 @@ function ChatThread() {
 
   async function load() {
     setLoading(true);
+    if (DEMO_MODE) {
+      const r = demoThreadMessages(threadId);
+      setThread(r.thread as Thread);
+      setMessages(r.messages as Msg[]);
+      setLoading(false);
+      return;
+    }
     try {
       const r = await getThreadMessages({ data: { threadId } });
       setThread(r.thread as Thread);
@@ -66,6 +74,20 @@ function ChatThread() {
     };
     setMessages((m) => [...m, optimistic]);
     setSending(true);
+    if (DEMO_MODE) {
+      await new Promise((r) => setTimeout(r, 700));
+      setMessages((m) => [
+        ...m,
+        {
+          id: "demo-reply-" + Date.now(),
+          role: "assistant",
+          content: "בטח! זו תצוגת דמו — כך הבוט היה משיב על ההודעה שלך בצורה טבעית וקצרה 🙂",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      setSending(false);
+      return;
+    }
     try {
       await sendChatMessage({ data: { threadId, content } });
       await load();

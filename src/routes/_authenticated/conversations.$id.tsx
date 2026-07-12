@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { syncConversationHistory } from "@/lib/participants.functions";
 import { Loader2 } from "lucide-react";
+import { DEMO_MODE, demoConversationMessages, demoConversationMeta } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/conversations/$id")({
   component: ConvView,
@@ -20,6 +21,11 @@ function ConvView() {
   const sync = useServerFn(syncConversationHistory);
 
   useEffect(() => {
+    if (DEMO_MODE) {
+      setConv(demoConversationMeta(id));
+      setMsgs(demoConversationMessages(id) as Msg[]);
+      return;
+    }
     let mounted = true;
     async function loadMessages() {
       const { data: m } = await supabase

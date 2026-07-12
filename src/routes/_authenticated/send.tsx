@@ -15,6 +15,7 @@ import { ChevronsUpDown, Check, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listWhapiGroups, sendManualMessage } from "@/lib/bot.functions";
 import { mergeTargets } from "@/lib/targets";
+import { DEMO_MODE, demoWhapiTargets } from "@/lib/demo";
 
 function normalizeChatId(input: string): string {
   const v = input.trim();
@@ -35,10 +36,12 @@ function SendPage() {
   const listFn = useServerFn(listWhapiGroups);
   const sendFn = useServerFn(sendManualMessage);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data: realData, isLoading, refetch } = useQuery({
     queryKey: ["whapi-targets"],
     queryFn: () => listFn(),
+    enabled: !DEMO_MODE,
   });
+  const data = DEMO_MODE ? demoWhapiTargets : realData;
 
   const [target, setTarget] = useState<string>("");
   const [targetName, setTargetName] = useState<string>("");
@@ -74,7 +77,14 @@ function SendPage() {
   }, [allTargets, trimmed]);
 
   const send = useMutation({
-    mutationFn: () => sendFn({ data: { target_chat_id: target, target_name: targetName || target, prompt, mode } }),
+    mutationFn: async () => {
+      if (DEMO_MODE) {
+        await new Promise((r) => setTimeout(r, 600));
+        const body = mode === "ai" ? `${prompt}\n\n(תצוגה: ההודעה נכתבה על ידי ה-AI)` : prompt;
+        return { ok: true as const, body };
+      }
+      return sendFn({ data: { target_chat_id: target, target_name: targetName || target, prompt, mode } });
+    },
     onSuccess: (result) => {
       if (!result.ok) {
         const title = result.blocked ? "השליחה נחסמה להגנה על החשבון" : "השליחה נכשלה";

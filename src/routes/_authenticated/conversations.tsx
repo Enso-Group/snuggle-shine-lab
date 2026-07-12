@@ -9,6 +9,7 @@ import { Users, User, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
 import { deleteConversation } from "@/lib/conversations.functions";
+import { DEMO_MODE, demoConversations } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/conversations")({
   head: () => ({ meta: [{ title: "שיחות — בוט WhatsApp" }] }),
@@ -28,6 +29,10 @@ function ConvLayout() {
   // - direct chats (1:1) that have any message
   // - groups where the user sent at least one outbound message
   const load = useCallback(async () => {
+    if (DEMO_MODE) {
+      setConvs(demoConversations as Conv[]);
+      return;
+    }
     if (!connected) {
       setConvs([]);
       return;
@@ -60,7 +65,7 @@ function ConvLayout() {
 
   useEffect(() => {
     load();
-    if (!connected) return;
+    if (DEMO_MODE || !connected) return;
     const ch = supabase
       .channel("conv-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, load)
@@ -82,6 +87,11 @@ function ConvLayout() {
       return;
     // Optimistic removal; reconcile from the server on failure.
     setConvs((prev) => prev.filter((x) => x.id !== c.id));
+    if (DEMO_MODE) {
+      toast.success("השיחה נמחקה");
+      if (path.endsWith("/" + c.id)) nav({ to: "/conversations" });
+      return;
+    }
     try {
       await deleteFn({ data: { id: c.id } });
       toast.success("השיחה נמחקה");

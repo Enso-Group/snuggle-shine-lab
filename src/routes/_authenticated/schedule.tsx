@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { mergeTargets } from "@/lib/targets";
+import { DEMO_MODE, demoScheduledMessages, demoWhapiTargets, demoApprovals } from "@/lib/demo";
 import { toast } from "sonner";
 import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown, Sparkles } from "lucide-react";
 import {
@@ -70,14 +71,18 @@ function SchedulePage() {
   const approveFn = useServerFn(approvePending);
   const rejectFn = useServerFn(rejectPending);
 
-  const { data: rows = [] } = useQuery({
+  const { data: realRows = [] } = useQuery({
     queryKey: ["scheduled-messages"],
     queryFn: () => listFn() as Promise<Row[]>,
+    enabled: !DEMO_MODE,
   });
-  const { data: targets } = useQuery({
+  const rows = DEMO_MODE ? (demoScheduledMessages as unknown as Row[]) : realRows;
+  const { data: realTargets } = useQuery({
     queryKey: ["whapi-targets"],
     queryFn: () => targetsFn(),
+    enabled: !DEMO_MODE,
   });
+  const targets = DEMO_MODE ? demoWhapiTargets : realTargets;
   const allTargets = mergeTargets(targets ?? {}).map((t) => ({
     id: t.id,
     name: t.isGroup ? `👥 ${t.name}` : `👤 ${t.name}`,
@@ -86,34 +91,38 @@ function SchedulePage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled-messages"] });
 
   const remove = useMutation({
-    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    mutationFn: async (id: string) => { if (DEMO_MODE) return; return deleteFn({ data: { id } }); },
     onSuccess: () => { invalidate(); toast.success("נמחק"); },
     onError: (e: any) => toast.error(e.message),
   });
   const sendNow = useMutation({
-    mutationFn: (id: string) => sendNowFn({ data: { id } }),
+    mutationFn: async (id: string) => { if (DEMO_MODE) return; return sendNowFn({ data: { id } }); },
     onSuccess: () => { invalidate(); toast.success("נשלח"); },
     onError: (e: any) => toast.error(e.message),
   });
   const toggle = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      updateFn({ data: { id, enabled } }),
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      if (DEMO_MODE) return;
+      return updateFn({ data: { id, enabled } });
+    },
     onSuccess: invalidate,
   });
 
-  const { data: pending = [] } = useQuery({
+  const { data: realPending = [] } = useQuery({
     queryKey: ["scheduled-approvals"],
     queryFn: () => pendingFn() as Promise<Approval[]>,
     refetchInterval: 30000,
+    enabled: !DEMO_MODE,
   });
+  const pending = DEMO_MODE ? (demoApprovals as unknown as Approval[]) : realPending;
   const invalidateApprovals = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
   const approve = useMutation({
-    mutationFn: (id: string) => approveFn({ data: { id } }),
+    mutationFn: async (id: string) => { if (DEMO_MODE) return; return approveFn({ data: { id } }); },
     onSuccess: () => { invalidateApprovals(); toast.success("נשלח"); },
     onError: (e: any) => toast.error(e.message),
   });
   const reject = useMutation({
-    mutationFn: (id: string) => rejectFn({ data: { id } }),
+    mutationFn: async (id: string) => { if (DEMO_MODE) return; return rejectFn({ data: { id } }); },
     onSuccess: () => { invalidateApprovals(); toast.success("נדחה"); },
     onError: (e: any) => toast.error(e.message),
   });
@@ -259,6 +268,7 @@ function ScheduleDialog({
         mode,
         require_approval: requireApproval,
       };
+      if (DEMO_MODE) return;
       if (existing) await updateFn({ data: { id: existing.id, ...payload } });
       else await createFn({ data: payload });
     },

@@ -13,6 +13,7 @@ import {
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useWhatsAppConnection, WA_CONNECTION_QUERY_KEY } from "@/hooks/use-connection";
+import { DEMO_MODE, demoGroupConversations, demoParticipants, demoParticipantMessages } from "@/lib/demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -84,6 +85,11 @@ function ParticipantsPage() {
   const [resetting, setResetting] = useState(false);
 
   function loadGroups() {
+    if (DEMO_MODE) {
+      setGroups(demoGroupConversations as Group[]);
+      setLoadingGroups(false);
+      return;
+    }
     setLoadingGroups(true);
     listGroupConversations()
       .then((r) => setGroups(r as Group[]))
@@ -93,6 +99,16 @@ function ParticipantsPage() {
 
   function loadParticipants(id: string) {
     if (!id) return;
+    if (DEMO_MODE) {
+      const r = demoParticipants(id);
+      setParticipants(r.rows as Participant[]);
+      setGroupName(r.groupName);
+      setParticipantsCount(r.participantsCount);
+      setMessagesScanned(r.messagesScanned);
+      setLastRefresh(new Date());
+      setLoadingParts(false);
+      return;
+    }
     setLoadingParts(true);
     setHistoryNotice("");
     listGroupParticipants({ data: { whapiChatId: id } })
@@ -109,6 +125,11 @@ function ParticipantsPage() {
 
   function loadMsgs(p: Participant) {
     if (!groupId || !p) return;
+    if (DEMO_MODE) {
+      setMsgs(demoParticipantMessages(p.sender_id || p.sender_name) as Msg[]);
+      setLoadingMsgs(false);
+      return;
+    }
     setLoadingMsgs(true);
     getParticipantMessages({
       data: { whapiChatId: groupId, senderId: p.sender_id || p.sender_name },
@@ -118,6 +139,10 @@ function ParticipantsPage() {
   }
 
   function loadConnectionStatus() {
+    if (DEMO_MODE) {
+      setFullHistory(true);
+      return;
+    }
     getWhatsAppConnectionStatus().then((r: any) => {
       setFullHistory(r.fullHistory);
       setConnectionStatus(r.status);

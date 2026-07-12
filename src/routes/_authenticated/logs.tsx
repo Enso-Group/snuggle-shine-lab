@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
+import { DEMO_MODE, demoLogs } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/logs")({
   head: () => ({ meta: [{ title: "לוגים — בוט WhatsApp" }] }),
@@ -17,6 +18,10 @@ function LogsPage() {
   const [logs, setLogs] = useState<Log[]>([]);
 
   useEffect(() => {
+    if (DEMO_MODE) {
+      setLogs(demoLogs as Log[]);
+      return;
+    }
     // Don't show stale log history when no account is connected.
     if (!connected) {
       setLogs([]);

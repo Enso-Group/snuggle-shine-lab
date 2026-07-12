@@ -7,6 +7,7 @@ import {
   createThread,
   deleteThread,
 } from "@/lib/chat.functions";
+import { DEMO_MODE, demoThreads } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/chat")({
   ssr: false,
@@ -28,6 +29,11 @@ function ChatLayout() {
   const [loading, setLoading] = useState(true);
 
   async function refresh() {
+    if (DEMO_MODE) {
+      setThreads(demoThreads as Thread[]);
+      setLoading(false);
+      return;
+    }
     try {
       const list = await listThreads();
       setThreads(list as Thread[]);
@@ -41,6 +47,10 @@ function ChatLayout() {
   }, []);
 
   async function newThread(mode: "test-bot" | "admin" | "general") {
+    if (DEMO_MODE) {
+      nav({ to: "/chat/$threadId", params: { threadId: demoThreads[0].id } });
+      return;
+    }
     const t = await createThread({ data: { mode } });
     await refresh();
     nav({ to: "/chat/$threadId", params: { threadId: t.id } });
@@ -50,6 +60,11 @@ function ChatLayout() {
     e.stopPropagation();
     e.preventDefault();
     if (!confirm("למחוק את השיחה?")) return;
+    if (DEMO_MODE) {
+      setThreads((prev) => prev.filter((t) => t.id !== id));
+      nav({ to: "/chat" });
+      return;
+    }
     await deleteThread({ data: { id } });
     await refresh();
     router.invalidate();
