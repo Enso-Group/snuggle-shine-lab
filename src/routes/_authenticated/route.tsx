@@ -36,11 +36,15 @@ const NAV = [
   { to: "/send", label: "Send Message", icon: Send },
   { to: "/schedule", label: "Weekly Scheduler", icon: CalendarClock },
   { to: "/approvals", label: "Approvals", icon: Inbox },
-  { to: "/usage", label: "Usage & Costs", icon: Gauge },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
-  { to: "/logs", label: "Logs", icon: ScrollText },
-  { to: "/instructions", label: "Instructions", icon: BookOpen },
   { to: "/candidates", label: "Candidates", icon: UserSearch },
+] as const;
+
+// Behind-the-scenes / system pages, grouped under one section.
+const SYSTEM_NAV = [
+  { to: "/instructions", label: "Instructions", icon: BookOpen },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/usage", label: "Usage & Costs", icon: Gauge },
+  { to: "/logs", label: "Logs", icon: ScrollText },
 ] as const;
 
 function AuthedLayout() {
@@ -59,8 +63,28 @@ function AuthedLayout() {
           <h1 className="font-bold text-lg">🤖 WhatsApp Bot</h1>
           <p className="text-xs text-muted-foreground mt-1">Management Dashboard</p>
         </div>
-        <nav className="flex-1 p-2 space-y-1">
+        <nav className="flex-1 p-2 space-y-1 overflow-auto">
           {NAV.map((n) => {
+            const Icon = n.icon;
+            const active = pathname === n.to || (n.to !== "/" && pathname.startsWith(n.to));
+            return (
+              <Link
+                key={n.to}
+                to={n.to}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                  active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                }`}
+              >
+                <Icon className="size-4" />
+                {n.label}
+              </Link>
+            );
+          })}
+
+          <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Behind the scenes
+          </div>
+          {SYSTEM_NAV.map((n) => {
             const Icon = n.icon;
             const active = pathname === n.to || (n.to !== "/" && pathname.startsWith(n.to));
             return (
