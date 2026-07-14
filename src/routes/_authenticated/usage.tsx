@@ -125,11 +125,11 @@ function UsagePage() {
   }, [list.data]);
 
   const modelEntries = useMemo(
-    () => Object.entries(summary.data?.byModel ?? {}).sort((a, b) => b[1].cost - a[1].cost),
+    () => Object.entries((summary.data?.byModel ?? {}) as Record<string, any>).sort((a, b) => b[1].cost - a[1].cost),
     [summary.data],
   );
   const toolEntries = useMemo(
-    () => Object.entries(summary.data?.byTool ?? {}).sort((a, b) => b[1].calls - a[1].calls),
+    () => Object.entries((summary.data?.byTool ?? {}) as Record<string, any>).sort((a, b) => b[1].calls - a[1].calls),
     [summary.data],
   );
 
