@@ -362,7 +362,6 @@ export type Database = {
           enabled: boolean
           id: string
           last_sent_at: string | null
-          mode: string
           require_approval: boolean
           send_time: string
           target_chat_id: string
@@ -378,7 +377,6 @@ export type Database = {
           enabled?: boolean
           id?: string
           last_sent_at?: string | null
-          mode?: string
           require_approval?: boolean
           send_time: string
           target_chat_id: string
@@ -394,7 +392,6 @@ export type Database = {
           enabled?: boolean
           id?: string
           last_sent_at?: string | null
-          mode?: string
           require_approval?: boolean
           send_time?: string
           target_chat_id?: string
