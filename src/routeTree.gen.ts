@@ -12,14 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
-import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedUserManagementRouteImport } from './routes/_authenticated/user-management'
+import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSendRouteImport } from './routes/_authenticated/send'
 import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
 import { Route as AuthenticatedParticipantsRouteImport } from './routes/_authenticated/participants'
 import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
+import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedCandidatesRouteImport } from './routes/_authenticated/candidates'
@@ -44,19 +44,15 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedUserManagementRoute =
+  AuthenticatedUserManagementRouteImport.update({
+    id: '/user-management',
+    path: '/user-management',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsageRoute = AuthenticatedUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedInstructionsRoute = AuthenticatedInstructionsRouteImport.update({
-  id: '/instructions',
-  path: '/instructions',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedUserManagementRoute = AuthenticatedUserManagementRouteImport.update({
-  id: '/user-management',
-  path: '/user-management',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -85,6 +81,12 @@ const AuthenticatedLogsRoute = AuthenticatedLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedInstructionsRoute =
+  AuthenticatedInstructionsRouteImport.update({
+    id: '/instructions',
+    path: '/instructions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedConversationsRoute =
   AuthenticatedConversationsRouteImport.update({
     id: '/conversations',
@@ -143,14 +145,14 @@ export interface FileRoutesByFullPath {
   '/candidates': typeof AuthenticatedCandidatesRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/conversations': typeof AuthenticatedConversationsRouteWithChildren
+  '/instructions': typeof AuthenticatedInstructionsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/participants': typeof AuthenticatedParticipantsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
   '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/instructions': typeof AuthenticatedInstructionsRoute
-  '/user-management': typeof AuthenticatedUserManagementRoute
   '/usage': typeof AuthenticatedUsageRoute
+  '/user-management': typeof AuthenticatedUserManagementRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
@@ -162,14 +164,14 @@ export interface FileRoutesByTo {
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/candidates': typeof AuthenticatedCandidatesRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
+  '/instructions': typeof AuthenticatedInstructionsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/participants': typeof AuthenticatedParticipantsRoute
   '/schedule': typeof AuthenticatedScheduleRoute
   '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/instructions': typeof AuthenticatedInstructionsRoute
-  '/user-management': typeof AuthenticatedUserManagementRoute
   '/usage': typeof AuthenticatedUsageRoute
+  '/user-management': typeof AuthenticatedUserManagementRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
@@ -185,14 +187,14 @@ export interface FileRoutesById {
   '/_authenticated/candidates': typeof AuthenticatedCandidatesRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/conversations': typeof AuthenticatedConversationsRouteWithChildren
+  '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/participants': typeof AuthenticatedParticipantsRoute
   '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
   '/_authenticated/send': typeof AuthenticatedSendRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
-  '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
-  '/_authenticated/user-management': typeof AuthenticatedUserManagementRoute
   '/_authenticated/usage': typeof AuthenticatedUsageRoute
+  '/_authenticated/user-management': typeof AuthenticatedUserManagementRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/conversations/$id': typeof AuthenticatedConversationsIdRoute
@@ -209,14 +211,14 @@ export interface FileRouteTypes {
     | '/candidates'
     | '/chat'
     | '/conversations'
+    | '/instructions'
     | '/logs'
     | '/participants'
     | '/schedule'
     | '/send'
     | '/settings'
-    | '/instructions'
-    | '/user-management'
     | '/usage'
+    | '/user-management'
     | '/chat/$threadId'
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
@@ -228,14 +230,14 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/candidates'
     | '/chat'
+    | '/instructions'
     | '/logs'
     | '/participants'
     | '/schedule'
     | '/send'
     | '/settings'
-    | '/instructions'
-    | '/user-management'
     | '/usage'
+    | '/user-management'
     | '/'
     | '/chat/$threadId'
     | '/conversations/$id'
@@ -250,14 +252,14 @@ export interface FileRouteTypes {
     | '/_authenticated/candidates'
     | '/_authenticated/chat'
     | '/_authenticated/conversations'
+    | '/_authenticated/instructions'
     | '/_authenticated/logs'
     | '/_authenticated/participants'
     | '/_authenticated/schedule'
     | '/_authenticated/send'
     | '/_authenticated/settings'
-    | '/_authenticated/instructions'
-    | '/_authenticated/user-management'
     | '/_authenticated/usage'
+    | '/_authenticated/user-management'
     | '/_authenticated/'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/conversations/$id'
@@ -296,25 +298,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/usage': {
-      id: '/_authenticated/usage'
-      path: '/usage'
-      fullPath: '/usage'
-      preLoaderRoute: typeof AuthenticatedUsageRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/instructions': {
-      id: '/_authenticated/instructions'
-      path: '/instructions'
-      fullPath: '/instructions'
-      preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/user-management': {
       id: '/_authenticated/user-management'
       path: '/user-management'
       fullPath: '/user-management'
       preLoaderRoute: typeof AuthenticatedUserManagementRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/usage': {
+      id: '/_authenticated/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof AuthenticatedUsageRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -350,6 +345,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof AuthenticatedLogsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/instructions': {
+      id: '/_authenticated/instructions'
+      path: '/instructions'
+      fullPath: '/instructions'
+      preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/conversations': {
@@ -450,14 +452,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCandidatesRoute: typeof AuthenticatedCandidatesRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedConversationsRoute: typeof AuthenticatedConversationsRouteWithChildren
+  AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedParticipantsRoute: typeof AuthenticatedParticipantsRoute
   AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
   AuthenticatedSendRoute: typeof AuthenticatedSendRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
-  AuthenticatedUserManagementRoute: typeof AuthenticatedUserManagementRoute
   AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
+  AuthenticatedUserManagementRoute: typeof AuthenticatedUserManagementRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
@@ -466,14 +468,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCandidatesRoute: AuthenticatedCandidatesRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedConversationsRoute: AuthenticatedConversationsRouteWithChildren,
+  AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedParticipantsRoute: AuthenticatedParticipantsRoute,
   AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
   AuthenticatedSendRoute: AuthenticatedSendRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
-  AuthenticatedUserManagementRoute: AuthenticatedUserManagementRoute,
   AuthenticatedUsageRoute: AuthenticatedUsageRoute,
+  AuthenticatedUserManagementRoute: AuthenticatedUserManagementRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 
