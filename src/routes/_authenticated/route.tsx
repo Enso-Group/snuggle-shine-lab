@@ -90,9 +90,14 @@ function AuthedLayout() {
   return (
     <div className="min-h-screen flex bg-background text-foreground">
       <aside className="w-60 border-r bg-card flex flex-col">
-        <div className="p-4 border-b">
-          <h1 className="font-bold text-lg">🤖 WhatsApp Bot</h1>
-          <p className="text-xs text-muted-foreground mt-1">Management Dashboard</p>
+        <div className="p-4 border-b flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+            <Bot className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-semibold text-sm leading-tight truncate">WhatsApp Bot</h1>
+            <p className="text-xs text-muted-foreground truncate">Management Dashboard</p>
+          </div>
         </div>
         <nav className="flex-1 p-2 space-y-1 overflow-auto">
           {NAV.map((n) => {
