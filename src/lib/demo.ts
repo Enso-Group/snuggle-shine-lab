@@ -406,3 +406,22 @@ export const demoCandidates = [
 ];
 
 export const demoSourcingGroups = GROUPS.map((g) => ({ id: g.id, name: g.name }));
+
+// --- overview chart ----------------------------------------------------------
+export function demoOverviewSeries(range: "today" | "week" | "month") {
+  if (range === "today") {
+    return Array.from({ length: 12 }).map((_, i) => ({
+      label: `${String(i * 2).padStart(2, "0")}:00`,
+      messages: 4 + ((i * 7 + 3) % 28),
+    }));
+  }
+  if (range === "week") {
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return days.map((d, i) => ({ label: d, messages: 38 + ((i * 17 + 11) % 80) }));
+  }
+  // month: last 30 days
+  return Array.from({ length: 30 }).map((_, i) => ({
+    label: `${i + 1}`,
+    messages: 28 + ((i * 13 + 7) % 90),
+  }));
+}
