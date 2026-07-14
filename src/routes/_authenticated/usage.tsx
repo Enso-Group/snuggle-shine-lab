@@ -233,21 +233,21 @@ function UsagePage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Model</TableHead>
-                    <TableHead className="text-right">Calls</TableHead>
-                    <TableHead className="text-right">Tokens</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
+                    <TableHead className="text-left">Calls</TableHead>
+                    <TableHead className="text-left">Tokens</TableHead>
+                    <TableHead className="text-left">Cost</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {modelEntries.map(([m, v]) => (
                     <TableRow key={m}>
                       <TableCell className="font-mono text-xs">{m}</TableCell>
-                      <TableCell className="text-right">{fmtNum(v.calls)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-left">{fmtNum(v.calls)}</TableCell>
+                      <TableCell className="text-left">
                         <div>{fmtNum(v.totalTokens)}</div>
                         <div className="text-xs text-muted-foreground">{fmtNum(v.promptTokens)}↗ · {fmtNum(v.completionTokens)}↙</div>
                       </TableCell>
-                      <TableCell className="text-right font-semibold">{fmtUSD(v.cost)}</TableCell>
+                      <TableCell className="text-left font-semibold">{fmtUSD(v.cost)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -268,16 +268,16 @@ function UsagePage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Tool</TableHead>
-                    <TableHead className="text-right">Calls</TableHead>
-                    <TableHead className="text-right">Errors</TableHead>
+                    <TableHead className="text-left">Calls</TableHead>
+                    <TableHead className="text-left">Errors</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {toolEntries.map(([t, v]) => (
                     <TableRow key={t}>
                       <TableCell className="font-mono text-xs">{t}</TableCell>
-                      <TableCell className="text-right">{fmtNum(v.calls)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-left">{fmtNum(v.calls)}</TableCell>
+                      <TableCell className="text-left">
                         {v.errors > 0 ? <Badge variant="destructive">{v.errors}</Badge> : <span className="text-muted-foreground">0</span>}
                       </TableCell>
                     </TableRow>
@@ -321,9 +321,9 @@ function UsagePage() {
                   <TableHead>Type</TableHead>
                   <TableHead>Model / Tool</TableHead>
                   <TableHead>Source</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
-                  <TableHead className="text-right">Time</TableHead>
+                  <TableHead className="text-left">Tokens</TableHead>
+                  <TableHead className="text-left">Cost</TableHead>
+                  <TableHead className="text-left">Time</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -343,9 +343,9 @@ function UsagePage() {
                       {r.model ?? r.tool_name ?? "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{r.source ?? "—"}</TableCell>
-                    <TableCell className="text-right text-xs">{r.total_tokens ? fmtNum(r.total_tokens) : "—"}</TableCell>
-                    <TableCell className="text-right text-xs font-semibold">{r.cost_usd ? fmtUSD(Number(r.cost_usd)) : "—"}</TableCell>
-                    <TableCell className="text-right text-xs">{r.duration_ms ? `${fmtNum(r.duration_ms)}ms` : "—"}</TableCell>
+                    <TableCell className="text-left text-xs">{r.total_tokens ? fmtNum(r.total_tokens) : "—"}</TableCell>
+                    <TableCell className="text-left text-xs font-semibold">{r.cost_usd ? fmtUSD(Number(r.cost_usd)) : "—"}</TableCell>
+                    <TableCell className="text-left text-xs">{r.duration_ms ? `${fmtNum(r.duration_ms)}ms` : "—"}</TableCell>
                     <TableCell>
                       {r.status === "success" ? (
                         <Badge variant="outline" className="text-emerald-600 border-emerald-600/30">ok</Badge>
@@ -456,7 +456,7 @@ function Detail({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-4 border-b pb-1">
       <span className="text-muted-foreground text-xs">{k}</span>
-      <span className={`text-right ${mono ? "font-mono text-xs" : ""}`}>{v}</span>
+      <span className={`text-left ${mono ? "font-mono text-xs" : ""}`}>{v}</span>
     </div>
   );
 }

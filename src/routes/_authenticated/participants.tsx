@@ -474,10 +474,10 @@ function ParticipantsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-right">Participant</TableHead>
-                    <TableHead className="text-right">ID</TableHead>
-                    <TableHead className="text-right"># Messages</TableHead>
-                    <TableHead className="text-right">Last message</TableHead>
+                    <TableHead className="text-left">Participant</TableHead>
+                    <TableHead className="text-left">ID</TableHead>
+                    <TableHead className="text-left"># Messages</TableHead>
+                    <TableHead className="text-left">Last message</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

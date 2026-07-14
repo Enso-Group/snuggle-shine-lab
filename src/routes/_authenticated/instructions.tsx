@@ -42,7 +42,7 @@ function InstructionsPage() {
           <Alert>
             <AlertDescription className="space-y-2">
               <p><strong>Setup steps:</strong></p>
-              <ol className="list-decimal pr-5 space-y-1">
+              <ol className="list-decimal pl-5 space-y-1">
                 <li>Go to <a href="https://whapi.cloud" target="_blank" className="text-primary underline">whapi.cloud</a> and create a new Channel</li>
                 <li>Scan the QR code with your new number</li>
                 <li>Copy the API Token and add it as a secret named <code className="bg-muted px-1 rounded">WHAPI_TOKEN</code> using the "Add secret" button below</li>

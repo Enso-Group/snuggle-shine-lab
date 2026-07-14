@@ -104,7 +104,7 @@ function ConvLayout() {
 
   return (
     <div className="flex h-screen">
-      <div className="w-80 border-l bg-card flex flex-col">
+      <div className="w-80 border-r bg-card flex flex-col">
         <div className="p-4 border-b">
           <h2 className="font-semibold">Chats ({convs.length})</h2>
           {!connected && !connLoading && (

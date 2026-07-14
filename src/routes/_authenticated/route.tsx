@@ -88,8 +88,8 @@ function AuthedLayout() {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen flex bg-background text-foreground">
-      <aside className="w-60 border-l bg-card flex flex-col">
+    <div className="min-h-screen flex bg-background text-foreground">
+      <aside className="w-60 border-r bg-card flex flex-col">
         <div className="p-4 border-b">
           <h1 className="font-bold text-lg">🤖 WhatsApp Bot</h1>
           <p className="text-xs text-muted-foreground mt-1">Management Dashboard</p>

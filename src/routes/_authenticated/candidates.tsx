@@ -239,7 +239,7 @@ function CandidatesPage() {
                       onChange={(e) => setGroupSearch(e.target.value)}
                       placeholder="Search a group by name..."
                       className="h-8 pr-8 text-sm"
-                      dir="rtl"
+                      dir="ltr"
                     />
                   </div>
                 )}

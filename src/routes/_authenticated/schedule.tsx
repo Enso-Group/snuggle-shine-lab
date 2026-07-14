@@ -283,7 +283,7 @@ function ScheduleDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent dir="rtl">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{existing ? "Edit schedule" : "New schedule"}</DialogTitle>
         </DialogHeader>

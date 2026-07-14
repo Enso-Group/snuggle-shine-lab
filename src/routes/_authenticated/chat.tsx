@@ -73,7 +73,7 @@ function ChatLayout() {
 
   return (
     <div className="flex h-screen">
-      <aside className="w-64 border-l bg-card flex flex-col">
+      <aside className="w-64 border-r bg-card flex flex-col">
         <div className="p-3 border-b space-y-2">
           <div className="text-sm font-semibold">New conversations</div>
           <div className="grid grid-cols-3 gap-1">

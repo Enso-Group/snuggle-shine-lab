@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Users, Trash2, ShieldCheck } from "lucide-react";
+import { Users, Trash2, ShieldCheck, Check, X, UserCheck } from "lucide-react";
 import {
   listAllUsers,
   setUserRole,
@@ -53,13 +53,22 @@ function UserManagementPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const approve = useMutation({
+    mutationFn: (userId: string) => setRoleFn({ data: { userId, role: "user" } }),
+    onSuccess: () => { invalidate(); toast.success("User approved"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const reject = useMutation({
     mutationFn: (userId: string) => rejectFn({ data: { userId } }),
     onSuccess: () => { invalidate(); toast.success("User rejected"); },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const busy = changeRole.isPending || reject.isPending;
+  const busy = changeRole.isPending || approve.isPending || reject.isPending;
+
+  const pending = users.filter((u) => !u.isAdminEmail && !u.role);
+  const active = users.filter((u) => u.isAdminEmail || u.role);
 
   return (
     <div className="p-8 space-y-6 max-w-4xl">
@@ -69,18 +78,52 @@ function UserManagementPage() {
           User Management
         </h1>
         <p className="text-muted-foreground mt-1">
-          View all registered users, approve or reject them, and set each user's role.
+          Approve or reject new users, and set each user's role.
         </p>
       </div>
 
+      {/* Pending approvals */}
       <div className="space-y-3">
-        {users.length === 0 && (
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+          <UserCheck className="size-4" />
+          Pending approvals ({pending.length})
+        </h2>
+        {pending.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">No users yet.</CardContent>
+            <CardContent className="py-8 text-center text-muted-foreground text-sm">
+              No pending requests 🎉
+            </CardContent>
           </Card>
+        ) : (
+          pending.map((u) => (
+            <Card key={u.id} className="border-amber-500/40">
+              <CardContent className="p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{u.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Registered {new Date(u.created_at).toLocaleString("en-US")}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" onClick={() => approve.mutate(u.id)} disabled={busy}>
+                    <Check className="size-3 ms-1" />Approve
+                  </Button>
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => reject.mutate(u.id)} disabled={busy}>
+                    <X className="size-3 ms-1" />Reject
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
         )}
+      </div>
 
-        {users.map((u) => (
+      {/* All users + roles */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          All users ({active.length})
+        </h2>
+        {active.map((u) => (
           <Card key={u.id}>
             <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
               <div className="min-w-0">
@@ -88,10 +131,8 @@ function UserManagementPage() {
                   <p className="font-medium truncate">{u.email}</p>
                   {u.isAdminEmail ? (
                     <Badge variant="default" className="gap-1 text-xs"><ShieldCheck className="size-3" />Administrator</Badge>
-                  ) : u.role ? (
-                    <Badge variant="secondary" className="text-xs">Approved</Badge>
                   ) : (
-                    <Badge variant="outline" className="text-xs border-amber-500/50 text-amber-700 dark:text-amber-400">Pending</Badge>
+                    <Badge variant="secondary" className="text-xs">Approved</Badge>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
