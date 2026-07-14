@@ -73,7 +73,7 @@ export const updateScheduledMessage = createServerFn({ method: "POST" })
     const { id, ...patch } = data;
     const { data: row, error } = await context.supabase
       .from("scheduled_messages")
-      .update(patch)
+      .update(patch as any)
       .eq("id", id)
       .select()
       .single();
