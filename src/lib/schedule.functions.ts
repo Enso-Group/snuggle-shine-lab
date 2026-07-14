@@ -57,7 +57,7 @@ export const createScheduledMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
       .from("scheduled_messages")
-      .insert({ ...data, user_id: context.userId })
+      .insert({ ...data, user_id: context.userId } as any)
       .select()
       .single();
     if (error) throw new Error(error.message);
@@ -73,7 +73,7 @@ export const updateScheduledMessage = createServerFn({ method: "POST" })
     const { id, ...patch } = data;
     const { data: row, error } = await context.supabase
       .from("scheduled_messages")
-      .update(patch)
+      .update(patch as any)
       .eq("id", id)
       .select()
       .single();

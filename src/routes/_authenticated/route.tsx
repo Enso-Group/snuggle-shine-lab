@@ -124,7 +124,7 @@ function AuthedLayout() {
               </div>
               {SYSTEM_NAV.map((n) => {
                 const Icon = n.icon;
-                const active = pathname === n.to || (n.to !== "/" && pathname.startsWith(n.to));
+                const active = pathname === n.to || ((n.to as string) !== "/" && pathname.startsWith(n.to));
                 return (
                   <Link
                     key={n.to}

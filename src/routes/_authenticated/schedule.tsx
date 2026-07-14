@@ -73,7 +73,7 @@ function SchedulePage() {
 
   const { data: realRows = [] } = useQuery({
     queryKey: ["scheduled-messages"],
-    queryFn: () => listFn() as Promise<Row[]>,
+    queryFn: () => listFn() as unknown as Promise<Row[]>,
     enabled: !DEMO_MODE,
   });
   const rows = DEMO_MODE ? (demoScheduledMessages as unknown as Row[]) : realRows;
