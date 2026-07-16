@@ -8,10 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { ChevronsUpDown, Check, AlertTriangle } from "lucide-react";
+import { ChevronsUpDown, Check, AlertTriangle, Sparkles, PenLine, Send, RefreshCw, Users, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listWhapiGroups, sendManualMessage } from "@/lib/bot.functions";
 import { mergeTargets } from "@/lib/targets";
@@ -57,7 +56,7 @@ function SendPage() {
     () =>
       mergeTargets(data ?? {}).map((t) => ({
         id: t.id,
-        name: t.isGroup ? `👥 ${t.name}` : `👤 ${t.name}`,
+        name: t.name,
         type: t.isGroup ? ("group" as const) : ("chat" as const),
       })),
     [data],
@@ -129,7 +128,18 @@ function SendPage() {
           )}
 
           <div>
-            <Label>Choose a target</Label>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label>Recipient</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => refetch()}
+                className="h-7 px-2 text-xs text-muted-foreground gap-1.5"
+              >
+                <RefreshCw className={cn("size-3", isLoading && "animate-spin")} />
+                Refresh
+              </Button>
+            </div>
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
                 <Button
@@ -179,7 +189,12 @@ function SendPage() {
                             setSearch("");
                           }}
                         >
-                          <Check className={cn("mr-2 h-4 w-4", target === t.id ? "opacity-100" : "opacity-0")} />
+                          <Check className={cn("mr-2 h-4 w-4 shrink-0", target === t.id ? "opacity-100" : "opacity-0")} />
+                          {t.type === "group" ? (
+                            <Users className="mr-2 size-4 text-muted-foreground shrink-0" />
+                          ) : (
+                            <User className="mr-2 size-4 text-muted-foreground shrink-0" />
+                          )}
                           <span className="truncate">{t.name}</span>
                         </CommandItem>
                       ))}
@@ -188,21 +203,38 @@ function SendPage() {
                 </Command>
               </PopoverContent>
             </Popover>
-            <Button variant="link" size="sm" onClick={() => refetch()} className="p-0 h-auto mt-1">Refresh list</Button>
           </div>
 
           <div>
-            <Label>Mode</Label>
-            <RadioGroup value={mode} onValueChange={(v) => setMode(v as any)} className="flex gap-4 mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <RadioGroupItem value="ai" />
-                <span>🧠 AI — give an instruction, the AI writes and sends</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <RadioGroupItem value="direct" />
-                <span>✍️ Direct — sends exactly what you wrote</span>
-              </label>
-            </RadioGroup>
+            <Label>Message type</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setMode("ai")}
+                className={cn(
+                  "text-left rounded-lg border p-3 transition-colors",
+                  mode === "ai" ? "border-primary ring-1 ring-primary bg-accent/50" : "hover:bg-accent",
+                )}
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Sparkles className="size-4" /> AI message
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Give an instruction — the AI writes and sends it.</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("direct")}
+                className={cn(
+                  "text-left rounded-lg border p-3 transition-colors",
+                  mode === "direct" ? "border-primary ring-1 ring-primary bg-accent/50" : "hover:bg-accent",
+                )}
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <PenLine className="size-4" /> Direct message
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Sends exactly what you write.</p>
+              </button>
+            </div>
           </div>
 
           <div>
@@ -214,6 +246,7 @@ function SendPage() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={6}
+              className="mt-1.5"
               placeholder={
                 mode === "ai"
                   ? "For example: find 10 recent AI news articles from the past week and write a short summary with links"
@@ -225,9 +258,16 @@ function SendPage() {
           <Button
             onClick={() => send.mutate()}
             disabled={!target || !prompt.trim() || send.isPending}
-            className="w-full"
+            className="w-full gap-2"
           >
-            {send.isPending ? pendingText : mode === "ai" ? "🧠 Create and send" : "📤 Send"}
+            {send.isPending ? (
+              pendingText
+            ) : (
+              <>
+                {mode === "ai" ? <Sparkles className="size-4" /> : <Send className="size-4" />}
+                {mode === "ai" ? "Create and send" : "Send message"}
+              </>
+            )}
           </Button>
         </CardContent>
       </Card>
