@@ -29,6 +29,7 @@ import {
   Hash,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/page-header";
 import { listWhapiGroups, sendManualMessage } from "@/lib/bot.functions";
 import { mergeTargets } from "@/lib/targets";
 import { DEMO_MODE, demoWhapiTargets } from "@/lib/demo";
@@ -156,19 +157,12 @@ function SendPage() {
 
   return (
     <div className="min-h-full">
-      {/* Page header */}
-      <div className="border-b bg-card">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-4 px-8 py-6">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <Send className="size-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold tracking-tight">Send Message</h1>
-            <p className="text-sm text-muted-foreground">
-              Send a direct message, or ask the AI to create content and send it
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+      <PageHeader
+        icon={Send}
+        title="Send Message"
+        description="Send a direct message, or ask the AI to create content and send it"
+        actions={
+          <>
             {isLoading ? (
               <Skeleton className="h-6 w-36 rounded-full" />
             ) : data ? (
@@ -192,9 +186,9 @@ function SendPage() {
             >
               <RefreshCw className={cn("size-4", (isLoading || isRefetching) && "animate-spin")} />
             </Button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <div className="mx-auto grid max-w-5xl gap-6 px-8 py-8 lg:grid-cols-[1fr_280px]">
         {/* Compose card */}

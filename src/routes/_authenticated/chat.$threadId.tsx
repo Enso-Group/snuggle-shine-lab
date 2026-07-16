@@ -2,7 +2,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send } from "lucide-react";
+import { Send, Bot } from "lucide-react";
 import { getThreadMessages, sendChatMessage } from "@/lib/chat.functions";
 import { DEMO_MODE, demoThreadMessages } from "@/lib/demo";
 
@@ -116,10 +116,15 @@ function ChatThread() {
 
   return (
     <div className="flex flex-col h-screen">
-      <header className="border-b px-4 py-3 bg-card">
-        <div className="font-semibold text-sm truncate">{thread?.title ?? "…"}</div>
-        <div className="text-xs text-muted-foreground">
-          {thread ? MODE_LABEL[thread.mode] ?? thread.mode : ""}
+      <header className="flex items-center gap-3 border-b bg-card px-4 py-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Bot className="size-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold leading-tight">{thread?.title ?? "…"}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {thread ? MODE_LABEL[thread.mode] ?? thread.mode : ""}
+          </div>
         </div>
       </header>
 

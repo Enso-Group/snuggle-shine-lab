@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/sheet";
 import { Users, MessageSquare, RefreshCw, Radio, Check, ChevronsUpDown, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageHeader, PageContent } from "@/components/page-header";
 
 export const Route = createFileRoute("/_authenticated/participants")({
   ssr: false,
@@ -297,38 +299,39 @@ function ParticipantsPage() {
   const filteredGroups = useMemo(() => groups, [groups]);
 
   return (
-    <div className="p-6 space-y-4 max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="size-6" /> Group participants
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            All groups and participants update in real time from WhatsApp.
-          </p>
-          {!connected && (
-            <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {lastRefresh && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Radio className="size-3 text-green-500" />
-              Updated {lastRefresh.toLocaleTimeString("en-US")}
-            </span>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => (groupId ? loadParticipants(groupId) : loadGroups())}
-            disabled={loadingParts}
-          >
-            <RefreshCw className={`size-3 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <div className="min-h-full">
+      <PageHeader
+        icon={Users}
+        title="Group participants"
+        description="All groups and participants update in real time from WhatsApp."
+        maxWidthClass="max-w-6xl"
+        actions={
+          <>
+            {!connected && (
+              <Badge variant="outline" className="font-normal text-muted-foreground">
+                No WhatsApp account connected
+              </Badge>
+            )}
+            {lastRefresh && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Radio className="size-3 text-green-500" />
+                Updated {lastRefresh.toLocaleTimeString("en-US")}
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => (groupId ? loadParticipants(groupId) : loadGroups())}
+              disabled={loadingParts}
+            >
+              <RefreshCw className={`size-3 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
+      <PageContent maxWidthClass="max-w-6xl" className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Popover>
@@ -532,6 +535,7 @@ function ParticipantsPage() {
           </div>
         </SheetContent>
       </Sheet>
+      </PageContent>
     </div>
   );
 }

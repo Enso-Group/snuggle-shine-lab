@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 import { mergeTargets } from "@/lib/targets";
 import { DEMO_MODE, demoScheduledMessages, demoWhapiTargets, demoApprovals } from "@/lib/demo";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown, Sparkles } from "lucide-react";
+import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown, Sparkles, CalendarClock } from "lucide-react";
+import { PageHeader, PageContent } from "@/components/page-header";
 import {
   listScheduledMessages,
   createScheduledMessage,
@@ -130,17 +131,30 @@ function SchedulePage() {
   const byDay = DAYS.map((_, i) => rows.filter((r) => r.day_of_week === i).sort((a, b) => a.send_time.localeCompare(b.send_time)));
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold">Weekly Scheduler</h1>
-          <p className="text-muted-foreground mt-1">Set messages to send automatically by day and time (Israel time)</p>
-        </div>
-        <ScheduleDialog targets={allTargets} onSaved={invalidate}>
-          <Button><Plus className="size-4 ms-2" />New message</Button>
-        </ScheduleDialog>
-      </div>
+    <div className="min-h-full">
+      <PageHeader
+        icon={CalendarClock}
+        title="Weekly Scheduler"
+        description="Set messages to send automatically by day and time (Israel time)"
+        maxWidthClass="max-w-none"
+        actions={
+          <>
+            {rows.length > 0 && (
+              <Badge variant="secondary" className="font-normal">
+                {rows.length} scheduled
+              </Badge>
+            )}
+            <ScheduleDialog targets={allTargets} onSaved={invalidate}>
+              <Button className="gap-2">
+                <Plus className="size-4" />
+                New message
+              </Button>
+            </ScheduleDialog>
+          </>
+        }
+      />
 
+      <PageContent maxWidthClass="max-w-none">
       {pending.length > 0 && (
         <Card className="border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
           <CardHeader className="pb-2">
@@ -225,6 +239,7 @@ function SchedulePage() {
           </Card>
         ))}
       </div>
+      </PageContent>
     </div>
   );
 }

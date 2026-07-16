@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Send, Trash2, Pencil, Check, X, Inbox } from "lucide-react";
+import { Send, Trash2, Pencil, Check, X, Inbox, CheckCircle2 } from "lucide-react";
+import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import {
   listPendingApprovals,
   approvePending,
@@ -70,26 +71,33 @@ function ApprovalsPage() {
   });
 
   return (
-    <div className="p-8 space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Inbox className="size-7" />
-          Approvals
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          When "Require approval" is on, every message the bot wants to send appears here. You can send, edit and send, or delete.
-        </p>
-      </div>
+    <div className="min-h-full">
+      <PageHeader
+        icon={Inbox}
+        title="Approvals"
+        description='When "Require approval" is on, every message the bot wants to send appears here. You can send, edit and send, or delete.'
+        actions={
+          rows.length > 0 && (
+            <Badge variant="secondary" className="font-normal">
+              {rows.length} waiting
+            </Badge>
+          )
+        }
+      />
 
-      {rows.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No messages waiting for approval 🎉
-          </CardContent>
-        </Card>
-      )}
+      <PageContent maxWidthClass="max-w-4xl" className="space-y-3">
+        {rows.length === 0 && (
+          <Card>
+            <CardContent>
+              <EmptyState
+                icon={CheckCircle2}
+                title="No messages waiting for approval 🎉"
+                description="When the bot wants to send a message and approval is required, it will appear here."
+              />
+            </CardContent>
+          </Card>
+        )}
 
-      <div className="space-y-3">
         {rows.map((r) => (
           <ApprovalCard
             key={r.id}
@@ -100,7 +108,7 @@ function ApprovalsPage() {
             pending={approve.isPending || reject.isPending || updateBody.isPending}
           />
         ))}
-      </div>
+      </PageContent>
     </div>
   );
 }

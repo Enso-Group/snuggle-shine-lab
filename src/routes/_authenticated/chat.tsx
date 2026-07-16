@@ -1,7 +1,8 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, MessageCircle } from "lucide-react";
+import { Plus, Trash2, MessageCircle, Bot } from "lucide-react";
+import { EmptyState } from "@/components/page-header";
 import {
   listThreads,
   createThread,
@@ -74,8 +75,16 @@ function ChatLayout() {
   return (
     <div className="flex h-screen">
       <aside className="w-64 border-r bg-card flex flex-col">
-        <div className="p-3 border-b space-y-2">
-          <div className="text-sm font-semibold">New conversations</div>
+        <div className="p-3 border-b space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <Bot className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold leading-tight">AI Chat</h2>
+              <p className="text-xs text-muted-foreground">{threads.length} conversations</p>
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-1">
             <Button size="sm" variant="outline" onClick={() => newThread("general")} title="General chat">
               💬
@@ -94,7 +103,7 @@ function ChatLayout() {
         <div className="flex-1 overflow-auto p-2 space-y-1">
           {loading && <div className="text-xs text-muted-foreground p-2">Loading…</div>}
           {!loading && threads.length === 0 && (
-            <div className="text-xs text-muted-foreground p-2">No conversations yet</div>
+            <EmptyState icon={MessageCircle} title="No conversations yet" description="Start a new conversation above." />
           )}
           {threads.map((t) => (
             <Link

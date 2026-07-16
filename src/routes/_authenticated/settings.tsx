@@ -8,6 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader, PageContent } from "@/components/page-header";
+import { Settings as SettingsIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getBotSettings, updateBotSettings, checkWhapiConnection } from "@/lib/bot.functions";
 
@@ -60,15 +63,22 @@ function SettingsPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="p-8">Loading...</div>;
+  if (isLoading)
+    return (
+      <div className="min-h-full">
+        <PageHeader icon={SettingsIcon} title="Settings" description="Bot settings and Whapi connection" />
+        <PageContent maxWidthClass="max-w-3xl">
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
+        </PageContent>
+      </div>
+    );
 
   return (
-    <div className="p-8 space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground mt-1">Bot settings and Whapi connection</p>
-      </div>
+    <div className="min-h-full">
+      <PageHeader icon={SettingsIcon} title="Settings" description="Bot settings and Whapi connection" />
 
+      <PageContent maxWidthClass="max-w-3xl">
       <Card>
         <CardHeader>
           <CardTitle>Whapi connection</CardTitle>
@@ -124,11 +134,13 @@ function SettingsPage() {
               Anti-ban tip: ask the bot to write short, natural messages with variety, and not to reply to every message.
             </p>
           </div>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="gap-2">
+            {save.isPending && <Loader2 className="size-4 animate-spin" />}
             {save.isPending ? "Saving..." : "Save"}
           </Button>
         </CardContent>
       </Card>
+      </PageContent>
     </div>
   );
 }

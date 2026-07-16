@@ -25,6 +25,7 @@ import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/c
 import { Route as AuthenticatedCandidatesRouteImport } from './routes/_authenticated/candidates'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedConversationsIndexRouteImport } from './routes/_authenticated/conversations.index'
+import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
 import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/whapi-webhook'
 import { Route as AuthenticatedConversationsIdRouteImport } from './routes/_authenticated/conversations.$id'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
@@ -114,6 +115,11 @@ const AuthenticatedConversationsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedConversationsRoute,
   } as any)
+const AuthenticatedChatIndexRoute = AuthenticatedChatIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedChatRoute,
+} as any)
 const ApiPublicWhapiWebhookRoute = ApiPublicWhapiWebhookRouteImport.update({
   id: '/api/public/whapi-webhook',
   path: '/api/public/whapi-webhook',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
+  '/chat/': typeof AuthenticatedChatIndexRoute
   '/conversations/': typeof AuthenticatedConversationsIndexRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
@@ -163,7 +170,6 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/candidates': typeof AuthenticatedCandidatesRoute
-  '/chat': typeof AuthenticatedChatRouteWithChildren
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/participants': typeof AuthenticatedParticipantsRoute
@@ -176,6 +182,7 @@ export interface FileRoutesByTo {
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
+  '/chat': typeof AuthenticatedChatIndexRoute
   '/conversations': typeof AuthenticatedConversationsIndexRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
@@ -199,6 +206,7 @@ export interface FileRoutesById {
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
+  '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
   '/_authenticated/conversations/': typeof AuthenticatedConversationsIndexRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
@@ -222,6 +230,7 @@ export interface FileRouteTypes {
     | '/chat/$threadId'
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
+    | '/chat/'
     | '/conversations/'
     | '/api/public/hooks/send-scheduled-messages'
   fileRoutesByTo: FileRoutesByTo
@@ -229,7 +238,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/approvals'
     | '/candidates'
-    | '/chat'
     | '/instructions'
     | '/logs'
     | '/participants'
@@ -242,6 +250,7 @@ export interface FileRouteTypes {
     | '/chat/$threadId'
     | '/conversations/$id'
     | '/api/public/whapi-webhook'
+    | '/chat'
     | '/conversations'
     | '/api/public/hooks/send-scheduled-messages'
   id:
@@ -264,6 +273,7 @@ export interface FileRouteTypes {
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/conversations/$id'
     | '/api/public/whapi-webhook'
+    | '/_authenticated/chat/'
     | '/_authenticated/conversations/'
     | '/api/public/hooks/send-scheduled-messages'
   fileRoutesById: FileRoutesById
@@ -389,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedConversationsIndexRouteImport
       parentRoute: typeof AuthenticatedConversationsRoute
     }
+    '/_authenticated/chat/': {
+      id: '/_authenticated/chat/'
+      path: '/'
+      fullPath: '/chat/'
+      preLoaderRoute: typeof AuthenticatedChatIndexRouteImport
+      parentRoute: typeof AuthenticatedChatRoute
+    }
     '/api/public/whapi-webhook': {
       id: '/api/public/whapi-webhook'
       path: '/api/public/whapi-webhook'
@@ -422,10 +439,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedChatRouteChildren {
   AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
+  AuthenticatedChatIndexRoute: typeof AuthenticatedChatIndexRoute
 }
 
 const AuthenticatedChatRouteChildren: AuthenticatedChatRouteChildren = {
   AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
+  AuthenticatedChatIndexRoute: AuthenticatedChatIndexRoute,
 }
 
 const AuthenticatedChatRouteWithChildren =
@@ -492,3 +511,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

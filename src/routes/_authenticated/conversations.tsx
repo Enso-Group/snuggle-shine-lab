@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, User, Trash2 } from "lucide-react";
+import { Users, User, Trash2, MessageSquare } from "lucide-react";
+import { EmptyState } from "@/components/page-header";
 import { toast } from "sonner";
 import { useWhatsAppConnection } from "@/hooks/use-connection";
 import { deleteConversation } from "@/lib/conversations.functions";
@@ -105,17 +106,24 @@ function ConvLayout() {
   return (
     <div className="flex h-screen">
       <div className="w-80 border-r bg-card flex flex-col">
-        <div className="p-4 border-b">
-          <h2 className="font-semibold">Chats ({convs.length})</h2>
-          {!connected && !connLoading && (
-            <p className="text-xs text-muted-foreground mt-0.5">No WhatsApp account connected.</p>
-          )}
+        <div className="flex items-center gap-3 border-b p-4">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <MessageSquare className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold leading-tight">Chats</h2>
+            <p className="text-xs text-muted-foreground">
+              {!connected && !connLoading ? "No WhatsApp account connected" : `${convs.length} conversations`}
+            </p>
+          </div>
         </div>
         <ScrollArea className="flex-1">
           {convs.length === 0 && (
-            <p className="p-4 text-sm text-muted-foreground">
-              No chats yet. When someone messages the bot, it will appear here.
-            </p>
+            <EmptyState
+              icon={MessageSquare}
+              title="No chats yet"
+              description="When someone messages the bot, it will appear here."
+            />
           )}
           {convs.map((c) => {
             const active = path.endsWith("/" + c.id);

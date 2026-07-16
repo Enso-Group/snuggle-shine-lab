@@ -10,8 +10,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   Loader2, User, Mail, Phone, Building2, Search, Users, Linkedin,
-  ChevronDown, ChevronUp, CheckSquare, Square,
+  ChevronDown, ChevronUp, CheckSquare, Square, UserSearch,
 } from "lucide-react";
+import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import {
   scanGroupsForCandidates,
   enrichCandidate,
@@ -161,21 +162,28 @@ function CandidatesPage() {
   const noneSelected = selectedGroups.size === 0;
 
   return (
-    <div className="p-8 space-y-6 max-w-5xl">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Users className="size-7" />
-          Talent Sourcing
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Scan WhatsApp groups with AI, then enrich matches via Apollo & Apify
-        </p>
-        {!connected && !connLoading && (
-          <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
-        )}
-      </div>
+    <div className="min-h-full">
+      <PageHeader
+        icon={UserSearch}
+        title="Talent Sourcing"
+        description="Scan WhatsApp groups with AI, then enrich matches via Apollo & Apify"
+        actions={
+          <>
+            {!connected && !connLoading && (
+              <Badge variant="outline" className="font-normal text-muted-foreground">
+                No WhatsApp account connected
+              </Badge>
+            )}
+            {candidates.length > 0 && (
+              <Badge variant="secondary" className="font-normal">
+                {candidates.length} candidate{candidates.length !== 1 ? "s" : ""}
+              </Badge>
+            )}
+          </>
+        }
+      />
 
+      <PageContent>
       {/* Search + group picker */}
       <Card>
         <CardContent className="pt-6 space-y-4">
@@ -338,17 +346,16 @@ function CandidatesPage() {
       {/* Empty state */}
       {phase === "done" && candidates.length === 0 && !scanError && (
         <Card>
-          <CardContent className="py-14 text-center space-y-2">
-            <Users className="size-10 mx-auto text-muted-foreground/30" />
-            <p className="text-muted-foreground">
-              No matching candidates found in the selected groups.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Try a different description or select more groups.
-            </p>
+          <CardContent>
+            <EmptyState
+              icon={Users}
+              title="No matching candidates found in the selected groups"
+              description="Try a different description or select more groups."
+            />
           </CardContent>
         </Card>
       )}
+      </PageContent>
     </div>
   );
 }

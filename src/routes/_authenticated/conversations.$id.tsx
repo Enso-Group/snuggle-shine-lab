@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { syncConversationHistory } from "@/lib/participants.functions";
-import { Loader2 } from "lucide-react";
+import { Loader2, Users, User } from "lucide-react";
 import { DEMO_MODE, demoConversationMessages, demoConversationMeta } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/conversations/$id")({
@@ -71,9 +71,14 @@ function ConvView() {
   return (
     <div className="flex flex-col h-screen">
       <div className="p-4 border-b bg-card flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold">{conv?.name || conv?.whapi_chat_id || "Chat"}</h2>
-          <p className="text-xs text-muted-foreground">{conv?.whapi_chat_id}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            {conv?.whapi_chat_id?.endsWith("@g.us") ? <Users className="size-4" /> : <User className="size-4" />}
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate font-semibold leading-tight">{conv?.name || conv?.whapi_chat_id || "Chat"}</h2>
+            <p className="truncate text-xs text-muted-foreground" dir="ltr">{conv?.whapi_chat_id}</p>
+          </div>
         </div>
         {syncing && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">

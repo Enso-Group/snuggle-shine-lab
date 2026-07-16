@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Users, Trash2, ShieldCheck, Check, X, UserCheck } from "lucide-react";
+import { Trash2, ShieldCheck, Check, X, UserCheck, UserCog } from "lucide-react";
+import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import {
   listAllUsers,
   setUserRole,
@@ -71,17 +72,27 @@ function UserManagementPage() {
   const active = users.filter((u) => u.isAdminEmail || u.role);
 
   return (
-    <div className="p-8 space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Users className="size-7" />
-          User Management
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Approve or reject new users, and set each user's role.
-        </p>
-      </div>
+    <div className="min-h-full">
+      <PageHeader
+        icon={UserCog}
+        title="User Management"
+        description="Approve or reject new users, and set each user's role."
+        actions={
+          <>
+            {pending.length > 0 && (
+              <Badge variant="secondary" className="gap-1.5 font-normal text-amber-700 dark:text-amber-400">
+                <UserCheck className="size-3" />
+                {pending.length} pending
+              </Badge>
+            )}
+            <Badge variant="secondary" className="font-normal">
+              {active.length} users
+            </Badge>
+          </>
+        }
+      />
 
+      <PageContent maxWidthClass="max-w-4xl">
       {/* Pending approvals */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
@@ -90,8 +101,8 @@ function UserManagementPage() {
         </h2>
         {pending.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-muted-foreground text-sm">
-              No pending requests 🎉
+            <CardContent>
+              <EmptyState icon={UserCheck} title="No pending requests 🎉" description="New sign-ups waiting for approval will appear here." />
             </CardContent>
           </Card>
         ) : (
@@ -177,6 +188,7 @@ function UserManagementPage() {
           </Card>
         ))}
       </div>
+      </PageContent>
     </div>
   );
 }

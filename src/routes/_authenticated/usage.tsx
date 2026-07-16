@@ -35,7 +35,9 @@ import {
   ChevronLeft,
   RefreshCw,
   Eye,
+  Gauge,
 } from "lucide-react";
+import { PageHeader, PageContent } from "@/components/page-header";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -134,30 +136,34 @@ function UsagePage() {
   );
 
   return (
-    <div className="p-8 space-y-6 max-w-[1400px]">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">AI Usage Tracking</h1>
-          <p className="text-muted-foreground mt-1">Every model and tool call — tokens, cost, time, status.</p>
-          {!connected && (
-            <p className="text-xs text-muted-foreground mt-1">No WhatsApp account connected.</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Tabs value={String(rangeHours)} onValueChange={(v) => { setRangeHours(Number(v)); setPage(1); }}>
-            <TabsList>
-              {RANGES.map((r) => (
-                <TabsTrigger key={r.hours} value={String(r.hours)}>{r.label}</TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <Button variant="outline" size="icon" onClick={() => { summary.refetch(); list.refetch(); filters.refetch(); }}>
-            <RefreshCw className="size-4" />
-          </Button>
-        </div>
-      </div>
+    <div className="min-h-full">
+      <PageHeader
+        icon={Gauge}
+        title="AI Usage Tracking"
+        description="Every model and tool call — tokens, cost, time, status."
+        maxWidthClass="max-w-[1400px]"
+        actions={
+          <>
+            {!connected && (
+              <Badge variant="outline" className="font-normal text-muted-foreground">
+                No WhatsApp account connected
+              </Badge>
+            )}
+            <Tabs value={String(rangeHours)} onValueChange={(v) => { setRangeHours(Number(v)); setPage(1); }}>
+              <TabsList>
+                {RANGES.map((r) => (
+                  <TabsTrigger key={r.hours} value={String(r.hours)}>{r.label}</TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            <Button variant="outline" size="icon" onClick={() => { summary.refetch(); list.refetch(); filters.refetch(); }}>
+              <RefreshCw className="size-4" />
+            </Button>
+          </>
+        }
+      />
 
+      <PageContent maxWidthClass="max-w-[1400px]">
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryCard
@@ -198,19 +204,19 @@ function UsagePage() {
               <AreaChart data={summary.data.series}>
                 <defs>
                   <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.6} />
-                    <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.6} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                   formatter={(v: any, k: string) => (k === "cost" ? fmtUSD(Number(v)) : fmtNum(Number(v)))}
                 />
-                <Area type="monotone" dataKey="calls" stroke="hsl(var(--primary))" fill="url(#g1)" name="Calls" />
-                <Area type="monotone" dataKey="tokens" stroke="hsl(var(--muted-foreground))" fill="transparent" name="Tokens" />
+                <Area type="monotone" dataKey="calls" stroke="var(--primary)" fill="url(#g1)" name="Calls" />
+                <Area type="monotone" dataKey="tokens" stroke="var(--muted-foreground)" fill="transparent" name="Tokens" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -416,6 +422,7 @@ function UsagePage() {
           )}
         </DialogContent>
       </Dialog>
+      </PageContent>
     </div>
   );
 }
