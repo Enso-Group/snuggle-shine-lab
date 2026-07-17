@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCog } from "lucide-react";
+import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCog, ShieldX } from "lucide-react";
 import { isAdminEmail } from "@/lib/admin";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -12,23 +12,25 @@ export const Route = createFileRoute("/_authenticated")({
     if (error || !data.user) {
       throw redirect({ to: "/auth", search: { next: location.pathname } });
     }
-    // Access model:
-    //  - admin: identified purely by email (sees the behind-the-scenes pages).
-    //  - approved: has any row in user_roles (granted when the admin approves).
-    //  - pending: signed in but no role row yet -> shown a "pending" screen.
-    // No sign-out/redirect here, so nobody gets stuck in a login loop.
-    const isAdmin = isAdminEmail(data.user.email);
-    let approved = isAdmin;
-    if (!approved) {
-      const { data: roleRow } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .eq("user_id", data.user.id)
+    // Invite-only access model:
+    //  - admin: identified purely by email (sees the behind-the-scenes pages,
+    //    and is always allowed in).
+    //  - invited: their email is present in the invited_emails table.
+    //  - not invited: signed in but not on the list -> shown a "not invited"
+    //    screen. No sign-out/redirect here, so nobody gets stuck in a loop.
+    const email = (data.user.email ?? "").trim().toLowerCase();
+    const isAdmin = isAdminEmail(email);
+    let invited = isAdmin;
+    if (!invited && email) {
+      const { data: inviteRow } = await (supabase as any)
+        .from("invited_emails")
+        .select("email")
+        .eq("email", email)
         .limit(1)
         .maybeSingle();
-      approved = !!roleRow;
+      invited = !!inviteRow;
     }
-    return { user: data.user, isAdmin, approved };
+    return { user: data.user, isAdmin, invited };
   },
   component: AuthedLayout,
 });
@@ -57,23 +59,31 @@ const SYSTEM_NAV = [
 function AuthedLayout() {
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { isAdmin, approved } = Route.useRouteContext();
+  const { isAdmin, invited, user } = Route.useRouteContext();
 
   async function signOut() {
     await supabase.auth.signOut();
     nav({ to: "/auth" });
   }
 
-  // Signed in but not yet approved by the admin.
-  if (!approved) {
+  // Signed in with Google, but the email isn't on the invite list.
+  if (!invited) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md text-center">
           <CardHeader>
-            <CardTitle className="text-2xl">Awaiting approval</CardTitle>
+            <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-destructive/10">
+              <ShieldX className="size-6 text-destructive" />
+            </div>
+            <CardTitle className="text-2xl">You're not on the invite list</CardTitle>
             <CardDescription>
-              Your account was created and is waiting for the administrator to approve it.
-              You'll be able to access the dashboard once it's approved.
+              This dashboard is invite-only.
+              {user?.email ? (
+                <>
+                  {" "}The account <strong className="text-foreground">{user.email}</strong> hasn't been invited.
+                </>
+              ) : null}
+              {" "}Ask the administrator to add your email, then sign in again.
             </CardDescription>
           </CardHeader>
           <CardContent>
