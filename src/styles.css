@@ -59,77 +59,99 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-bubble-sent: var(--bubble-sent);
+  --color-bubble-sent-foreground: var(--bubble-sent-foreground);
+  --color-bubble-received: var(--bubble-received);
+  --color-bubble-received-foreground: var(--bubble-received-foreground);
 }
 
 :root {
-  --radius: 0.5rem;
-  --background: oklch(0.981 0.003 247.858);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
+  /* WhatsApp-inspired palette (recolor only — layout unchanged).
+     Teal #128C7E = primary elements / headers. Bright green #25D366 = buttons
+     & accents. Light neutral background. Green/white message bubbles. */
+  --radius: 0.75rem;
+  --background: oklch(0.966 0.004 197);        /* light neutral #F0F2F5 */
+  --foreground: oklch(0.242 0.017 205);        /* WhatsApp ink #111B21 */
+  --card: oklch(1 0 0);                          /* white panels */
+  --card-foreground: oklch(0.242 0.017 205);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.242 0.017 205);
+  --primary: oklch(0.556 0.086 184);           /* teal-green #128C7E */
+  --primary-foreground: oklch(0.985 0.006 180);
+  --secondary: oklch(0.94 0.006 197);          /* #E9EDEF */
+  --secondary-foreground: oklch(0.34 0.03 190);
+  --muted: oklch(0.94 0.006 197);
+  --muted-foreground: oklch(0.556 0.019 212);  /* #667781 */
+  --accent: oklch(0.952 0.032 165);            /* soft teal tint (hovers) */
+  --accent-foreground: oklch(0.4 0.06 182);
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.888 0.006 210);            /* #D1D7DB */
+  --input: oklch(0.888 0.006 210);
+  --ring: oklch(0.77 0.181 152);               /* bright green #25D366 */
+  --brand: oklch(0.77 0.181 152);              /* bright green #25D366 (buttons) */
+  --brand-foreground: oklch(0.985 0.006 180);
+  --chart-1: oklch(0.77 0.181 152);            /* bright green */
+  --chart-2: oklch(0.556 0.086 184);           /* teal */
+  --chart-3: oklch(0.64 0.1 200);
+  --chart-4: oklch(0.7 0.13 160);
+  --chart-5: oklch(0.5 0.08 190);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.242 0.017 205);
+  --sidebar-primary: oklch(0.556 0.086 184);
+  --sidebar-primary-foreground: oklch(0.985 0.006 180);
+  --sidebar-accent: oklch(0.952 0.032 165);
+  --sidebar-accent-foreground: oklch(0.4 0.06 182);
+  --sidebar-border: oklch(0.888 0.006 210);
+  --sidebar-ring: oklch(0.77 0.181 152);
+  --bubble-sent: oklch(0.955 0.05 132);        /* light green #DCF8C6 (sent) */
+  --bubble-sent-foreground: oklch(0.26 0.03 160);
+  --bubble-received: oklch(1 0 0);             /* white (received) */
+  --bubble-received-foreground: oklch(0.242 0.017 205);
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
+  /* WhatsApp dark: deep teal-charcoal surfaces, bright green accents. */
+  --background: oklch(0.2 0.016 210);          /* #0B141A-ish */
+  --foreground: oklch(0.95 0.006 197);
+  --card: oklch(0.26 0.017 205);               /* panel #111B21 */
+  --card-foreground: oklch(0.95 0.006 197);
+  --popover: oklch(0.26 0.017 205);
+  --popover-foreground: oklch(0.95 0.006 197);
+  --primary: oklch(0.64 0.1 182);              /* lighter teal for dark bg */
+  --primary-foreground: oklch(0.16 0.02 200);
+  --secondary: oklch(0.31 0.018 205);
+  --secondary-foreground: oklch(0.95 0.006 197);
+  --muted: oklch(0.31 0.018 205);
+  --muted-foreground: oklch(0.72 0.02 200);
+  --accent: oklch(0.34 0.03 178);
+  --accent-foreground: oklch(0.95 0.006 197);
   --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --ring: oklch(0.77 0.181 152);
+  --brand: oklch(0.77 0.181 152);              /* bright green #25D366 */
+  --brand-foreground: oklch(0.16 0.02 200);
+  --chart-1: oklch(0.77 0.181 152);
+  --chart-2: oklch(0.64 0.1 182);
+  --chart-3: oklch(0.7 0.11 200);
+  --chart-4: oklch(0.75 0.13 160);
+  --chart-5: oklch(0.55 0.09 190);
+  --sidebar: oklch(0.24 0.017 205);
+  --sidebar-foreground: oklch(0.95 0.006 197);
+  --sidebar-primary: oklch(0.64 0.1 182);
+  --sidebar-primary-foreground: oklch(0.16 0.02 200);
+  --sidebar-accent: oklch(0.34 0.03 178);
+  --sidebar-accent-foreground: oklch(0.95 0.006 197);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.77 0.181 152);
+  --bubble-sent: oklch(0.44 0.088 168);        /* WhatsApp dark sent #005C4B */
+  --bubble-sent-foreground: oklch(0.96 0.01 160);
+  --bubble-received: oklch(0.3 0.018 205);     /* #202C33 */
+  --bubble-received-foreground: oklch(0.95 0.006 197);
 }
 
 @layer base {

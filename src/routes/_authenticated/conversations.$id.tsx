@@ -93,7 +93,7 @@ function ConvView() {
             const out = m.direction === "outbound";
             return (
               <div key={m.id} className={`flex ${out ? "justify-start" : "justify-end"}`}>
-                <div className={`max-w-[70%] rounded-lg px-3 py-2 ${out ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                <div className={`max-w-[70%] rounded-2xl px-3 py-2 shadow-sm ${out ? "bg-bubble-sent text-bubble-sent-foreground" : "bg-bubble-received text-bubble-received-foreground border"}`}>
                   {m.sender_name && !out && <p className="text-xs font-semibold mb-1 opacity-75">{m.sender_name}</p>}
                   <p className="whitespace-pre-wrap text-sm">{m.body}</p>
                   <p className="text-[10px] opacity-60 mt-1">{new Date(m.created_at).toLocaleTimeString("en-US")}</p>
