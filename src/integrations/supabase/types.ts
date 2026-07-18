@@ -253,6 +253,24 @@ export type Database = {
         }
         Relationships: []
       }
+      invited_emails: {
+        Row: {
+          created_at: string
+          email: string
+          invited_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          invited_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          invited_by?: string | null
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           body: string | null
