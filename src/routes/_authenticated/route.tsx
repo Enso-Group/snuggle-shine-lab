@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCog, ShieldX } from "lucide-react";
+import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCog, ShieldX, Library, Brain } from "lucide-react";
 import { isAdminEmail } from "@/lib/admin";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -44,6 +44,8 @@ const NAV = [
   { to: "/send", label: "Send Message", icon: Send },
   { to: "/schedule", label: "Weekly Scheduler", icon: CalendarClock },
   { to: "/approvals", label: "Approvals", icon: Inbox },
+  { to: "/knowledge", label: "Knowledge Base", icon: Library },
+  { to: "/people", label: "People Memory", icon: Brain },
   { to: "/candidates", label: "Candidates", icon: UserSearch },
 ] as const;
 

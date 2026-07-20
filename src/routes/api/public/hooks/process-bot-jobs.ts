@@ -26,10 +26,21 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
               .eq("status", status);
             counts[status] = count ?? 0;
           }
+          let followUpsPending = 0;
+          try {
+            const { count } = await supabase
+              .from("follow_ups")
+              .select("id", { count: "exact", head: true })
+              .eq("status", "pending");
+            followUpsPending = count ?? 0;
+          } catch {
+            // follow_ups table not migrated yet — fine
+          }
           return Response.json({
             ok: true,
             info: "Bot-jobs sweeper. POST with x-cron-secret to trigger a run.",
             queue: counts,
+            follow_ups_pending: followUpsPending,
           });
         } catch (e) {
           return Response.json(
@@ -76,22 +87,23 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           }
 
           const { processQueuedJobs } = await import("@/lib/agent/worker.server");
+          const { processDueFollowUps } = await import("@/lib/agent/follow-ups.server");
           const { realWhapiPort } = await import("@/lib/agent/whapi-port.server");
-          const run = await processQueuedJobs(
-            {
-              supabase,
-              whapi: realWhapiPort(),
-              trigger: "inbound",
-              workerId: `sweeper-${Math.random().toString(36).slice(2, 8)}`,
-              humanPacing: true,
-            },
-            { max: 3 },
-          );
+          const deps = {
+            supabase,
+            whapi: realWhapiPort(),
+            trigger: "inbound" as const,
+            workerId: `sweeper-${Math.random().toString(36).slice(2, 8)}`,
+            humanPacing: true,
+          };
+          const run = await processQueuedJobs(deps, { max: 3 });
+          const followUps = await processDueFollowUps(deps, { max: 2 });
 
           return Response.json({
             ok: true,
             claimed: run.claimed,
             results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
+            follow_ups: followUps,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {

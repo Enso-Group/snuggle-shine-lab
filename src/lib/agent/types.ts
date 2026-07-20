@@ -28,6 +28,8 @@ export type AgentConfig = {
   max_reply_parts?: number;
   /** React with 👍-style emoji to trivial messages instead of ignoring them. */
   react_to_trivial?: boolean;
+  /** Send agent-proposed follow-ups automatically (default true; approval mode still gates them). */
+  follow_ups_enabled?: boolean;
 };
 
 /** Everything Whapi-shaped the pipeline touches, so simulation can stub it. */
@@ -95,6 +97,10 @@ export type AgentContext = {
   };
   history: Array<{ role: "user" | "assistant"; content: string; senderName?: string }>;
   message: InboundMessage;
+  /** Persistent memory of the sender (loaded when the people table exists). */
+  person?: import("./people.server").PersonRow | null;
+  /** Ranked knowledge-base context for this message. */
+  kb?: { block: string; count: number };
 };
 
 export type IntentAnalysis = {

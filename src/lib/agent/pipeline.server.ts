@@ -54,15 +54,22 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     ts: p.ts,
   };
 
-  // --- Stage: context ---
+  // --- Stage: context (history + persistent person memory) ---
   let t = Date.now();
   const ctx = await gatherContext(supabase, settings, job.conversation_id, message);
   if (!ctx) return { action: "skipped", reason: "conversation not found" };
+  const { loadOrCreatePerson } = await import("./people.server");
+  ctx.person = await loadOrCreatePerson(supabase, message.senderId, message.senderName);
   logDecision(supabase, {
     ...base,
     stage: "context",
-    summary: `נטענו ${ctx.history.length} הודעות היסטוריה`,
-    data: { history_count: ctx.history.length, is_group: message.isGroup },
+    summary: `נטענו ${ctx.history.length} הודעות היסטוריה${ctx.person ? ` + פרופיל עם ${ctx.person.facts.length} עובדות` : ""}`,
+    data: {
+      history_count: ctx.history.length,
+      is_group: message.isGroup,
+      person_facts: ctx.person?.facts.length ?? 0,
+      funnel_stage: ctx.person?.funnel_stage,
+    },
     duration_ms: Date.now() - t,
   });
 
@@ -94,6 +101,10 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     data: intent as unknown as Record<string, unknown>,
     duration_ms: Date.now() - t,
   });
+
+  // --- Knowledge retrieval (query enriched by the intent analysis) ---
+  const { loadKnowledge } = await import("./kb.server");
+  ctx.kb = await loadKnowledge(supabase, `${message.body} ${intent.intent}`);
 
   // --- Stage: draft ---
   t = Date.now();
@@ -212,6 +223,43 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       data: { parts: delivery.parts, whapi_ids: delivery.sentMessageIds },
       duration_ms: Date.now() - t,
     });
+
+    // --- Stage: memory (after the send — failures here never cost a reply) ---
+    if (ctx.person) {
+      t = Date.now();
+      const { extractAndStoreMemory, scheduleFollowUp } = await import("./memory.server");
+      const extraction = await extractAndStoreMemory(supabase, ctx, ctx.person, delivery.parts);
+      if (extraction) {
+        logDecision(supabase, {
+          ...base,
+          stage: "memory",
+          summary: extraction.facts.length
+            ? `נשמרו ${extraction.facts.length} עובדות חדשות על ${ctx.person.display_name ?? message.senderName ?? "איש הקשר"}`
+            : "אין עובדות חדשות לשמירה",
+          data: extraction as unknown as Record<string, unknown>,
+          duration_ms: Date.now() - t,
+        });
+        if (
+          extraction.follow_up &&
+          (settings.agent_config?.follow_ups_enabled ?? true) &&
+          !message.isGroup
+        ) {
+          await scheduleFollowUp(supabase, {
+            conversationId: job.conversation_id,
+            chatId: job.chat_id,
+            personWaId: ctx.person.wa_id,
+            hours: extraction.follow_up.hours,
+            reason: extraction.follow_up.reason,
+          });
+          logDecision(supabase, {
+            ...base,
+            stage: "follow_up",
+            summary: `תוזמן מעקב בעוד ${extraction.follow_up.hours} שעות — ${extraction.follow_up.reason}`,
+            data: { ...extraction.follow_up },
+          });
+        }
+      }
+    }
     return { action: "replied", parts: delivery.parts };
   } catch (e: unknown) {
     const err = e as Error;

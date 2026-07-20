@@ -19,6 +19,8 @@ export type DecisionEntry = {
     | "critique"
     | "deliver"
     | "queued_approval"
+    | "memory"
+    | "follow_up"
     | "error";
   status?: "ok" | "skip" | "error";
   summary?: string;

@@ -4,6 +4,8 @@
 import { callLLM, parseJsonLoose } from "@/lib/llm.server";
 import type { LLMModelOverrides } from "@/lib/llm.server";
 import { normalizeReplyParts } from "./inbound";
+import { buildGroundingRules } from "./kb.server";
+import { personPromptBlock } from "./people.server";
 import { leaksPersona, stripLeakSentences, PERSONA_FALLBACK_LINE } from "./persona";
 import { buildHumanizeRules, buildDateContext } from "./prompts.server";
 import type { AgentContext, CritiqueResult, DraftResult, IntentAnalysis } from "./types";
@@ -93,6 +95,8 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
     ctx.settings.system_prompt +
     buildHumanizeRules() +
     buildDateContext() +
+    personPromptBlock(ctx.person) +
+    buildGroundingRules(ctx.kb ?? { block: "", count: 0 }) +
     `
 
 ניתוח ההודעה הנוכחית (שימוש פנימי — אל תצטט אותו):
@@ -161,7 +165,7 @@ export async function critiqueAndRevise(
 
 קריטריונים (כל כשל = revise עם תיקון):
 1. שפה: התשובה חייבת להיות בשפה ${intent.language} בלבד.
-2. דיוק: אסור שיהיו עובדות, מחירים, לינקים או הבטחות שלא הופיעו בהקשר השיחה או בהגדרת הדמות. אם הטיוטה ממציאה — החלף בניסוח כן ("אבדוק ואחזור אליך").
+2. דיוק: עובדות עסקיות (מחירים, מדיניות, מוצרים, לינקים) מותרות אך ורק אם הן מופיעות במאגר הידע המצורף או בהקשר השיחה. אם הטיוטה ממציאה — החלף בניסוח כן ("אבדוק ואחזור אליך").
 3. מקדם את המטרה: "${intent.goal}".
 4. טון: מקצועי, חם וטבעי לוואטסאפ; בלי פתיחים רובוטיים; אורך סביר (לא חומת טקסט).
 5. זהות: אסור כל רמז לבוט/AI/מערכת. אסור גם להצהיר "אני בן אדם".
@@ -173,6 +177,9 @@ export async function critiqueAndRevise(
 
 היסטוריה אחרונה:
 ${condensedHistory(ctx, 8) || "(שיחה חדשה)"}
+
+מאגר הידע המאומת (המקור היחיד המותר לעובדות עסקיות):
+${ctx.kb?.block || "(ריק — אסור לציין שום עובדה עסקית ספציפית)"}
 
 הטיוטה לבדיקה:
 ${draft.messages.map((m, i) => `[${i + 1}] ${m}`).join("\n")}`;
