@@ -48,7 +48,7 @@ export async function claimJobs(
   const { data, error } = await supabase.rpc("claim_bot_jobs", {
     p_worker: args.workerId,
     p_limit: args.limit ?? 3,
-    p_chat: args.chatId ?? null,
+    p_chat: args.chatId ?? undefined,
   });
   if (error) {
     console.error("[queue] claim failed", error);
