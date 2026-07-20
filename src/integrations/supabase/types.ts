@@ -427,48 +427,6 @@ export type Database = {
           },
         ]
       }
-      group_daily_stats: {
-        Row: {
-          active_members: number
-          bot_posts: number
-          created_at: string
-          date: string
-          group_chat_id: string
-          id: string
-          left_members: number
-          messages: number
-          new_members: number
-          post_replies: number
-          updated_at: string
-        }
-        Insert: {
-          active_members?: number
-          bot_posts?: number
-          created_at?: string
-          date: string
-          group_chat_id: string
-          id?: string
-          left_members?: number
-          messages?: number
-          new_members?: number
-          post_replies?: number
-          updated_at?: string
-        }
-        Update: {
-          active_members?: number
-          bot_posts?: number
-          created_at?: string
-          date?: string
-          group_chat_id?: string
-          id?: string
-          left_members?: number
-          messages?: number
-          new_members?: number
-          post_replies?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
       group_insights: {
         Row: {
           content: string
@@ -960,33 +918,6 @@ export type Database = {
           timezone?: string
           updated_at?: string
           user_id?: string
-        }
-        Relationships: []
-      }
-      strategy_memos: {
-        Row: {
-          created_at: string
-          group_chat_id: string
-          id: string
-          memo: string
-          recommendations: Json
-          week_start: string
-        }
-        Insert: {
-          created_at?: string
-          group_chat_id: string
-          id?: string
-          memo: string
-          recommendations?: Json
-          week_start: string
-        }
-        Update: {
-          created_at?: string
-          group_chat_id?: string
-          id?: string
-          memo?: string
-          recommendations?: Json
-          week_start?: string
         }
         Relationships: []
       }
