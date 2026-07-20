@@ -111,7 +111,15 @@ export type Database = {
           summary?: string | null
           trigger?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bot_decisions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       bot_jobs: {
         Row: {
@@ -162,7 +170,15 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bot_jobs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       bot_settings: {
         Row: {
@@ -555,8 +571,29 @@ export type Database = {
     }
     Functions: {
       claim_bot_jobs: {
-        Args: { p_worker: string; p_limit?: number; p_chat?: string | null }
-        Returns: Database["public"]["Tables"]["bot_jobs"]["Row"][]
+        Args: { p_chat?: string; p_limit?: number; p_worker: string }
+        Returns: {
+          attempts: number
+          chat_id: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          last_error: string | null
+          locked_by: string | null
+          locked_until: string | null
+          max_attempts: number
+          payload: Json
+          run_after: string
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "bot_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       distinct_outbound_chats_last_hour: { Args: never; Returns: number }
       has_role: {
