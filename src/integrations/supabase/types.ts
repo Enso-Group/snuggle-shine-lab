@@ -374,59 +374,6 @@ export type Database = {
         }
         Relationships: []
       }
-      follow_ups: {
-        Row: {
-          attempts: number
-          chat_id: string
-          conversation_id: string
-          created_at: string
-          due_at: string
-          id: string
-          last_error: string | null
-          person_wa_id: string | null
-          reason: string
-          sent_at: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          attempts?: number
-          chat_id: string
-          conversation_id: string
-          created_at?: string
-          due_at: string
-          id?: string
-          last_error?: string | null
-          person_wa_id?: string | null
-          reason: string
-          sent_at?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          attempts?: number
-          chat_id?: string
-          conversation_id?: string
-          created_at?: string
-          due_at?: string
-          id?: string
-          last_error?: string | null
-          person_wa_id?: string | null
-          reason?: string
-          sent_at?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "follow_ups_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       invited_emails: {
         Row: {
           created_at: string
@@ -442,39 +389,6 @@ export type Database = {
           created_at?: string
           email?: string
           invited_by?: string | null
-        }
-        Relationships: []
-      }
-      knowledge_base: {
-        Row: {
-          active: boolean
-          content: string
-          created_at: string
-          id: string
-          kind: string
-          title: string
-          updated_at: string
-          url: string | null
-        }
-        Insert: {
-          active?: boolean
-          content: string
-          created_at?: string
-          id?: string
-          kind?: string
-          title: string
-          updated_at?: string
-          url?: string | null
-        }
-        Update: {
-          active?: boolean
-          content?: string
-          created_at?: string
-          id?: string
-          kind?: string
-          title?: string
-          updated_at?: string
-          url?: string | null
         }
         Relationships: []
       }
@@ -521,51 +435,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      people: {
-        Row: {
-          created_at: string
-          display_name: string | null
-          facts: Json
-          first_seen_at: string
-          funnel_stage: string
-          id: string
-          language: string | null
-          last_seen_at: string
-          sentiment: string | null
-          tags: string[]
-          updated_at: string
-          wa_id: string
-        }
-        Insert: {
-          created_at?: string
-          display_name?: string | null
-          facts?: Json
-          first_seen_at?: string
-          funnel_stage?: string
-          id?: string
-          language?: string | null
-          last_seen_at?: string
-          sentiment?: string | null
-          tags?: string[]
-          updated_at?: string
-          wa_id: string
-        }
-        Update: {
-          created_at?: string
-          display_name?: string | null
-          facts?: Json
-          first_seen_at?: string
-          funnel_stage?: string
-          id?: string
-          language?: string | null
-          last_seen_at?: string
-          sentiment?: string | null
-          tags?: string[]
-          updated_at?: string
-          wa_id?: string
-        }
-        Relationships: []
       }
       scheduled_approvals: {
         Row: {
