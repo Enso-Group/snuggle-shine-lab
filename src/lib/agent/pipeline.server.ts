@@ -60,6 +60,10 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   if (!ctx) return { action: "skipped", reason: "conversation not found" };
   const { loadOrCreatePerson } = await import("./people.server");
   ctx.person = await loadOrCreatePerson(supabase, message.senderId, message.senderName);
+  if (message.isGroup) {
+    const { loadGroupProfile } = await import("./groups.server");
+    ctx.groupProfile = await loadGroupProfile(supabase, job.chat_id);
+  }
   logDecision(supabase, {
     ...base,
     stage: "context",
@@ -168,6 +172,14 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
         : "מצב אישור-לכל פעיל — ממתין לאישור",
       data: { draft: joined, escalated: intent.escalate },
     });
+    if (intent.escalate && ctx.groupProfile?.owner_dm) {
+      const { notifyOwner } = await import("./moderation.server");
+      await notifyOwner(
+        deps,
+        ctx.groupProfile,
+        `🔔 הסלמה בקבוצה "${ctx.groupProfile.name ?? job.chat_id}": ${intent.escalate_reason ?? intent.intent}\nמאת: ${p.sender_name || p.sender_id}\nהודעה: ${p.body.slice(0, 200)}\nטיוטת תשובה ממתינה באישורים.`,
+      );
+    }
     return { action: "queued_approval", draft: joined };
   }
 

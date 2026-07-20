@@ -128,6 +128,41 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
   return all;
 }
 
+/** Delete a message (ours or a contact's — requires admin rights for others' messages in groups). */
+export async function deleteMessage(messageId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!messageId) return { ok: false, error: "no message id" };
+  try {
+    await whapi(`/messages/${encodeURIComponent(messageId)}`, { method: "DELETE" });
+    return { ok: true };
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    console.warn("[whapi] deleteMessage failed", msg);
+    return { ok: false, error: msg };
+  }
+}
+
+/** Remove participants from a group (bot must be a group admin). */
+export async function removeGroupParticipants(
+  groupId: string,
+  participantIds: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const participants = participantIds
+    .map((p) => p.replace(/@.*$/, "").replace(/\D/g, ""))
+    .filter(Boolean);
+  if (!groupId || !participants.length) return { ok: false, error: "missing group/participants" };
+  try {
+    await whapi(`/groups/${encodeURIComponent(groupId)}/participants`, {
+      method: "DELETE",
+      body: JSON.stringify({ participants }),
+    });
+    return { ok: true };
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    console.warn("[whapi] removeGroupParticipants failed", msg);
+    return { ok: false, error: msg };
+  }
+}
+
 /** Mark a received message as read (blue ticks). Best-effort. */
 export async function markMessageRead(messageId: string): Promise<void> {
   if (!messageId) return;
@@ -286,6 +321,10 @@ export async function resetWhapiPipeline(webhookUrl: string): Promise<any> {
         events: [
           { type: "messages", method: "post" },
           { type: "statuses", method: "post" },
+          // Group membership changes (join/leave/request) — powers welcomes
+          // and member tracking. Requires re-registering the webhook
+          // (Participants → reconnect) after deploy.
+          { type: "groups", method: "post" },
         ],
         mode: "body",
       },

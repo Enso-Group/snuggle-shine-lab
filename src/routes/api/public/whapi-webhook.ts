@@ -41,7 +41,13 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
           );
         }
 
-        let payload: { messages?: unknown; data?: unknown; message?: unknown };
+        let payload: {
+          messages?: unknown;
+          data?: unknown;
+          message?: unknown;
+          groups?: unknown;
+          groups_participants?: unknown;
+        };
         try {
           payload = await request.json();
         } catch {
@@ -61,13 +67,6 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
           "messages:",
           messages.length,
         );
-        if (messages.length === 0) {
-          return Response.json({
-            ok: true,
-            skipped: "no messages",
-            keys: Object.keys(payload || {}),
-          });
-        }
 
         const settings = {
           id: settingsRow?.id,
@@ -90,6 +89,27 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
           workerId: `webhook-${Math.random().toString(36).slice(2, 8)}`,
           humanPacing: true,
         };
+
+        // Group membership events (joins/leaves) — welcomes + member tracking.
+        const groupOutcomes: Array<{ action: string }> = [];
+        try {
+          const { parseGroupEvents, handleGroupEvent } =
+            await import("@/lib/agent/group-events.server");
+          for (const event of parseGroupEvents(payload as Record<string, unknown>)) {
+            groupOutcomes.push(await handleGroupEvent(deps, settings, event));
+          }
+        } catch (e) {
+          console.error("[webhook] group event error", e);
+        }
+
+        if (messages.length === 0) {
+          return Response.json({
+            ok: true,
+            skipped: "no messages",
+            group_events: groupOutcomes.length,
+            keys: Object.keys(payload || {}),
+          });
+        }
 
         const outcomes: Array<{ action: string }> = [];
         for (const raw of messages) {

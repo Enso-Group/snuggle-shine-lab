@@ -22,6 +22,7 @@ import { Route as AuthenticatedParticipantsRouteImport } from './routes/_authent
 import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
 import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
 import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
+import { Route as AuthenticatedGroupsRouteImport } from './routes/_authenticated/groups'
 import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedCandidatesRouteImport } from './routes/_authenticated/candidates'
@@ -101,6 +102,11 @@ const AuthenticatedInstructionsRoute =
     path: '/instructions',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedGroupsRoute = AuthenticatedGroupsRouteImport.update({
+  id: '/groups',
+  path: '/groups',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedConversationsRoute =
   AuthenticatedConversationsRouteImport.update({
     id: '/conversations',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/candidates': typeof AuthenticatedCandidatesRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/conversations': typeof AuthenticatedConversationsRouteWithChildren
+  '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/logs': typeof AuthenticatedLogsRoute
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/candidates': typeof AuthenticatedCandidatesRoute
+  '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/logs': typeof AuthenticatedLogsRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/_authenticated/candidates': typeof AuthenticatedCandidatesRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/conversations': typeof AuthenticatedConversationsRouteWithChildren
+  '/_authenticated/groups': typeof AuthenticatedGroupsRoute
   '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
@@ -247,6 +256,7 @@ export interface FileRouteTypes {
     | '/candidates'
     | '/chat'
     | '/conversations'
+    | '/groups'
     | '/instructions'
     | '/knowledge'
     | '/logs'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/approvals'
     | '/candidates'
+    | '/groups'
     | '/instructions'
     | '/knowledge'
     | '/logs'
@@ -295,6 +306,7 @@ export interface FileRouteTypes {
     | '/_authenticated/candidates'
     | '/_authenticated/chat'
     | '/_authenticated/conversations'
+    | '/_authenticated/groups'
     | '/_authenticated/instructions'
     | '/_authenticated/knowledge'
     | '/_authenticated/logs'
@@ -416,6 +428,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/groups': {
+      id: '/_authenticated/groups'
+      path: '/groups'
+      fullPath: '/groups'
+      preLoaderRoute: typeof AuthenticatedGroupsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/conversations': {
       id: '/_authenticated/conversations'
       path: '/conversations'
@@ -530,6 +549,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCandidatesRoute: typeof AuthenticatedCandidatesRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedConversationsRoute: typeof AuthenticatedConversationsRouteWithChildren
+  AuthenticatedGroupsRoute: typeof AuthenticatedGroupsRoute
   AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
@@ -548,6 +568,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCandidatesRoute: AuthenticatedCandidatesRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedConversationsRoute: AuthenticatedConversationsRouteWithChildren,
+  AuthenticatedGroupsRoute: AuthenticatedGroupsRoute,
   AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,

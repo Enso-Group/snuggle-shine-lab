@@ -101,6 +101,8 @@ export type AgentContext = {
   person?: import("./people.server").PersonRow | null;
   /** Ranked knowledge-base context for this message. */
   kb?: { block: string; count: number };
+  /** Management profile when the message is in a managed group. */
+  groupProfile?: import("./groups.server").GroupProfile | null;
 };
 
 export type IntentAnalysis = {

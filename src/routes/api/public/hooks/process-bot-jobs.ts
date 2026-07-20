@@ -98,12 +98,15 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           };
           const run = await processQueuedJobs(deps, { max: 3 });
           const followUps = await processDueFollowUps(deps, { max: 2 });
+          const { runGroupEngine } = await import("@/lib/agent/posting.server");
+          const groups = await runGroupEngine(deps);
 
           return Response.json({
             ok: true,
             claimed: run.claimed,
             results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
             follow_ups: followUps,
+            groups,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {

@@ -109,14 +109,12 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           //    and the value we expect cannot drift apart.
           // Accept a match against either, so both wiring styles keep working.
           const url = new URL(request.url);
-          const provided =
-            request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
+          const provided = request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
           const envSecret = process.env.CRON_SECRET || "";
           const dbSecret = (botSettings as any)?.cron_secret || "";
           if (envSecret || dbSecret) {
             const authorized =
-              (!!envSecret && provided === envSecret) ||
-              (!!dbSecret && provided === dbSecret);
+              (!!envSecret && provided === envSecret) || (!!dbSecret && provided === dbSecret);
             lastPost = {
               at: new Date().toISOString(),
               authorized,
@@ -141,7 +139,8 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
 
           const now = new Date();
           const { wd, hh, mm, dow, fromTime, toTime } = currentWindow(now);
-          if (dow === undefined) return new Response(JSON.stringify({ error: "weekday parse" }), { status: 500 });
+          if (dow === undefined)
+            return new Response(JSON.stringify({ error: "weekday parse" }), { status: 500 });
 
           const { data: rows, error } = await supabase
             .from("scheduled_messages")

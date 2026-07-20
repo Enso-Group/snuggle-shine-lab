@@ -23,6 +23,7 @@ export type InboundOutcome = {
     | "blocked"
     | "bot_disabled"
     | "group_not_addressed"
+    | "moderated"
     | "trivial_ack"
     | "enqueued";
   conversationId?: string;
@@ -109,15 +110,35 @@ export async function handleInboundMessage(
     return { action: "blocked", conversationId: convId };
   }
 
-  // Groups: reply only when addressed (Phase 3 will make this profile-driven).
+  // Groups: profile-driven management. Moderation runs on every message in a
+  // managed group; replies happen when addressed or (per profile) when a
+  // question is asked to the room.
   if (m.isGroup) {
+    const { loadGroupProfile } = await import("./groups.server");
+    const profile = await loadGroupProfile(supabase, m.chatId);
+
+    if (profile?.enabled) {
+      const { moderateGroupMessage } = await import("./moderation.server");
+      const handled = await moderateGroupMessage(deps, settings, profile, m, convId);
+      if (handled) return { action: "moderated", conversationId: convId };
+    }
+
     const botName = settings.bot_name ?? "";
     const lower = m.body.toLowerCase();
     const mentioned =
       (botName && lower.includes(botName.toLowerCase())) ||
       lower.includes("@" + botName.toLowerCase()) ||
       /@\d+/.test(m.body);
-    if (!mentioned) return { action: "group_not_addressed", conversationId: convId };
+    const answerQuestions = profile?.enabled === true && profile.reply_to_questions;
+    if (mentioned && profile && !profile.reply_when_mentioned) {
+      return { action: "group_not_addressed", conversationId: convId };
+    }
+    if (!mentioned) {
+      const { looksLikeQuestion } = await import("./posting-schedule");
+      if (!(answerQuestions && looksLikeQuestion(m.body))) {
+        return { action: "group_not_addressed", conversationId: convId };
+      }
+    }
   }
 
   // Trivial messages ("תודה", "👍"): acknowledge with a reaction, skip the

@@ -5,6 +5,7 @@ import { callLLM, parseJsonLoose } from "@/lib/llm.server";
 import type { LLMModelOverrides } from "@/lib/llm.server";
 import { normalizeReplyParts } from "./inbound";
 import { buildGroundingRules } from "./kb.server";
+import { groupPromptBlock } from "./groups.server";
 import { personPromptBlock } from "./people.server";
 import { leaksPersona, stripLeakSentences, PERSONA_FALLBACK_LINE } from "./persona";
 import { buildHumanizeRules, buildDateContext } from "./prompts.server";
@@ -95,6 +96,7 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
     ctx.settings.system_prompt +
     buildHumanizeRules() +
     buildDateContext() +
+    groupPromptBlock(ctx.groupProfile) +
     personPromptBlock(ctx.person) +
     buildGroundingRules(ctx.kb ?? { block: "", count: 0 }) +
     `

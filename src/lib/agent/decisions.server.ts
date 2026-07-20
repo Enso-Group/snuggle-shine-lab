@@ -21,6 +21,10 @@ export type DecisionEntry = {
     | "queued_approval"
     | "memory"
     | "follow_up"
+    | "moderation"
+    | "welcome"
+    | "post"
+    | "insight"
     | "error";
   status?: "ok" | "skip" | "error";
   summary?: string;
