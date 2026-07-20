@@ -11,6 +11,18 @@ const GRACE_MINUTES = 10;
 // as a manual "Send now", silently cancelled the scheduled one.)
 const DEDUPE_MINUTES = GRACE_MINUTES * 3;
 
+// Best-effort record of the most recent POST, surfaced by the health check.
+// The only link in this chain you can't otherwise observe is whether the cron
+// reaches us and authenticates. Records lengths, never secret values. Memory
+// only — a cold start clears it, which is fine: the cron runs every minute.
+let lastPost: {
+  at: string;
+  authorized: boolean;
+  header_present: boolean;
+  provided_length: number;
+  expected_length: number;
+} | null = null;
+
 // The day/time the scheduler evaluates against, in the timezone the weekly
 // schedule is defined in.
 function currentWindow(now: Date) {
@@ -50,6 +62,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           grace_minutes: GRACE_MINUTES,
           dedupe_minutes: DEDUPE_MINUTES,
           cron_secret_configured: !!process.env.CRON_SECRET,
+          last_cron_post: lastPost,
         });
       },
       POST: async ({ request }) => {
@@ -60,7 +73,18 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             const url = new URL(request.url);
             const provided =
               request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
-            if (provided !== cronSecret) {
+            const authorized = provided === cronSecret;
+            lastPost = {
+              at: new Date().toISOString(),
+              authorized,
+              header_present: provided !== null,
+              provided_length: provided?.length ?? 0,
+              expected_length: cronSecret.length,
+            };
+            if (!authorized) {
+              console.error(
+                `[cron] rejected — header_present=${provided !== null} provided_len=${provided?.length ?? 0} expected_len=${cronSecret.length}`,
+              );
               return new Response(JSON.stringify({ error: "forbidden" }), {
                 status: 403,
                 headers: { "Content-Type": "application/json" },
