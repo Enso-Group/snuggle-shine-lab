@@ -84,6 +84,21 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           const { runCommand } = await import("@/lib/ai-brain.server");
           const results: any[] = [];
           for (const r of due) {
+            // Claim the row before doing any work. Overlapping cron runs (the
+            // project can have more than one job pointed here) would otherwise
+            // both see the same row as unsent and deliver it twice. The filter
+            // makes this atomic: only one caller's UPDATE can match.
+            const { data: claimed } = await supabase
+              .from("scheduled_messages")
+              .update({ last_sent_at: new Date().toISOString() })
+              .eq("id", r.id)
+              .or(`last_sent_at.is.null,last_sent_at.lt.${dedupeTs}`)
+              .select("id");
+            if (!claimed || claimed.length === 0) {
+              results.push({ id: r.id, skipped: "already claimed by another run" });
+              continue;
+            }
+
             try {
               // In "ai" mode the stored body is a prompt — generate a fresh
               // message NOW (same logic/model as the manual Send flow) so each
@@ -94,6 +109,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
                 if (!body) throw new Error("The AI couldn't generate a message from the prompt");
               }
 
+              // last_sent_at was already stamped by the claim above.
               if (r.require_approval || globalApproval) {
                 await supabase.from("scheduled_approvals").insert({
                   scheduled_message_id: r.id,
@@ -103,20 +119,18 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
                   body,
                   status: "pending",
                 });
-                await supabase
-                  .from("scheduled_messages")
-                  .update({ last_sent_at: new Date().toISOString() })
-                  .eq("id", r.id);
                 results.push({ id: r.id, queued: true });
               } else {
                 await sendTextMessage(r.target_chat_id, body);
-                await supabase
-                  .from("scheduled_messages")
-                  .update({ last_sent_at: new Date().toISOString() })
-                  .eq("id", r.id);
                 results.push({ id: r.id, ok: true });
               }
             } catch (e: any) {
+              // Release the claim so a later run can retry this occurrence,
+              // instead of it being stuck "sent" until next week.
+              await supabase
+                .from("scheduled_messages")
+                .update({ last_sent_at: r.last_sent_at })
+                .eq("id", r.id);
               results.push({ id: r.id, ok: false, error: String(e?.message ?? e) });
             }
           }
