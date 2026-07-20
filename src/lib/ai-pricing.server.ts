@@ -8,6 +8,7 @@ const PRICES: Record<string, Price> = {
   "google/gemini-3-flash-preview": { in: 0.1, out: 0.4 },
   "google/gemini-3.5-flash": { in: 0.15, out: 0.6 },
   "google/gemini-3.1-pro": { in: 2.0, out: 8.0 },
+  "google/gemini-3.1-pro-preview": { in: 2.0, out: 8.0 },
   "google/gemini-3.1-lite": { in: 0.08, out: 0.3 },
   "openai/gpt-5.5": { in: 1.75, out: 12.0 },
   "openai/gpt-5.5-pro": { in: 18.0, out: 130.0 },

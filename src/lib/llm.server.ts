@@ -16,12 +16,12 @@ const RETRY_DELAYS_MS = [800, 2_500];
 
 export type LLMRole = "strong" | "fast";
 
-// Newest-first candidates; the tail of each chain is a model id verified in
-// production. Exact ids for the newest tiers are confirmed via env once
-// Lovable states them (see Phase 1 handoff notes).
+// Newest-first candidates; ids confirmed against the gateway catalog on
+// 2026-07-20. The tail of each chain is a known-good fallback so a catalog
+// change can degrade quality but never silence the bot.
 const MODEL_CANDIDATES: Record<LLMRole, string[]> = {
   strong: [
-    "google/gemini-3.1-pro",
+    "google/gemini-3.1-pro-preview",
     "openai/gpt-5.5",
     "google/gemini-2.5-pro",
     "google/gemini-2.5-flash",
