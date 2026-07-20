@@ -107,10 +107,9 @@ export const sendScheduledNow = createServerFn({ method: "POST" })
     const body = await resolveScheduledBody(context.supabase, row);
     const { sendTextMessage } = await import("./whapi.server");
     await sendTextMessage(row.target_chat_id, body);
-    await context.supabase
-      .from("scheduled_messages")
-      .update({ last_sent_at: new Date().toISOString() })
-      .eq("id", row.id);
+    // Deliberately does NOT touch last_sent_at. That column is the scheduler's
+    // own dedupe marker, and stamping it here made a manual "Send now" suppress
+    // the next automatic send of the same slot.
     return { ok: true };
   });
 

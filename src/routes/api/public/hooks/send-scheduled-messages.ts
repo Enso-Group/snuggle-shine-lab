@@ -5,6 +5,12 @@ import { createClient } from "@supabase/supabase-js";
 // send for a whole week, so a run picks up anything due in this window.
 const GRACE_MINUTES = 10;
 
+// Suppress repeats of the occurrence we're currently inside. A slot only stays
+// inside the window for GRACE_MINUTES, so this needs to be just wider than that
+// — not hours. (A 6h window meant any unrelated send in the same morning, such
+// as a manual "Send now", silently cancelled the scheduled one.)
+const DEDUPE_MINUTES = GRACE_MINUTES * 3;
+
 // The day/time the scheduler evaluates against, in the timezone the weekly
 // schedule is defined in.
 function currentWindow(now: Date) {
@@ -42,6 +48,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           day_of_week: w.dow,
           window: [w.fromTime, w.toTime],
           grace_minutes: GRACE_MINUTES,
+          dedupe_minutes: DEDUPE_MINUTES,
           cron_secret_configured: !!process.env.CRON_SECRET,
         });
       },
@@ -84,9 +91,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             .lte("send_time", toTime);
           if (error) throw new Error(error.message);
 
-          // Each slot fires once a week, so anything already sent in the last
-          // few hours is this same occurrence — don't send it twice.
-          const dedupeTs = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString();
+          const dedupeTs = new Date(now.getTime() - DEDUPE_MINUTES * 60 * 1000).toISOString();
           const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < dedupeTs);
 
           // Global approval gate — when on, every scheduled send is queued too.
