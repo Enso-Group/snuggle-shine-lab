@@ -23,6 +23,7 @@ export type DecisionRow = {
 const STAGE_GROUPS: Record<string, string[]> = {
   replies: [
     "received",
+    "reply_gate",
     "context",
     "intent",
     "draft",

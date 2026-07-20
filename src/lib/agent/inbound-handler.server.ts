@@ -110,9 +110,9 @@ export async function handleInboundMessage(
     return { action: "blocked", conversationId: convId };
   }
 
-  // Groups: profile-driven management. Moderation runs on every message in a
-  // managed group; replies happen when addressed or (per profile) when a
-  // question is asked to the room.
+  // Groups: profile-driven management. Moderation first (it owns violations),
+  // then the MANDATORY reply-decision gate — the bot never chimes in on
+  // member-to-member chatter, and every respond/skip is logged with reasoning.
   if (m.isGroup) {
     const { loadGroupProfile } = await import("./groups.server");
     const profile = await loadGroupProfile(supabase, m.chatId);
@@ -123,22 +123,9 @@ export async function handleInboundMessage(
       if (handled) return { action: "moderated", conversationId: convId };
     }
 
-    const botName = settings.bot_name ?? "";
-    const lower = m.body.toLowerCase();
-    const mentioned =
-      (botName && lower.includes(botName.toLowerCase())) ||
-      lower.includes("@" + botName.toLowerCase()) ||
-      /@\d+/.test(m.body);
-    const answerQuestions = profile?.enabled === true && profile.reply_to_questions;
-    if (mentioned && profile && !profile.reply_when_mentioned) {
-      return { action: "group_not_addressed", conversationId: convId };
-    }
-    if (!mentioned) {
-      const { looksLikeQuestion } = await import("./posting-schedule");
-      if (!(answerQuestions && looksLikeQuestion(m.body))) {
-        return { action: "group_not_addressed", conversationId: convId };
-      }
-    }
+    const { decideGroupReply } = await import("./reply-gate.server");
+    const gate = await decideGroupReply(deps, settings, profile, m, convId);
+    if (!gate.respond) return { action: "group_not_addressed", conversationId: convId };
   }
 
   // Trivial messages ("תודה", "👍"): acknowledge with a reaction, skip the

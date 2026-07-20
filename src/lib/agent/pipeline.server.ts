@@ -52,6 +52,9 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     fromMe: false,
     messageId: p.whapi_message_id,
     ts: p.ts,
+    mentions: [],
+    quotedId: null,
+    quotedAuthor: null,
   };
 
   // --- Stage: context (history + persistent person memory) ---

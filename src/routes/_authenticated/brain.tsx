@@ -35,6 +35,7 @@ export const Route = createFileRoute("/_authenticated/brain")({
 
 const STAGE_LABELS: Record<string, { label: string; cls: string }> = {
   received: { label: "התקבלה", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400" },
+  reply_gate: { label: "שער תגובה", cls: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
   context: { label: "הקשר", cls: "bg-slate-500/15 text-slate-600 dark:text-slate-400" },
   intent: { label: "כוונה", cls: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400" },
   draft: { label: "טיוטה", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },

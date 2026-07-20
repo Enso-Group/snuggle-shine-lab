@@ -12,6 +12,7 @@ export type DecisionEntry = {
   trigger: AgentTrigger | "scheduled" | "follow_up";
   stage:
     | "received"
+    | "reply_gate"
     | "skipped"
     | "context"
     | "intent"

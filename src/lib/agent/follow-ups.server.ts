@@ -243,6 +243,9 @@ async function sendOneFollowUp(
       fromMe: false,
       messageId: "",
       ts: Date.now(),
+      mentions: [],
+      quotedId: null,
+      quotedAuthor: null,
     },
   } satisfies AgentContext;
 

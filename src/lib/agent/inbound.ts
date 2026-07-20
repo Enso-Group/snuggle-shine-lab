@@ -11,6 +11,12 @@ export type InboundMessage = {
   fromMe: boolean;
   messageId: string;
   ts: number;
+  /** WA ids explicitly @-mentioned in the message. */
+  mentions: string[];
+  /** Whapi id of the message this one replies to (quoted), if any. */
+  quotedId: string | null;
+  /** WA id of the author of the quoted message, if any. */
+  quotedAuthor: string | null;
 };
 
 export function normalizeTimestampMs(raw: unknown): number {
@@ -37,6 +43,14 @@ export type RawWhapiMessage = {
   caption?: string;
   text?: { body?: string } | string;
   timestamp?: number | string;
+  context?: {
+    quoted_id?: string;
+    quoted_message_id?: string;
+    quoted_author?: string;
+    participant?: string;
+    mentions?: string[];
+    mentioned?: string[];
+  };
 };
 
 /** Extract the fields we care about from a raw Whapi webhook message. */
@@ -46,6 +60,8 @@ export function parseWhapiMessage(m: RawWhapiMessage | null | undefined): Inboun
   if (!chatId) return null;
   const textBody = typeof m.text === "object" ? m.text?.body : m.text;
   const body = textBody ?? m.body ?? m.caption ?? "";
+  const ctx = m.context ?? {};
+  const mentions = (ctx.mentions ?? ctx.mentioned ?? []).map((x) => String(x)).filter(Boolean);
   return {
     chatId: String(chatId),
     chatName: m.chat_name || m.chat?.name || m.group_name || "",
@@ -56,6 +72,9 @@ export function parseWhapiMessage(m: RawWhapiMessage | null | undefined): Inboun
     fromMe: !!m.from_me,
     messageId: m.id || "",
     ts: normalizeTimestampMs(m.timestamp),
+    mentions,
+    quotedId: ctx.quoted_id || ctx.quoted_message_id || null,
+    quotedAuthor: ctx.quoted_author || ctx.participant || null,
   };
 }
 
