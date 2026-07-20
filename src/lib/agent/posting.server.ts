@@ -131,11 +131,13 @@ async function generateAndSendPost(
   const overrides = { model_strong: settings.model_strong, model_fast: settings.model_fast };
 
   try {
-    const [activity, insights, pastPosts, kb] = await Promise.all([
+    const { latestRecommendationsBlock } = await import("./analytics.server");
+    const [activity, insights, pastPosts, kb, memoBlock] = await Promise.all([
       recentGroupActivity(deps, profile.chat_id),
       latestInsights(deps, profile.chat_id),
       recentPostBodies(deps, profile.chat_id),
       loadKnowledge(supabase, `${post.pillar ?? ""} ${post.prompt ?? ""} ${profile.purpose ?? ""}`),
+      latestRecommendationsBlock(supabase, profile.chat_id),
     ]);
 
     // Draft.
@@ -144,6 +146,7 @@ async function generateAndSendPost(
       buildHumanizeRules() +
       buildDateContext() +
       groupPromptBlock(profile) +
+      memoBlock +
       (kb.count ? `\n\nמאגר ידע מאומת (עובדות עסקיות מותרות רק מכאן):\n${kb.block}` : "") +
       `
 

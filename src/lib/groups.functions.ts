@@ -152,7 +152,7 @@ export const getGroupActivity = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ chat_id: z.string().min(5) }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [posts, actions, insights] = await Promise.all([
+    const [posts, actions, insights, stats, memo] = await Promise.all([
       supabaseAdmin
         .from("planned_posts")
         .select("id, source, pillar, body, status, sent_at, engagement, created_at")
@@ -171,10 +171,27 @@ export const getGroupActivity = createServerFn({ method: "GET" })
         .eq("group_chat_id", data.chat_id)
         .order("created_at", { ascending: false })
         .limit(6),
+      supabaseAdmin
+        .from("group_daily_stats")
+        .select(
+          "date, messages, active_members, bot_posts, post_replies, new_members, left_members",
+        )
+        .eq("group_chat_id", data.chat_id)
+        .order("date", { ascending: false })
+        .limit(7),
+      supabaseAdmin
+        .from("strategy_memos")
+        .select("week_start, memo, recommendations, created_at")
+        .eq("group_chat_id", data.chat_id)
+        .order("week_start", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
     return {
       posts: posts.data ?? [],
       actions: actions.data ?? [],
       insights: insights.data ?? [],
+      stats: (stats.data ?? []).slice().reverse(),
+      memo: memo.data ?? null,
     };
   });

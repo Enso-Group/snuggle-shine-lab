@@ -530,6 +530,49 @@ function GroupsPage() {
                       <Activity className="size-4 text-primary" />
                       <h3 className="text-sm font-semibold">Recent autonomous activity</h3>
                     </div>
+                    {activity.memo && (
+                      <div
+                        className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs"
+                        dir="auto"
+                      >
+                        <p className="mb-1 font-semibold">
+                          📋 מזכר אסטרטגיה שבועי ({activity.memo.week_start})
+                        </p>
+                        <p className="whitespace-pre-wrap">{activity.memo.memo}</p>
+                      </div>
+                    )}
+                    {activity.stats.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-muted-foreground">
+                              <th className="p-1 text-start font-normal">Day</th>
+                              <th className="p-1 text-start font-normal">Msgs</th>
+                              <th className="p-1 text-start font-normal">Active</th>
+                              <th className="p-1 text-start font-normal">Posts</th>
+                              <th className="p-1 text-start font-normal">Replies</th>
+                              <th className="p-1 text-start font-normal">±Members</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activity.stats.map((s) => (
+                              <tr key={s.date} className="border-t">
+                                <td className="p-1" dir="ltr">
+                                  {s.date.slice(5)}
+                                </td>
+                                <td className="p-1">{s.messages}</td>
+                                <td className="p-1">{s.active_members}</td>
+                                <td className="p-1">{s.bot_posts}</td>
+                                <td className="p-1">{s.post_replies}</td>
+                                <td className="p-1">
+                                  +{s.new_members}/-{s.left_members}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                     {activity.posts.length === 0 &&
                       activity.actions.length === 0 &&
                       activity.insights.length === 0 && (
