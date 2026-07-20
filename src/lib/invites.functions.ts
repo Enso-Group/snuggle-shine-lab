@@ -39,8 +39,33 @@ export const addInvitedEmail = createServerFn({ method: "POST" })
       .from("invited_emails")
       .upsert({ email, invited_by: invitedBy }, { onConflict: "email" });
     if (error) throw new Error(error.message);
+
+    // If this person already has an account, grant the DB role now. RLS checks
+    // user_roles, and the auth trigger only fires on first sign-in — without
+    // this, someone invited *after* signing up would see empty data.
+    await grantRoleIfUserExists(supabaseAdmin, email);
     return { ok: true };
   });
+
+// Find an existing auth user by email and give them the role RLS looks for.
+async function grantRoleIfUserExists(supabaseAdmin: any, email: string) {
+  let page = 1;
+  for (;;) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) return; // non-fatal: the invite itself succeeded
+    const users = data?.users ?? [];
+    const match = users.find((u: any) => (u.email ?? "").toLowerCase() === email);
+    if (match) {
+      await supabaseAdmin
+        .from("user_roles")
+        .insert({ user_id: match.id, role: "admin" })
+        .then(() => undefined, () => undefined); // ignore duplicates
+      return;
+    }
+    if (users.length < 200) return;
+    page += 1;
+  }
+}
 
 // Revoke access by removing an email from the list. Existing account data is
 // left untouched — the person simply can't get past the access gate anymore.
