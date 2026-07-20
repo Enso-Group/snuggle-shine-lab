@@ -99,14 +99,14 @@ function AuthedLayout() {
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
-      <aside className="w-60 border-r bg-card flex flex-col">
-        <div className="p-4 border-b flex items-center gap-3">
-          <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+      <aside className="w-60 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
+        <div className="p-4 border-b border-sidebar-border flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-brand text-brand-foreground flex items-center justify-center shrink-0">
             <Bot className="size-5" />
           </div>
           <div className="min-w-0">
             <h1 className="font-semibold text-sm leading-tight truncate">WhatsApp Bot</h1>
-            <p className="text-xs text-muted-foreground truncate">Management Dashboard</p>
+            <p className="text-xs text-sidebar-foreground/70 truncate">Management Dashboard</p>
           </div>
         </div>
         <nav className="flex-1 p-2 space-y-1 overflow-auto">
@@ -118,7 +118,9 @@ function AuthedLayout() {
                 key={n.to}
                 to={n.to}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                  active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                  active
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm"
+                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <Icon className="size-4" />
@@ -129,7 +131,7 @@ function AuthedLayout() {
 
           {isAdmin && (
             <>
-              <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/60">
                 Behind the scenes
               </div>
               {SYSTEM_NAV.map((n) => {
@@ -140,7 +142,9 @@ function AuthedLayout() {
                     key={n.to}
                     to={n.to}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                      active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                      active
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm"
+                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                     }`}
                   >
                     <Icon className="size-4" />
@@ -151,8 +155,8 @@ function AuthedLayout() {
             </>
           )}
         </nav>
-        <div className="p-2 border-t">
-          <Button variant="ghost" className="w-full justify-start" onClick={signOut}>
+        <div className="p-2 border-t border-sidebar-border">
+          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={signOut}>
             <LogOut className="size-4 ms-2" />
             Log out
           </Button>

@@ -87,13 +87,16 @@ function ConvView() {
           </div>
         )}
       </div>
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 p-4 chat-canvas">
         <div className="space-y-2 max-w-2xl mx-auto">
           {msgs.map((m) => {
             const out = m.direction === "outbound";
             return (
               <div key={m.id} className={`flex ${out ? "justify-start" : "justify-end"}`}>
-                <div className={`max-w-[70%] rounded-2xl px-3 py-2 shadow-sm ${out ? "bg-bubble-sent text-bubble-sent-foreground" : "bg-bubble-received text-bubble-received-foreground border"}`}>
+                <div
+                  style={{ ["--tail-color" as any]: out ? "var(--bubble-sent)" : "var(--bubble-received)" }}
+                  className={`max-w-[70%] rounded-2xl px-3 py-2 shadow-sm ${out ? "bg-bubble-sent text-bubble-sent-foreground rounded-tl-sm bubble-tail-left" : "bg-bubble-received text-bubble-received-foreground rounded-tr-sm bubble-tail-right"}`}
+                >
                   {m.sender_name && !out && <p className="text-xs font-semibold mb-1 opacity-75">{m.sender_name}</p>}
                   <p className="whitespace-pre-wrap text-sm">{m.body}</p>
                   <p className="text-[10px] opacity-60 mt-1">{new Date(m.created_at).toLocaleTimeString("en-US")}</p>

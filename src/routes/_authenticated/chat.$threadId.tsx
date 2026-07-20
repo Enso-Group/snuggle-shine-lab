@@ -128,7 +128,7 @@ function ChatThread() {
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3 chat-canvas">
         {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
         {!loading && messages.length === 0 && (
           <div className="text-sm text-muted-foreground text-center mt-12">
@@ -141,10 +141,14 @@ function ChatThread() {
             className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}
           >
             <div
+              style={{
+                ["--tail-color" as any]:
+                  m.role === "user" ? "var(--bubble-sent)" : "var(--bubble-received)",
+              }}
               className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap shadow-sm ${
                 m.role === "user"
-                  ? "bg-bubble-sent text-bubble-sent-foreground"
-                  : "bg-bubble-received text-bubble-received-foreground border"
+                  ? "bg-bubble-sent text-bubble-sent-foreground rounded-tl-sm bubble-tail-left"
+                  : "bg-bubble-received text-bubble-received-foreground border rounded-tr-sm bubble-tail-right"
               }`}
             >
               {m.content}

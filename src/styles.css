@@ -65,6 +65,7 @@
   --color-bubble-sent-foreground: var(--bubble-sent-foreground);
   --color-bubble-received: var(--bubble-received);
   --color-bubble-received-foreground: var(--bubble-received-foreground);
+  --color-chat-wallpaper: var(--chat-wallpaper);
 }
 
 :root {
@@ -98,18 +99,20 @@
   --chart-3: oklch(0.64 0.1 200);
   --chart-4: oklch(0.7 0.13 160);
   --chart-5: oklch(0.5 0.08 190);
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.242 0.017 205);
-  --sidebar-primary: oklch(0.556 0.086 184);
-  --sidebar-primary-foreground: oklch(0.985 0.006 180);
-  --sidebar-accent: oklch(0.952 0.032 165);
-  --sidebar-accent-foreground: oklch(0.4 0.06 182);
-  --sidebar-border: oklch(0.888 0.006 210);
+  /* Sidebar = the app's WhatsApp-teal chrome */
+  --sidebar: oklch(0.492 0.079 184);           /* deep teal #0F7A6E */
+  --sidebar-foreground: oklch(0.98 0.008 180);
+  --sidebar-primary: oklch(1 0 0);             /* active = white pill */
+  --sidebar-primary-foreground: oklch(0.45 0.085 184);
+  --sidebar-accent: oklch(0.575 0.083 184);    /* hover = lighter teal */
+  --sidebar-accent-foreground: oklch(0.99 0.005 180);
+  --sidebar-border: oklch(0.43 0.07 184);
   --sidebar-ring: oklch(0.77 0.181 152);
   --bubble-sent: oklch(0.955 0.05 132);        /* light green #DCF8C6 (sent) */
   --bubble-sent-foreground: oklch(0.26 0.03 160);
   --bubble-received: oklch(1 0 0);             /* white (received) */
   --bubble-received-foreground: oklch(0.242 0.017 205);
+  --chat-wallpaper: oklch(0.925 0.014 85);     /* WhatsApp chat beige #ECE5DD */
 }
 
 .dark {
@@ -140,18 +143,19 @@
   --chart-3: oklch(0.7 0.11 200);
   --chart-4: oklch(0.75 0.13 160);
   --chart-5: oklch(0.55 0.09 190);
-  --sidebar: oklch(0.24 0.017 205);
+  --sidebar: oklch(0.3 0.035 190);             /* dark teal-charcoal chrome */
   --sidebar-foreground: oklch(0.95 0.006 197);
   --sidebar-primary: oklch(0.64 0.1 182);
   --sidebar-primary-foreground: oklch(0.16 0.02 200);
-  --sidebar-accent: oklch(0.34 0.03 178);
-  --sidebar-accent-foreground: oklch(0.95 0.006 197);
+  --sidebar-accent: oklch(0.38 0.045 186);
+  --sidebar-accent-foreground: oklch(0.97 0.006 197);
   --sidebar-border: oklch(1 0 0 / 12%);
   --sidebar-ring: oklch(0.77 0.181 152);
   --bubble-sent: oklch(0.44 0.088 168);        /* WhatsApp dark sent #005C4B */
   --bubble-sent-foreground: oklch(0.96 0.01 160);
   --bubble-received: oklch(0.3 0.018 205);     /* #202C33 */
   --bubble-received-foreground: oklch(0.95 0.006 197);
+  --chat-wallpaper: oklch(0.19 0.014 205);     /* dark chat canvas #0B141A */
 }
 
 @layer base {
@@ -169,5 +173,50 @@
 
   h1, h2, h3 {
     letter-spacing: -0.01em;
+  }
+}
+
+/*
+ * Chat canvas + message bubble tails.
+ *
+ * .chat-canvas   — the message area behind bubbles: a warm neutral wallpaper
+ *                  with a faint geometric wash (evokes a messaging app without
+ *                  reproducing any third-party artwork).
+ * .bubble-tail-* — the small pointed corner on a message bubble. Which side the
+ *                  tail sits on is chosen per view so it matches that view's
+ *                  existing alignment; nothing about the layout changes.
+ */
+@layer components {
+  .chat-canvas {
+    background-color: var(--chat-wallpaper);
+    background-image:
+      radial-gradient(circle at 20% 30%, color-mix(in oklch, var(--foreground) 4%, transparent) 0 2px, transparent 2px),
+      radial-gradient(circle at 70% 65%, color-mix(in oklch, var(--foreground) 3%, transparent) 0 2px, transparent 2px);
+    background-size: 140px 140px, 180px 180px;
+  }
+
+  .bubble-tail-left,
+  .bubble-tail-right {
+    position: relative;
+  }
+
+  .bubble-tail-left::after,
+  .bubble-tail-right::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-top: 10px solid var(--tail-color);
+  }
+
+  .bubble-tail-left::after {
+    left: -7px;
+    border-left: 8px solid transparent;
+  }
+
+  .bubble-tail-right::after {
+    right: -7px;
+    border-right: 8px solid transparent;
   }
 }
