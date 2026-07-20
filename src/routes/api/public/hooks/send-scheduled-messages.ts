@@ -46,18 +46,28 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           const dow = dayMap[wd];
           if (dow === undefined) return new Response(JSON.stringify({ error: "weekday parse" }), { status: 500 });
 
-          // Match items scheduled for current minute (HH:MM) that weren't sent in the last 5 minutes.
-          const minTs = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+          // Match anything due in the last GRACE_MINUTES rather than only the
+          // current minute: a cron that runs every few minutes — or that misses
+          // a single tick — would otherwise skip the send for a whole week.
+          const GRACE_MINUTES = 10;
+          const pad = (n: number) => String(n).padStart(2, "0");
+          const nowMinutes = Number(hh) * 60 + Number(mm);
+          const fromMinutes = Math.max(0, nowMinutes - GRACE_MINUTES);
+          const fromTime = `${pad(Math.floor(fromMinutes / 60))}:${pad(fromMinutes % 60)}:00`;
+
           const { data: rows, error } = await supabase
             .from("scheduled_messages")
             .select("*")
             .eq("enabled", true)
             .eq("day_of_week", dow)
-            .gte("send_time", `${hh}:${mm}:00`)
+            .gte("send_time", fromTime)
             .lte("send_time", `${hh}:${mm}:59`);
           if (error) throw new Error(error.message);
 
-          const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < minTs);
+          // Each slot fires once a week, so anything already sent in the last
+          // few hours is this same occurrence — don't send it twice.
+          const dedupeTs = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString();
+          const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < dedupeTs);
 
           // Global approval gate — when on, every scheduled send is queued too.
           // Also grab the system prompt for AI-mode generation.
