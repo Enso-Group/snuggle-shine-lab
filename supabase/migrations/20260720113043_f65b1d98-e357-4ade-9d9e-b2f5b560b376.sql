@@ -1,4 +1,14 @@
-SELECT vault.update_secret(
-  (SELECT id FROM vault.secrets WHERE name = 'CRON_SECRET'),
-  'Ph8oIO0KYs5T_lHptzmnE6LXFgtG5gp-hPmR5Vu3yQU'
-);
+-- [REDACTED 2026-07-20] This migration originally wrote a literal secret value
+-- into vault.secrets ('CRON_SECRET'). The value was committed to git history,
+-- so it must be treated as compromised. It has been removed from this file and
+-- both the vault secret and bot_settings.cron_secret are rotated in
+-- 20260720170000_phase1_agentic_pipeline.sql. The canonical cron auth now
+-- reads bot_settings.cron_secret at fire time (see 20260720160000), so the
+-- vault copy is unused.
+--
+-- Original (redacted) statement:
+-- SELECT vault.update_secret(
+--   (SELECT id FROM vault.secrets WHERE name = 'CRON_SECRET'),
+--   '<redacted>'
+-- );
+SELECT 1;

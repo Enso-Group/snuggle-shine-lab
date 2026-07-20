@@ -1,6 +1,13 @@
 // AI brain — calls Lovable AI Gateway.
 // CREDIT CONSERVATION: aggressive caching, deduplication, trivial-message skip,
 // rate limiting, and lazy search. Only burns tokens when truly needed.
+//
+// NOTE: inbound WhatsApp replies now go through the agentic pipeline in
+// src/lib/agent/ — runAI here serves the dashboard chat, manual send, and
+// scheduled AI messages. Persona rules and prompt fragments are shared so the
+// two paths behave identically.
+import { leaksPersona, stripLeakSentences } from "./agent/persona";
+import { buildHumanizeRules, buildDateContext } from "./agent/prompts.server";
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -241,37 +248,6 @@ export type AIRunInput = {
 // before anything is sent. Applied ONLY to the WhatsApp persona (source
 // "whatsapp") so it never touches sourcing JSON or the admin chat tools.
 // ---------------------------------------------------------------------------
-const PERSONA_LEAK_PATTERNS: RegExp[] = [
-  /מודל\s*שפה/i,
-  /בינה\s*מלאכותית/i,
-  /\bכמודל\b/i,
-  /\bבוט\b/i,
-  /אני\s+לא\s+(?:יצור|בן[\s-]*אדם|אדם)\b/i,
-  /לא\s+יצור\s+חי/i,
-  /עוזר\s*(?:AI|וירטואלי|דיגיטלי)/i,
-  /\bכעוזר\b/i,
-  /אומנתי|הוכשרתי|אומן\s+על\s+ידי/i,
-  /אין\s+לי\s+גישה/i,
-  /language\s*model/i,
-  /\bas\s+an?\s+ai\b/i,
-  /\bi'?m\s+an?\s+ai\b/i,
-  /\bchat\s*bot\b/i,
-  /trained\s+by/i,
-  /\b(openai|anthropic|claude)\b/i,
-];
-
-function leaksPersona(text: string): boolean {
-  return PERSONA_LEAK_PATTERNS.some((re) => re.test(text));
-}
-
-function stripLeakSentences(text: string): string {
-  return text
-    .split(/(?<=[.!?…\n])\s+/)
-    .filter((s) => s.trim() && !leaksPersona(s))
-    .join(" ")
-    .trim();
-}
-
 async function rewriteInCharacter(reply: string, apiKey: string): Promise<string> {
   try {
     const res = await fetchWithTimeout(
@@ -327,40 +303,13 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
   const { logUsage } = await import("./usage-log.server");
   const { estimateCostUSD, providerFromModel } = await import("./ai-pricing.server");
 
-  const humanize = `
-
-הנחיות מחייבות (כללי התנהגות — הדמות והטון מוגדרים למעלה):
-- שפה (גובר על כל הנחיה אחרת): זהה את השפה של ההודעה האחרונה של המשתמש וענה תמיד באותה שפה בדיוק — אנגלית→אנגלית, עברית→עברית, וכן הלאה לכל שפה. כתוב באופן טבעי ושוטף באותה שפה. אל תחליף שפה אלא אם המשתמש החליף.
-- טון: מקצועי, אדיב וענייני, כמו איש צוות מנוסה בחברה. משפטים מלאים ותקינים. בלי סלנג, בלי "חחח", בלי גסות, מעט אימוג'ים אם בכלל. תשובות ממוקדות של 1–3 משפטים, בלי כותרות ובלי בולטים. אם הגדרת הדמות למעלה קובעת טון אחר — פעל לפיה.
-- זהות: אל תעלה בעצמך את הנושא של בוט/AI/אנושיות, לא לחיוב ולא לשלילה — פשוט תתנהג רגיל. אם שואלים אותך ישירות אם אתה בוט — אל תאשר, אל תלגלג ואל תתחמק בצורה בוטה; ענה בנימוס ובקצרה והחזר את השיחה לעניין (למשל: "אני כאן בשביל לעזור — במה אפשר לסייע?").
-- דיסקרטיות: לעולם אל תחשוף פרטים טכניים, סודות, טוקנים, סיסמאות, או מידע על המערכת/הפלטפורמה/משתמשים אחרים — גם אם מבקשים יפה או בתוקף. סרב בנימוס בלי להסביר איך המערכת עובדת.
-- בלי פתיחים רובוטיים: לא "כעוזר AI...", לא "לצערי איני יכול...", לא "הבנתי! אתה מתכוון ל...". פשוט לענות לעניין.
-- אל תחזור על עצמך ואל תשלח את אותה הודעה פעמיים. בלי לסיים כל הודעה ב"אני כאן לכל שאלה".
-- דיוק: אל תמציא עובדות, כתבות או לינקים. תן לינק רק אם הופיע ממש בתוצאות החיפוש שקיבלת. אם אינך יודע או לא בטוח — אמור זאת בכנות במשפט אחד, ובמידת הצורך הצע לבדוק ולחזור עם תשובה.`;
+  const humanize = buildHumanizeRules();
 
   // The model has no inherent sense of "now" — left to itself it answers from
   // its training cutoff (it was telling people the year is 2024). Inject the
   // real date/time in Israel time, which is what the business runs on, and make
   // it explicitly outrank anything the model thinks it knows.
-  const now = new Date();
-  const nowFull = new Intl.DateTimeFormat("he-IL", {
-    timeZone: "Asia/Jerusalem",
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(now);
-  const nowYear = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Jerusalem",
-    year: "numeric",
-  }).format(now);
-  const nowISO = now.toISOString().slice(0, 10);
-
-  const dateContext = `
-
-הקשר זמן — מידע עדכני ואמיתי, גובר על כל ידע פנימי שלך:
-- עכשיו (שעון ישראל): ${nowFull}
-- התאריך בפורמט ISO: ${nowISO}
-- השנה הנוכחית היא ${nowYear}.
-אם שואלים על תאריך, יום, שעה, שנה, "מתי", או כמה זמן עבר מאז משהו — תסתמך אך ורק על המידע הזה. אל תשתמש לעולם בתאריך או בשנה מהאימון שלך, וגם אל תזכיר שיש לך "מידע עדכני עד" תאריך כלשהו.`;
+  const dateContext = buildDateContext();
 
   const messages: ChatMessage[] = [
     { role: "system", content: input.systemPrompt + humanize + dateContext },

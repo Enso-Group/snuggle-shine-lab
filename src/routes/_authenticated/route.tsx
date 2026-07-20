@@ -63,7 +63,7 @@ function AuthedLayout() {
 
   async function signOut() {
     await supabase.auth.signOut();
-    nav({ to: "/auth" });
+    nav({ to: "/auth", search: { next: "/" } });
   }
 
   // Signed in with Google, but the email isn't on the invite list.

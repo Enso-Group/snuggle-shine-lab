@@ -30,6 +30,7 @@ import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/w
 import { Route as AuthenticatedConversationsIdRouteImport } from './routes/_authenticated/conversations.$id'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
 import { Route as ApiPublicHooksSendScheduledMessagesRouteImport } from './routes/api/public/hooks/send-scheduled-messages'
+import { Route as ApiPublicHooksProcessBotJobsRouteImport } from './routes/api/public/hooks/process-bot-jobs'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -143,6 +144,12 @@ const ApiPublicHooksSendScheduledMessagesRoute =
     path: '/api/public/hooks/send-scheduled-messages',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksProcessBotJobsRoute =
+  ApiPublicHooksProcessBotJobsRouteImport.update({
+    id: '/api/public/hooks/process-bot-jobs',
+    path: '/api/public/hooks/process-bot-jobs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
   '/conversations/': typeof AuthenticatedConversationsIndexRoute
+  '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRoutesByTo {
@@ -184,6 +192,7 @@ export interface FileRoutesByTo {
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/chat': typeof AuthenticatedChatIndexRoute
   '/conversations': typeof AuthenticatedConversationsIndexRoute
+  '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRoutesById {
@@ -208,6 +217,7 @@ export interface FileRoutesById {
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
   '/_authenticated/conversations/': typeof AuthenticatedConversationsIndexRoute
+  '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRouteTypes {
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/api/public/whapi-webhook'
     | '/chat/'
     | '/conversations/'
+    | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/api/public/whapi-webhook'
     | '/chat'
     | '/conversations'
+    | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
   id:
     | '__root__'
@@ -275,6 +287,7 @@ export interface FileRouteTypes {
     | '/api/public/whapi-webhook'
     | '/_authenticated/chat/'
     | '/_authenticated/conversations/'
+    | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
   fileRoutesById: FileRoutesById
 }
@@ -282,6 +295,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   ApiPublicWhapiWebhookRoute: typeof ApiPublicWhapiWebhookRoute
+  ApiPublicHooksProcessBotJobsRoute: typeof ApiPublicHooksProcessBotJobsRoute
   ApiPublicHooksSendScheduledMessagesRoute: typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 
@@ -434,6 +448,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSendScheduledMessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/process-bot-jobs': {
+      id: '/api/public/hooks/process-bot-jobs'
+      path: '/api/public/hooks/process-bot-jobs'
+      fullPath: '/api/public/hooks/process-bot-jobs'
+      preLoaderRoute: typeof ApiPublicHooksProcessBotJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -505,9 +526,20 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiPublicWhapiWebhookRoute: ApiPublicWhapiWebhookRoute,
+  ApiPublicHooksProcessBotJobsRoute: ApiPublicHooksProcessBotJobsRoute,
   ApiPublicHooksSendScheduledMessagesRoute:
     ApiPublicHooksSendScheduledMessagesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

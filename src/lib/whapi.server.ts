@@ -128,6 +128,29 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
   return all;
 }
 
+/** Mark a received message as read (blue ticks). Best-effort. */
+export async function markMessageRead(messageId: string): Promise<void> {
+  if (!messageId) return;
+  try {
+    await whapi(`/messages/${encodeURIComponent(messageId)}`, { method: "PUT" });
+  } catch (e) {
+    console.warn("[whapi] markMessageRead failed", e);
+  }
+}
+
+/** React to a message with an emoji (empty string removes the reaction). Best-effort. */
+export async function reactToMessage(messageId: string, emoji: string): Promise<void> {
+  if (!messageId) return;
+  try {
+    await whapi(`/messages/${encodeURIComponent(messageId)}/reaction`, {
+      method: "PUT",
+      body: JSON.stringify({ emoji }),
+    });
+  } catch (e) {
+    console.warn("[whapi] reactToMessage failed", e);
+  }
+}
+
 export async function sendPresence(chatId: string, presence: "typing" | "recording" | "paused" = "typing", delaySec = 3) {
   try {
     await whapi(`/presences/${encodeURIComponent(chatId)}`, {

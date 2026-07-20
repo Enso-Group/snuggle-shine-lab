@@ -1,34 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Per-chat in-memory state (best-effort; durable rules live in DB via anti-ban.server)
-const lastReplyAt = new Map<string, number>();
-const latestInboundAt = new Map<string, number>();
-const MIN_GAP_MS = 800;
-
-function normalizeTimestampMs(raw: unknown) {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return Date.now();
-  return n > 9_999_999_999 ? n : n * 1000;
-}
-
-function pickJid(m: any): { chatId: string; chatName: string; senderId: string; senderName: string; body: string; isGroup: boolean; fromMe: boolean; messageId: string; ts: number } | null {
-  if (!m) return null;
-  const chatId = m.chat_id || m.from || m.chatId;
-  if (!chatId) return null;
-  const isGroup = String(chatId).endsWith("@g.us");
-  const fromMe = !!m.from_me;
-  const body =
-    m.text?.body ??
-    m.body ??
-    m.caption ??
-    (typeof m.text === "string" ? m.text : "") ??
-    "";
-  const senderId = m.from || m.author || chatId;
-  const senderName = m.from_name || m.author_name || m.pushname || "";
-  const chatName = m.chat_name || m.chat?.name || m.group_name || "";
-  const ts = normalizeTimestampMs(m.timestamp);
-  return { chatId, chatName, senderId, senderName, body: String(body || ""), isGroup, fromMe, messageId: m.id || "", ts };
-}
+// Thin webhook: authenticate, parse, and hand each message to the shared
+// inbound handler (src/lib/agent/inbound-handler.server.ts). All processing is
+// backed by the bot_jobs queue — if this request dies mid-way, the
+// every-minute sweeper (process-bot-jobs) finishes the work, and the unique
+// index on inbound whapi ids makes Whapi's retries harmless.
 
 export const Route = createFileRoute("/api/public/whapi-webhook")({
   server: {
@@ -36,22 +12,27 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
       GET: async () => Response.json({ ok: true, info: "Whapi webhook endpoint" }),
       POST: async ({ request }) => {
         const url = new URL(request.url);
-        const secretParam = url.searchParams.get("secret") ?? request.headers.get("x-webhook-secret");
+        const secretParam =
+          url.searchParams.get("secret") ?? request.headers.get("x-webhook-secret");
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { secretsEqual, parseWhapiMessage } = await import("@/lib/agent/inbound");
 
-        const { data: settings } = await supabaseAdmin
+        const { data: settingsRow } = await supabaseAdmin
           .from("bot_settings")
-          .select("id, system_prompt, bot_name, enabled, webhook_secret, require_approval_all")
+          .select(
+            "id, system_prompt, bot_name, enabled, webhook_secret, require_approval_all, model_strong, model_fast, agent_config",
+          )
           .order("created_at", { ascending: true })
           .limit(1)
           .maybeSingle();
 
-        // Prefer a server-side env secret (set in Cloud), fall back to the DB column.
-        // If a secret is configured, every webhook call MUST present it.
-        const expectedSecret = process.env.WHAPI_WEBHOOK_SECRET || settings?.webhook_secret || "";
+        // Prefer a server-side env secret (set in Cloud), fall back to the DB
+        // column. If a secret is configured, every webhook call MUST present it.
+        const expectedSecret =
+          process.env.WHAPI_WEBHOOK_SECRET || settingsRow?.webhook_secret || "";
         if (expectedSecret) {
-          if (secretParam !== expectedSecret) {
+          if (!secretsEqual(secretParam, expectedSecret)) {
             return new Response("forbidden", { status: 403 });
           }
         } else {
@@ -60,311 +41,85 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
           );
         }
 
-        let payload: any;
+        let payload: { messages?: unknown; data?: unknown; message?: unknown };
         try {
           payload = await request.json();
         } catch {
           return new Response("bad json", { status: 400 });
         }
 
-        const messages: any[] =
-          (Array.isArray(payload.messages) && payload.messages) ||
-          (Array.isArray(payload.data) && payload.data) ||
-          (payload.message ? [payload.message] : []) ||
-          [];
-        console.log("[webhook] payload keys:", Object.keys(payload || {}), "messages:", messages.length);
+        const messages: unknown[] = Array.isArray(payload.messages)
+          ? payload.messages
+          : Array.isArray(payload.data)
+            ? payload.data
+            : payload.message
+              ? [payload.message]
+              : [];
+        console.log(
+          "[webhook] payload keys:",
+          Object.keys(payload || {}),
+          "messages:",
+          messages.length,
+        );
         if (messages.length === 0) {
-          console.log("[webhook] raw payload (no messages):", JSON.stringify(payload).slice(0, 800));
-          return Response.json({ ok: true, skipped: "no messages", keys: Object.keys(payload || {}) });
+          return Response.json({
+            ok: true,
+            skipped: "no messages",
+            keys: Object.keys(payload || {}),
+          });
         }
 
-        const enabled = settings?.enabled !== false;
-        const systemPrompt = settings?.system_prompt ?? "אתה עוזר חכם בעברית.";
-        console.log("[webhook] config — enabled:", enabled, "require_approval_all:", settings?.require_approval_all, "bot_name:", settings?.bot_name);
+        const settings = {
+          id: settingsRow?.id,
+          enabled: settingsRow?.enabled !== false,
+          system_prompt: settingsRow?.system_prompt ?? "אתה עוזר חכם בעברית.",
+          bot_name: settingsRow?.bot_name ?? "",
+          require_approval_all: !!settingsRow?.require_approval_all,
+          model_strong: settingsRow?.model_strong ?? null,
+          model_fast: settingsRow?.model_fast ?? null,
+          agent_config: (settingsRow?.agent_config ??
+            {}) as import("@/lib/agent/types").AgentConfig,
+        };
 
-        const {
-          isStopRequest,
-          recordInbound,
-          recordOutbound,
-          checkOutboundAllowed,
-          loadConversationByChatId,
-          isWhapiRestrictionError,
-          raiseAdminAlert,
-        } = await import("@/lib/anti-ban.server");
+        const { handleInboundMessage } = await import("@/lib/agent/inbound-handler.server");
+        const { realWhapiPort } = await import("@/lib/agent/whapi-port.server");
+        const deps = {
+          supabase: supabaseAdmin,
+          whapi: realWhapiPort(),
+          trigger: "inbound" as const,
+          workerId: `webhook-${Math.random().toString(36).slice(2, 8)}`,
+          humanPacing: true,
+        };
 
+        const outcomes: Array<{ action: string }> = [];
         for (const raw of messages) {
           try {
-            const m = pickJid(raw);
+            const m = parseWhapiMessage(raw as import("@/lib/agent/inbound").RawWhapiMessage);
             if (!m) continue;
 
-            if (!m.body || !m.body.trim()) continue;
-            const isFreshMessage = Math.abs(Date.now() - m.ts) <= 2 * 60 * 1000;
-            console.log(`[webhook] msg chatId=${m.chatId} fromMe=${m.fromMe} fresh=${isFreshMessage} body="${m.body.slice(0,60)}"`);
-            let ownUser: { id?: string; name?: string } = {};
+            // Resolve our own identity for messages sent from the linked phone,
+            // so they're stored under the right name.
             if (m.fromMe) {
               try {
                 const { checkHealth } = await import("@/lib/whapi.server");
                 const health = await checkHealth();
-                ownUser = { id: health.userId, name: health.userName };
-              } catch {}
-            }
-
-            // Upsert conversation
-            const { data: convExisting } = await supabaseAdmin
-              .from("conversations")
-              .select("id")
-              .eq("whapi_chat_id", m.chatId)
-              .maybeSingle();
-
-            let convId = convExisting?.id as string | undefined;
-            if (!convId) {
-              const { data: ins } = await supabaseAdmin
-                .from("conversations")
-                .insert({
-                  whapi_chat_id: m.chatId,
-                  name: m.chatName || m.senderName || m.chatId,
-                  is_group: m.isGroup,
-                  last_message_at: new Date(m.ts).toISOString(),
-                })
-                .select("id")
-                .single();
-              convId = ins?.id;
-            } else {
-              await supabaseAdmin
-                .from("conversations")
-                .update({
-                  last_message_at: new Date(m.ts).toISOString(),
-                  ...(m.chatName ? { name: m.chatName } : {}),
-                })
-                .eq("id", convId);
-            }
-            if (!convId) continue;
-
-            if (m.messageId) {
-              const { data: existingMessage } = await supabaseAdmin
-                .from("messages")
-                .select("id")
-                .eq("conversation_id", convId)
-                .eq("whapi_message_id", m.messageId)
-                .maybeSingle();
-              if (existingMessage?.id) continue;
-            }
-
-            // Save inbound message row
-            await supabaseAdmin.from("messages").insert({
-              conversation_id: convId,
-              whapi_message_id: m.messageId || null,
-              direction: "inbound",
-              sender_name: m.fromMe ? ownUser.name || m.senderName || "Me" : m.senderName || null,
-              sender_id: m.fromMe ? ownUser.id || m.senderId : m.senderId,
-              body: m.body,
-              raw: raw,
-              created_at: new Date(m.ts).toISOString(),
-            });
-
-            // Messages sent from the linked phone should be stored and counted,
-            // but must never trigger bot replies or anti-ban inbound counters.
-            if (m.fromMe) continue;
-
-            // Historical replay should be stored, but must never trigger old bot replies.
-            if (!isFreshMessage) continue;
-
-            // Update inbound counters + auto-block if stop request
-            const { blockedNow } = await recordInbound(supabaseAdmin, convId, m.body);
-
-            if (!enabled) { console.log("[webhook] skip: bot disabled"); continue; }
-            if (blockedNow) {
-              console.log("[webhook] skip: blockedNow (stop word)");
-              continue;
-            }
-            if (isStopRequest(m.body)) { console.log("[webhook] skip: stop request"); continue; }
-
-            // In groups, only reply if addressed
-            if (m.isGroup) {
-              const botName = settings?.bot_name ?? "";
-              const lower = m.body.toLowerCase();
-              const mentioned =
-                lower.includes("@" + botName.toLowerCase()) ||
-                (botName && lower.includes(botName.toLowerCase())) ||
-                /@\d+/.test(m.body);
-              if (!mentioned) { console.log("[webhook] skip: group msg, bot not mentioned"); continue; }
-            }
-
-            // Track latest inbound for this chat so a newer message cancels this reply
-            const myInboundTs = m.ts || Date.now();
-            latestInboundAt.set(m.chatId, Math.max(latestInboundAt.get(m.chatId) ?? 0, myInboundTs));
-
-            // Tiny burst guard (avoid double-processing same payload)
-            const last = lastReplyAt.get(m.chatId) ?? 0;
-            if (Date.now() - last < MIN_GAP_MS) continue;
-            lastReplyAt.set(m.chatId, Date.now());
-
-            // Load short history
-            const { data: hist } = await supabaseAdmin
-              .from("messages")
-              .select("direction, body")
-              .eq("conversation_id", convId)
-              .order("created_at", { ascending: false })
-              .limit(30);
-            const history = (hist ?? [])
-              .reverse()
-              .filter((h) => h.body)
-              .map((h) => ({
-                role: (h.direction === "outbound" ? "assistant" : "user") as "user" | "assistant",
-                content: h.body as string,
-              }));
-            if (history.length && history[history.length - 1].role === "user" && history[history.length - 1].content === m.body) {
-              history.pop();
-            }
-
-            const { sendPresence, sendTextMessage } = await import("@/lib/whapi.server");
-            sendPresence(m.chatId, "typing", 3).catch(() => {});
-
-            const { runAI, isTrivialMessage } = await import("@/lib/ai-brain.server");
-            const requireApproval = !!settings?.require_approval_all;
-
-            // Skip trivial messages only when NOT in approval mode.
-            // In approval mode every inbound message should produce a draft for the human.
-            if (!requireApproval && isTrivialMessage(m.body)) {
-              console.log("[bot] trivial message skipped");
-              continue;
-            }
-
-            let reply = "";
-            try {
-              reply = await runAI({ systemPrompt, history, userMessage: m.body, chatId: m.chatId, source: "whatsapp" });
-              // Dedup hit (empty string) — skip direct send, but still queue for approval
-              if (!reply && !requireApproval) continue;
-            } catch (e: any) {
-              console.error("[bot] AI failure:", String((e as any)?.message ?? e));
-              // In approval mode still queue so the human can write/fix the reply
-              if (!requireApproval) continue;
-            }
-
-            // Global approval gate — queue instead of sending.
-            // Runs before the anti-ban / supersede checks so every message reaches approvals.
-            if (requireApproval) {
-              // Find any authenticated user to own the approval row.
-              // Prefer an admin from user_roles, but fall back to any user in auth.users
-              // so the insert never fails silently just because user_roles is empty.
-              let ownerUserId: string | null = null;
-
-              const { data: adminRole } = await supabaseAdmin
-                .from("user_roles")
-                .select("user_id")
-                .eq("role", "admin")
-                .limit(1)
-                .maybeSingle();
-              ownerUserId = adminRole?.user_id ?? null;
-
-              if (!ownerUserId) {
-                // Fall back: first user in auth.users
-                const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1 });
-                ownerUserId = users?.[0]?.id ?? null;
-              }
-
-              if (ownerUserId) {
-                await supabaseAdmin.from("scheduled_approvals").insert({
-                  user_id: ownerUserId,
-                  conversation_id: convId,
-                  target_chat_id: m.chatId,
-                  target_name: m.chatName || m.senderName || m.chatId,
-                  body: reply, // may be empty if AI failed — human fills it in
-                  source: "ai_reply",
-                  status: "pending",
-                });
-                console.log("[bot] queued for approval, owner:", ownerUserId, "body length:", reply.length);
-              } else {
-                console.error("[bot] APPROVAL FAILED — no user found in auth.users to own the row");
-              }
-              continue;
-            }
-
-            // --- Direct send path (require_approval_all is false) ---
-
-            if (!reply) continue; // AI returned empty (dedup)
-
-            // If a newer inbound arrived while we were thinking, abort.
-            // In-memory fast path (best-effort on serverless)...
-            if ((latestInboundAt.get(m.chatId) ?? 0) > myInboundTs) {
-              console.log("[bot] superseded by newer inbound (memory), skipping send");
-              continue;
-            }
-            // ...plus a DURABLE check against the DB so a burst of messages
-            // doesn't produce duplicate replies when each webhook call runs in a
-            // fresh isolate (module memory doesn't persist across invocations).
-            {
-              const { data: newer } = await supabaseAdmin
-                .from("messages")
-                .select("id, created_at")
-                .eq("conversation_id", convId)
-                .eq("direction", "inbound")
-                .gt("created_at", new Date(myInboundTs).toISOString())
-                .limit(1);
-              if (newer && newer.length > 0) {
-                console.log("[bot] superseded by newer inbound (db), skipping send");
-                continue;
-              }
-              // Guard against duplicate replies: if we already sent an outbound
-              // AFTER this inbound arrived, another isolate already answered.
-              const { data: alreadyReplied } = await supabaseAdmin
-                .from("messages")
-                .select("id")
-                .eq("conversation_id", convId)
-                .eq("direction", "outbound")
-                .gt("created_at", new Date(myInboundTs).toISOString())
-                .limit(1);
-              if (alreadyReplied && alreadyReplied.length > 0) {
-                console.log("[bot] already replied to this inbound, skipping duplicate");
-                continue;
+                m.senderId = health.userId || m.senderId;
+                m.senderName = health.userName || m.senderName || "Me";
+              } catch {
+                m.senderName = m.senderName || "Me";
               }
             }
 
-            // Re-check anti-ban guards immediately before sending
-            const conv = await loadConversationByChatId(supabaseAdmin, m.chatId);
-            if (conv) {
-              const guard = await checkOutboundAllowed(supabaseAdmin, conv, reply);
-              if (!guard.ok) {
-                console.warn("[bot] outbound blocked by anti-ban:", guard.code, guard.reason);
-                continue;
-              }
-            }
-
-            try {
-              const sendRes: any = await sendTextMessage(m.chatId, reply);
-              await supabaseAdmin.from("messages").insert({
-                conversation_id: convId,
-                whapi_message_id: sendRes?.message?.id ?? null,
-                direction: "outbound",
-                sender_name: settings?.bot_name ?? "Bot",
-                sender_id: "bot",
-                body: reply,
-                raw: sendRes,
-              });
-              await recordOutbound(supabaseAdmin, convId, reply);
-            } catch (e: any) {
-              console.error("[bot] send failed", e);
-              if (isWhapiRestrictionError(e)) {
-                // Halt + alert admin
-                if (settings?.id) {
-                  await supabaseAdmin
-                    .from("bot_settings")
-                    .update({ enabled: false })
-                    .eq("id", settings.id);
-                }
-                await raiseAdminAlert(
-                  supabaseAdmin,
-                  `WhatsApp restricted the account — bot disabled. Error: ${String(e?.message ?? e)}`,
-                );
-                return Response.json({ ok: false, halted: true });
-              }
-            }
+            const outcome = await handleInboundMessage(deps, settings, m, raw);
+            console.log(`[webhook] chat=${m.chatId} action=${outcome.action}`);
+            outcomes.push({ action: outcome.action });
           } catch (e) {
             console.error("[webhook] handler error", e);
+            outcomes.push({ action: "error" });
           }
         }
 
-        return Response.json({ ok: true, processed: messages.length });
+        return Response.json({ ok: true, processed: messages.length, outcomes });
       },
     },
   },
