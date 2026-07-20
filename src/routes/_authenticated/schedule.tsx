@@ -72,13 +72,16 @@ function SchedulePage() {
   const approveFn = useServerFn(approvePending);
   const rejectFn = useServerFn(rejectPending);
 
-  const { data: realRows = [] } = useQuery({
+  // Surface load failures. Without this the page silently renders zeros for
+  // every day when the request fails (e.g. a permissions error), which is
+  // indistinguishable from "nothing scheduled yet".
+  const { data: realRows = [], error: rowsError } = useQuery({
     queryKey: ["scheduled-messages"],
     queryFn: () => listFn() as unknown as Promise<Row[]>,
     enabled: !DEMO_MODE,
   });
   const rows = DEMO_MODE ? (demoScheduledMessages as unknown as Row[]) : realRows;
-  const { data: realTargets } = useQuery({
+  const { data: realTargets, error: targetsError } = useQuery({
     queryKey: ["whapi-targets"],
     queryFn: () => targetsFn(),
     enabled: !DEMO_MODE,
@@ -155,6 +158,22 @@ function SchedulePage() {
       />
 
       <PageContent maxWidthClass="max-w-none">
+      {(rowsError || targetsError) && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="flex items-start gap-3 p-4">
+            <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-destructive" />
+            <div className="min-w-0 text-sm">
+              <p className="font-medium text-destructive">Couldn't load the scheduler</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+                {(rowsError as any)?.message || (targetsError as any)?.message}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Scheduled messages can't be listed or saved until this is resolved.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {pending.length > 0 && (
         <Card className="border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/10">
           <CardHeader className="pb-2">
