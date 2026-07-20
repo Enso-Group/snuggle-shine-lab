@@ -88,12 +88,23 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             // project can have more than one job pointed here) would otherwise
             // both see the same row as unsent and deliver it twice. The filter
             // makes this atomic: only one caller's UPDATE can match.
-            const { data: claimed } = await supabase
+            // Compare-and-swap on the value we just read: the UPDATE only
+            // matches if nobody else has touched the row since. (Avoids an
+            // `or=` filter containing a raw timestamp, which is brittle to
+            // parse and would silently match nothing.)
+            const claimBase = supabase
               .from("scheduled_messages")
               .update({ last_sent_at: new Date().toISOString() })
-              .eq("id", r.id)
-              .or(`last_sent_at.is.null,last_sent_at.lt.${dedupeTs}`)
-              .select("id");
+              .eq("id", r.id);
+            const { data: claimed, error: claimError } = await (
+              r.last_sent_at
+                ? claimBase.eq("last_sent_at", r.last_sent_at)
+                : claimBase.is("last_sent_at", null)
+            ).select("id");
+            if (claimError) {
+              results.push({ id: r.id, ok: false, error: `claim failed: ${claimError.message}` });
+              continue;
+            }
             if (!claimed || claimed.length === 0) {
               results.push({ id: r.id, skipped: "already claimed by another run" });
               continue;
@@ -134,9 +145,22 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
               results.push({ id: r.id, ok: false, error: String(e?.message ?? e) });
             }
           }
-          return new Response(JSON.stringify({ checked: rows?.length ?? 0, sent: results.length, results }), {
-            headers: { "Content-Type": "application/json" },
-          });
+          // Echo what this run actually looked for — without it, a "nothing
+          // happened" response gives no clue whether the window, the day, or
+          // the approval gate was the reason.
+          return new Response(
+            JSON.stringify({
+              now_israel: `${wd} ${hh}:${mm}`,
+              day_of_week: dow,
+              window: [fromTime, `${hh}:${mm}:59`],
+              matched: rows?.length ?? 0,
+              due_after_dedupe: due.length,
+              global_approval: globalApproval,
+              sent: results.length,
+              results,
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          );
         } catch (e: any) {
           return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
             status: 500,
