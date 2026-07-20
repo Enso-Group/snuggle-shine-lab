@@ -1,8 +1,35 @@
-import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  redirect,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Send, Settings as SettingsIcon, ScrollText, LayoutDashboard, LogOut, Bot, Users, CalendarClock, Inbox, Gauge, UserSearch, BookOpen, UserCog, ShieldX, Library, Brain, Users2 } from "lucide-react";
+import {
+  MessageSquare,
+  Send,
+  Settings as SettingsIcon,
+  ScrollText,
+  LayoutDashboard,
+  LogOut,
+  Bot,
+  Users,
+  CalendarClock,
+  Inbox,
+  Gauge,
+  UserSearch,
+  BookOpen,
+  UserCog,
+  ShieldX,
+  Library,
+  Brain,
+  Users2,
+  BrainCircuit,
+} from "lucide-react";
 import { isAdminEmail } from "@/lib/admin";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -35,9 +62,9 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
-
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
+  { to: "/brain", label: "Bot Brain", icon: BrainCircuit },
   { to: "/conversations", label: "Chats", icon: MessageSquare },
   { to: "/participants", label: "Participants", icon: Users },
   { to: "/chat", label: "AI Chat", icon: Bot },
@@ -83,10 +110,12 @@ function AuthedLayout() {
               This dashboard is invite-only.
               {user?.email ? (
                 <>
-                  {" "}The account <strong className="text-foreground">{user.email}</strong> hasn't been invited.
+                  {" "}
+                  The account <strong className="text-foreground">{user.email}</strong> hasn't been
+                  invited.
                 </>
-              ) : null}
-              {" "}Ask the administrator to add your email, then sign in again.
+              ) : null}{" "}
+              Ask the administrator to add your email, then sign in again.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -139,15 +168,16 @@ function AuthedLayout() {
               </div>
               {SYSTEM_NAV.map((n) => {
                 const Icon = n.icon;
-                const active = pathname === n.to || ((n.to as string) !== "/" && pathname.startsWith(n.to));
+                const active =
+                  pathname === n.to || ((n.to as string) !== "/" && pathname.startsWith(n.to));
                 return (
                   <Link
                     key={n.to}
                     to={n.to}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                       active
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm"
-                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm"
+                        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                     }`}
                   >
                     <Icon className="size-4" />
@@ -159,7 +189,11 @@ function AuthedLayout() {
           )}
         </nav>
         <div className="p-2 border-t border-sidebar-border">
-          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={signOut}>
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            onClick={signOut}
+          >
             <LogOut className="size-4 ms-2" />
             Log out
           </Button>

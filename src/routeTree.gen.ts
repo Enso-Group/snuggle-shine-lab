@@ -26,6 +26,7 @@ import { Route as AuthenticatedGroupsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedCandidatesRouteImport } from './routes/_authenticated/candidates'
+import { Route as AuthenticatedBrainRouteImport } from './routes/_authenticated/brain'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedConversationsIndexRouteImport } from './routes/_authenticated/conversations.index'
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
@@ -123,6 +124,11 @@ const AuthenticatedCandidatesRoute = AuthenticatedCandidatesRouteImport.update({
   path: '/candidates',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBrainRoute = AuthenticatedBrainRouteImport.update({
+  id: '/brain',
+  path: '/brain',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedApprovalsRoute = AuthenticatedApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
+  '/brain': typeof AuthenticatedBrainRoute
   '/candidates': typeof AuthenticatedCandidatesRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/conversations': typeof AuthenticatedConversationsRouteWithChildren
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
+  '/brain': typeof AuthenticatedBrainRoute
   '/candidates': typeof AuthenticatedCandidatesRoute
   '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
+  '/_authenticated/brain': typeof AuthenticatedBrainRoute
   '/_authenticated/candidates': typeof AuthenticatedCandidatesRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/conversations': typeof AuthenticatedConversationsRouteWithChildren
@@ -253,6 +262,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/approvals'
+    | '/brain'
     | '/candidates'
     | '/chat'
     | '/conversations'
@@ -278,6 +288,7 @@ export interface FileRouteTypes {
   to:
     | '/auth'
     | '/approvals'
+    | '/brain'
     | '/candidates'
     | '/groups'
     | '/instructions'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/approvals'
+    | '/_authenticated/brain'
     | '/_authenticated/candidates'
     | '/_authenticated/chat'
     | '/_authenticated/conversations'
@@ -456,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCandidatesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/brain': {
+      id: '/_authenticated/brain'
+      path: '/brain'
+      fullPath: '/brain'
+      preLoaderRoute: typeof AuthenticatedBrainRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/approvals': {
       id: '/_authenticated/approvals'
       path: '/approvals'
@@ -546,6 +565,7 @@ const AuthenticatedConversationsRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
+  AuthenticatedBrainRoute: typeof AuthenticatedBrainRoute
   AuthenticatedCandidatesRoute: typeof AuthenticatedCandidatesRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedConversationsRoute: typeof AuthenticatedConversationsRouteWithChildren
@@ -565,6 +585,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
+  AuthenticatedBrainRoute: AuthenticatedBrainRoute,
   AuthenticatedCandidatesRoute: AuthenticatedCandidatesRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedConversationsRoute: AuthenticatedConversationsRouteWithChildren,
