@@ -71,35 +71,153 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_decisions: {
+        Row: {
+          chat_id: string | null
+          conversation_id: string | null
+          created_at: string
+          data: Json
+          duration_ms: number | null
+          id: string
+          job_id: string | null
+          stage: string
+          status: string
+          summary: string | null
+          trigger: string
+        }
+        Insert: {
+          chat_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          data?: Json
+          duration_ms?: number | null
+          id?: string
+          job_id?: string | null
+          stage: string
+          status?: string
+          summary?: string | null
+          trigger: string
+        }
+        Update: {
+          chat_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          data?: Json
+          duration_ms?: number | null
+          id?: string
+          job_id?: string | null
+          stage?: string
+          status?: string
+          summary?: string | null
+          trigger?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_decisions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_jobs: {
+        Row: {
+          attempts: number
+          chat_id: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          last_error: string | null
+          locked_by: string | null
+          locked_until: string | null
+          max_attempts: number
+          payload: Json
+          run_after: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          chat_id: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          last_error?: string | null
+          locked_by?: string | null
+          locked_until?: string | null
+          max_attempts?: number
+          payload?: Json
+          run_after?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          chat_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          last_error?: string | null
+          locked_by?: string | null
+          locked_until?: string | null
+          max_attempts?: number
+          payload?: Json
+          run_after?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_jobs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bot_settings: {
         Row: {
+          agent_config: Json
           bot_name: string
           created_at: string
           cron_secret: string | null
           enabled: boolean
           id: string
+          model_fast: string | null
+          model_strong: string | null
           require_approval_all: boolean
           system_prompt: string
           updated_at: string
           webhook_secret: string | null
         }
         Insert: {
+          agent_config?: Json
           bot_name?: string
           created_at?: string
           cron_secret?: string | null
           enabled?: boolean
           id?: string
+          model_fast?: string | null
+          model_strong?: string | null
           require_approval_all?: boolean
           system_prompt?: string
           updated_at?: string
           webhook_secret?: string | null
         }
         Update: {
+          agent_config?: Json
           bot_name?: string
           created_at?: string
           cron_secret?: string | null
           enabled?: boolean
           id?: string
+          model_fast?: string | null
+          model_strong?: string | null
           require_approval_all?: boolean
           system_prompt?: string
           updated_at?: string
@@ -452,6 +570,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_bot_jobs: {
+        Args: { p_chat?: string; p_limit?: number; p_worker: string }
+        Returns: {
+          attempts: number
+          chat_id: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          last_error: string | null
+          locked_by: string | null
+          locked_until: string | null
+          max_attempts: number
+          payload: Json
+          run_after: string
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "bot_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       distinct_outbound_chats_last_hour: { Args: never; Returns: number }
       has_role: {
         Args: {
