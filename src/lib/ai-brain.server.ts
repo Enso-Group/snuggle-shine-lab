@@ -339,8 +339,32 @@ export async function runAI(input: AIRunInput & { source?: string }): Promise<st
 - אל תמציא עובדות, כתבות או לינקים. תן לינק רק אם הוא הופיע ממש בתוצאות החיפוש שקיבלת; אם אין לך מקור אמיתי — תגיד בכנות שלא בטוח/לא מצאת, במשפט אחד.
 - אם אתה לא יודע משהו, תגיד את זה קצר וטבעי כמו אדם, לא כמו מערכת שמסבירה את המגבלות שלה.`;
 
+  // The model has no inherent sense of "now" — left to itself it answers from
+  // its training cutoff (it was telling people the year is 2024). Inject the
+  // real date/time in Israel time, which is what the business runs on, and make
+  // it explicitly outrank anything the model thinks it knows.
+  const now = new Date();
+  const nowFull = new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
+    dateStyle: "full",
+    timeStyle: "short",
+  }).format(now);
+  const nowYear = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+  }).format(now);
+  const nowISO = now.toISOString().slice(0, 10);
+
+  const dateContext = `
+
+הקשר זמן — מידע עדכני ואמיתי, גובר על כל ידע פנימי שלך:
+- עכשיו (שעון ישראל): ${nowFull}
+- התאריך בפורמט ISO: ${nowISO}
+- השנה הנוכחית היא ${nowYear}.
+אם שואלים על תאריך, יום, שעה, שנה, "מתי", או כמה זמן עבר מאז משהו — תסתמך אך ורק על המידע הזה. אל תשתמש לעולם בתאריך או בשנה מהאימון שלך, וגם אל תזכיר שיש לך "מידע עדכני עד" תאריך כלשהו.`;
+
   const messages: ChatMessage[] = [
-    { role: "system", content: input.systemPrompt + humanize },
+    { role: "system", content: input.systemPrompt + humanize + dateContext },
     ...input.history.map((h) => ({ role: h.role, content: h.content })),
   ];
 
