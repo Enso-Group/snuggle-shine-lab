@@ -1,9 +1,50 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 
+// A cron that runs every few minutes — or misses a tick — shouldn't skip a
+// send for a whole week, so a run picks up anything due in this window.
+const GRACE_MINUTES = 10;
+
+// The day/time the scheduler evaluates against, in the timezone the weekly
+// schedule is defined in.
+function currentWindow(now: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dow = dayMap[wd];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const nowMinutes = Number(hh) * 60 + Number(mm);
+  const fromMinutes = Math.max(0, nowMinutes - GRACE_MINUTES);
+  const fromTime = `${pad(Math.floor(fromMinutes / 60))}:${pad(fromMinutes % 60)}:00`;
+  return { wd, hh, mm, dow, fromTime, toTime: `${hh}:${mm}:59` };
+}
+
 export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages")({
   server: {
     handlers: {
+      // Read-only health check: sends nothing, needs no secret, and exposes no
+      // secret values — only whether one is configured. Lets you confirm the
+      // deployed build and what day/time window the server is evaluating.
+      GET: async () => {
+        const w = currentWindow(new Date());
+        return Response.json({
+          ok: true,
+          info: "Scheduled-send cron endpoint. POST with x-cron-secret to trigger a run.",
+          now_israel: `${w.wd} ${w.hh}:${w.mm}`,
+          day_of_week: w.dow,
+          window: [w.fromTime, w.toTime],
+          grace_minutes: GRACE_MINUTES,
+          cron_secret_configured: !!process.env.CRON_SECRET,
+        });
+      },
       POST: async ({ request }) => {
         try {
           // Require a shared secret so only the configured cron can trigger sends.
@@ -30,30 +71,9 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             { auth: { autoRefreshToken: false, persistSession: false } },
           );
 
-          // Compute current day-of-week + HH:MM in Asia/Jerusalem.
           const now = new Date();
-          const parts = new Intl.DateTimeFormat("en-GB", {
-            timeZone: "Asia/Jerusalem",
-            weekday: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }).formatToParts(now);
-          const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
-          const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
-          const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
-          const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-          const dow = dayMap[wd];
+          const { wd, hh, mm, dow, fromTime, toTime } = currentWindow(now);
           if (dow === undefined) return new Response(JSON.stringify({ error: "weekday parse" }), { status: 500 });
-
-          // Match anything due in the last GRACE_MINUTES rather than only the
-          // current minute: a cron that runs every few minutes — or that misses
-          // a single tick — would otherwise skip the send for a whole week.
-          const GRACE_MINUTES = 10;
-          const pad = (n: number) => String(n).padStart(2, "0");
-          const nowMinutes = Number(hh) * 60 + Number(mm);
-          const fromMinutes = Math.max(0, nowMinutes - GRACE_MINUTES);
-          const fromTime = `${pad(Math.floor(fromMinutes / 60))}:${pad(fromMinutes % 60)}:00`;
 
           const { data: rows, error } = await supabase
             .from("scheduled_messages")
@@ -61,7 +81,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             .eq("enabled", true)
             .eq("day_of_week", dow)
             .gte("send_time", fromTime)
-            .lte("send_time", `${hh}:${mm}:59`);
+            .lte("send_time", toTime);
           if (error) throw new Error(error.message);
 
           // Each slot fires once a week, so anything already sent in the last
@@ -152,7 +172,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             JSON.stringify({
               now_israel: `${wd} ${hh}:${mm}`,
               day_of_week: dow,
-              window: [fromTime, `${hh}:${mm}:59`],
+              window: [fromTime, toTime],
               matched: rows?.length ?? 0,
               due_after_dedupe: due.length,
               global_approval: globalApproval,
