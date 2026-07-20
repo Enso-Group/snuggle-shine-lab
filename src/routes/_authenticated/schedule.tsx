@@ -18,14 +18,13 @@ import { cn } from "@/lib/utils";
 import { mergeTargets } from "@/lib/targets";
 import { DEMO_MODE, demoScheduledMessages, demoWhapiTargets, demoApprovals } from "@/lib/demo";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, Pencil, Check, X, ShieldQuestion, ChevronsUpDown, Sparkles, CalendarClock } from "lucide-react";
+import { Plus, Trash2, Pencil, Check, X, ShieldQuestion, ChevronsUpDown, Sparkles, CalendarClock } from "lucide-react";
 import { PageHeader, PageContent } from "@/components/page-header";
 import {
   listScheduledMessages,
   createScheduledMessage,
   updateScheduledMessage,
   deleteScheduledMessage,
-  sendScheduledNow,
   listPendingApprovals,
   approvePending,
   rejectPending,
@@ -66,7 +65,6 @@ function SchedulePage() {
   const createFn = useServerFn(createScheduledMessage);
   const updateFn = useServerFn(updateScheduledMessage);
   const deleteFn = useServerFn(deleteScheduledMessage);
-  const sendNowFn = useServerFn(sendScheduledNow);
   const targetsFn = useServerFn(listWhapiGroups);
   const pendingFn = useServerFn(listPendingApprovals);
   const approveFn = useServerFn(approvePending);
@@ -97,11 +95,6 @@ function SchedulePage() {
   const remove = useMutation({
     mutationFn: async (id: string) => { if (DEMO_MODE) return; return deleteFn({ data: { id } }); },
     onSuccess: () => { invalidate(); toast.success("Deleted"); },
-    onError: (e: any) => toast.error(e.message),
-  });
-  const sendNow = useMutation({
-    mutationFn: async (id: string) => { if (DEMO_MODE) return; return sendNowFn({ data: { id } }); },
-    onSuccess: () => { invalidate(); toast.success("Sent"); },
     onError: (e: any) => toast.error(e.message),
   });
   const toggle = useMutation({
@@ -242,9 +235,6 @@ function SchedulePage() {
                     <ScheduleDialog targets={allTargets} onSaved={invalidate} existing={r}>
                       <Button size="icon" variant="ghost" className="h-6 w-6"><Pencil className="size-3" /></Button>
                     </ScheduleDialog>
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => sendNow.mutate(r.id)} title="Send now">
-                      <Send className="size-3" />
-                    </Button>
                     <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => remove.mutate(r.id)}>
                       <Trash2 className="size-3" />
                     </Button>
