@@ -15,24 +15,15 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedUserManagementRouteImport } from './routes/_authenticated/user-management'
 import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedSendRouteImport } from './routes/_authenticated/send'
-import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
 import { Route as AuthenticatedPeopleRouteImport } from './routes/_authenticated/people'
 import { Route as AuthenticatedParticipantsRouteImport } from './routes/_authenticated/participants'
-import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
 import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
 import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedGroupsRouteImport } from './routes/_authenticated/groups'
-import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
-import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
-import { Route as AuthenticatedCandidatesRouteImport } from './routes/_authenticated/candidates'
 import { Route as AuthenticatedBrainRouteImport } from './routes/_authenticated/brain'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
-import { Route as AuthenticatedConversationsIndexRouteImport } from './routes/_authenticated/conversations.index'
-import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
+import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticated/activity'
 import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/whapi-webhook'
-import { Route as AuthenticatedConversationsIdRouteImport } from './routes/_authenticated/conversations.$id'
-import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
 import { Route as ApiPublicHooksSendScheduledMessagesRouteImport } from './routes/api/public/hooks/send-scheduled-messages'
 import { Route as ApiPublicHooksProcessBotJobsRouteImport } from './routes/api/public/hooks/process-bot-jobs'
 
@@ -66,16 +57,6 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedSendRoute = AuthenticatedSendRouteImport.update({
-  id: '/send',
-  path: '/send',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedScheduleRoute = AuthenticatedScheduleRouteImport.update({
-  id: '/schedule',
-  path: '/schedule',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedPeopleRoute = AuthenticatedPeopleRouteImport.update({
   id: '/people',
   path: '/people',
@@ -87,11 +68,6 @@ const AuthenticatedParticipantsRoute =
     path: '/participants',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedLogsRoute = AuthenticatedLogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedKnowledgeRoute = AuthenticatedKnowledgeRouteImport.update({
   id: '/knowledge',
   path: '/knowledge',
@@ -108,22 +84,6 @@ const AuthenticatedGroupsRoute = AuthenticatedGroupsRouteImport.update({
   path: '/groups',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedConversationsRoute =
-  AuthenticatedConversationsRouteImport.update({
-    id: '/conversations',
-    path: '/conversations',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedChatRoute = AuthenticatedChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedCandidatesRoute = AuthenticatedCandidatesRouteImport.update({
-  id: '/candidates',
-  path: '/candidates',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedBrainRoute = AuthenticatedBrainRouteImport.update({
   id: '/brain',
   path: '/brain',
@@ -134,34 +94,16 @@ const AuthenticatedApprovalsRoute = AuthenticatedApprovalsRouteImport.update({
   path: '/approvals',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedConversationsIndexRoute =
-  AuthenticatedConversationsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedConversationsRoute,
-  } as any)
-const AuthenticatedChatIndexRoute = AuthenticatedChatIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AuthenticatedChatRoute,
+const AuthenticatedActivityRoute = AuthenticatedActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const ApiPublicWhapiWebhookRoute = ApiPublicWhapiWebhookRouteImport.update({
   id: '/api/public/whapi-webhook',
   path: '/api/public/whapi-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedConversationsIdRoute =
-  AuthenticatedConversationsIdRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => AuthenticatedConversationsRoute,
-  } as any)
-const AuthenticatedChatThreadIdRoute =
-  AuthenticatedChatThreadIdRouteImport.update({
-    id: '/$threadId',
-    path: '/$threadId',
-    getParentRoute: () => AuthenticatedChatRoute,
-  } as any)
 const ApiPublicHooksSendScheduledMessagesRoute =
   ApiPublicHooksSendScheduledMessagesRouteImport.update({
     id: '/api/public/hooks/send-scheduled-messages',
@@ -178,52 +120,36 @@ const ApiPublicHooksProcessBotJobsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
+  '/activity': typeof AuthenticatedActivityRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/brain': typeof AuthenticatedBrainRoute
-  '/candidates': typeof AuthenticatedCandidatesRoute
-  '/chat': typeof AuthenticatedChatRouteWithChildren
-  '/conversations': typeof AuthenticatedConversationsRouteWithChildren
   '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
-  '/logs': typeof AuthenticatedLogsRoute
   '/participants': typeof AuthenticatedParticipantsRoute
   '/people': typeof AuthenticatedPeopleRoute
-  '/schedule': typeof AuthenticatedScheduleRoute
-  '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/user-management': typeof AuthenticatedUserManagementRoute
-  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
-  '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
-  '/chat/': typeof AuthenticatedChatIndexRoute
-  '/conversations/': typeof AuthenticatedConversationsIndexRoute
   '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
+  '/activity': typeof AuthenticatedActivityRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/brain': typeof AuthenticatedBrainRoute
-  '/candidates': typeof AuthenticatedCandidatesRoute
   '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
-  '/logs': typeof AuthenticatedLogsRoute
   '/participants': typeof AuthenticatedParticipantsRoute
   '/people': typeof AuthenticatedPeopleRoute
-  '/schedule': typeof AuthenticatedScheduleRoute
-  '/send': typeof AuthenticatedSendRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/user-management': typeof AuthenticatedUserManagementRoute
   '/': typeof AuthenticatedIndexRoute
-  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
-  '/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
-  '/chat': typeof AuthenticatedChatIndexRoute
-  '/conversations': typeof AuthenticatedConversationsIndexRoute
   '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
@@ -231,28 +157,19 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/activity': typeof AuthenticatedActivityRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
   '/_authenticated/brain': typeof AuthenticatedBrainRoute
-  '/_authenticated/candidates': typeof AuthenticatedCandidatesRoute
-  '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
-  '/_authenticated/conversations': typeof AuthenticatedConversationsRouteWithChildren
   '/_authenticated/groups': typeof AuthenticatedGroupsRoute
   '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
-  '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/participants': typeof AuthenticatedParticipantsRoute
   '/_authenticated/people': typeof AuthenticatedPeopleRoute
-  '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
-  '/_authenticated/send': typeof AuthenticatedSendRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/usage': typeof AuthenticatedUsageRoute
   '/_authenticated/user-management': typeof AuthenticatedUserManagementRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
-  '/_authenticated/conversations/$id': typeof AuthenticatedConversationsIdRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
-  '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
-  '/_authenticated/conversations/': typeof AuthenticatedConversationsIndexRoute
   '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
 }
@@ -261,80 +178,55 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/activity'
     | '/approvals'
     | '/brain'
-    | '/candidates'
-    | '/chat'
-    | '/conversations'
     | '/groups'
     | '/instructions'
     | '/knowledge'
-    | '/logs'
     | '/participants'
     | '/people'
-    | '/schedule'
-    | '/send'
     | '/settings'
     | '/usage'
     | '/user-management'
-    | '/chat/$threadId'
-    | '/conversations/$id'
     | '/api/public/whapi-webhook'
-    | '/chat/'
-    | '/conversations/'
     | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
+    | '/activity'
     | '/approvals'
     | '/brain'
-    | '/candidates'
     | '/groups'
     | '/instructions'
     | '/knowledge'
-    | '/logs'
     | '/participants'
     | '/people'
-    | '/schedule'
-    | '/send'
     | '/settings'
     | '/usage'
     | '/user-management'
     | '/'
-    | '/chat/$threadId'
-    | '/conversations/$id'
     | '/api/public/whapi-webhook'
-    | '/chat'
-    | '/conversations'
     | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
   id:
     | '__root__'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/activity'
     | '/_authenticated/approvals'
     | '/_authenticated/brain'
-    | '/_authenticated/candidates'
-    | '/_authenticated/chat'
-    | '/_authenticated/conversations'
     | '/_authenticated/groups'
     | '/_authenticated/instructions'
     | '/_authenticated/knowledge'
-    | '/_authenticated/logs'
     | '/_authenticated/participants'
     | '/_authenticated/people'
-    | '/_authenticated/schedule'
-    | '/_authenticated/send'
     | '/_authenticated/settings'
     | '/_authenticated/usage'
     | '/_authenticated/user-management'
     | '/_authenticated/'
-    | '/_authenticated/chat/$threadId'
-    | '/_authenticated/conversations/$id'
     | '/api/public/whapi-webhook'
-    | '/_authenticated/chat/'
-    | '/_authenticated/conversations/'
     | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
   fileRoutesById: FileRoutesById
@@ -391,20 +283,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/send': {
-      id: '/_authenticated/send'
-      path: '/send'
-      fullPath: '/send'
-      preLoaderRoute: typeof AuthenticatedSendRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/schedule': {
-      id: '/_authenticated/schedule'
-      path: '/schedule'
-      fullPath: '/schedule'
-      preLoaderRoute: typeof AuthenticatedScheduleRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/people': {
       id: '/_authenticated/people'
       path: '/people'
@@ -417,13 +295,6 @@ declare module '@tanstack/react-router' {
       path: '/participants'
       fullPath: '/participants'
       preLoaderRoute: typeof AuthenticatedParticipantsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/logs': {
-      id: '/_authenticated/logs'
-      path: '/logs'
-      fullPath: '/logs'
-      preLoaderRoute: typeof AuthenticatedLogsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/knowledge': {
@@ -447,27 +318,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedGroupsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/conversations': {
-      id: '/_authenticated/conversations'
-      path: '/conversations'
-      fullPath: '/conversations'
-      preLoaderRoute: typeof AuthenticatedConversationsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/chat': {
-      id: '/_authenticated/chat'
-      path: '/chat'
-      fullPath: '/chat'
-      preLoaderRoute: typeof AuthenticatedChatRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/candidates': {
-      id: '/_authenticated/candidates'
-      path: '/candidates'
-      fullPath: '/candidates'
-      preLoaderRoute: typeof AuthenticatedCandidatesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/brain': {
       id: '/_authenticated/brain'
       path: '/brain'
@@ -482,19 +332,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApprovalsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/conversations/': {
-      id: '/_authenticated/conversations/'
-      path: '/'
-      fullPath: '/conversations/'
-      preLoaderRoute: typeof AuthenticatedConversationsIndexRouteImport
-      parentRoute: typeof AuthenticatedConversationsRoute
-    }
-    '/_authenticated/chat/': {
-      id: '/_authenticated/chat/'
-      path: '/'
-      fullPath: '/chat/'
-      preLoaderRoute: typeof AuthenticatedChatIndexRouteImport
-      parentRoute: typeof AuthenticatedChatRoute
+    '/_authenticated/activity': {
+      id: '/_authenticated/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof AuthenticatedActivityRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/api/public/whapi-webhook': {
       id: '/api/public/whapi-webhook'
@@ -502,20 +345,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/whapi-webhook'
       preLoaderRoute: typeof ApiPublicWhapiWebhookRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/conversations/$id': {
-      id: '/_authenticated/conversations/$id'
-      path: '/$id'
-      fullPath: '/conversations/$id'
-      preLoaderRoute: typeof AuthenticatedConversationsIdRouteImport
-      parentRoute: typeof AuthenticatedConversationsRoute
-    }
-    '/_authenticated/chat/$threadId': {
-      id: '/_authenticated/chat/$threadId'
-      path: '/$threadId'
-      fullPath: '/chat/$threadId'
-      preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
-      parentRoute: typeof AuthenticatedChatRoute
     }
     '/api/public/hooks/send-scheduled-messages': {
       id: '/api/public/hooks/send-scheduled-messages'
@@ -534,49 +363,15 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AuthenticatedChatRouteChildren {
-  AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
-  AuthenticatedChatIndexRoute: typeof AuthenticatedChatIndexRoute
-}
-
-const AuthenticatedChatRouteChildren: AuthenticatedChatRouteChildren = {
-  AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
-  AuthenticatedChatIndexRoute: AuthenticatedChatIndexRoute,
-}
-
-const AuthenticatedChatRouteWithChildren =
-  AuthenticatedChatRoute._addFileChildren(AuthenticatedChatRouteChildren)
-
-interface AuthenticatedConversationsRouteChildren {
-  AuthenticatedConversationsIdRoute: typeof AuthenticatedConversationsIdRoute
-  AuthenticatedConversationsIndexRoute: typeof AuthenticatedConversationsIndexRoute
-}
-
-const AuthenticatedConversationsRouteChildren: AuthenticatedConversationsRouteChildren =
-  {
-    AuthenticatedConversationsIdRoute: AuthenticatedConversationsIdRoute,
-    AuthenticatedConversationsIndexRoute: AuthenticatedConversationsIndexRoute,
-  }
-
-const AuthenticatedConversationsRouteWithChildren =
-  AuthenticatedConversationsRoute._addFileChildren(
-    AuthenticatedConversationsRouteChildren,
-  )
-
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedActivityRoute: typeof AuthenticatedActivityRoute
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
   AuthenticatedBrainRoute: typeof AuthenticatedBrainRoute
-  AuthenticatedCandidatesRoute: typeof AuthenticatedCandidatesRoute
-  AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
-  AuthenticatedConversationsRoute: typeof AuthenticatedConversationsRouteWithChildren
   AuthenticatedGroupsRoute: typeof AuthenticatedGroupsRoute
   AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
-  AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedParticipantsRoute: typeof AuthenticatedParticipantsRoute
   AuthenticatedPeopleRoute: typeof AuthenticatedPeopleRoute
-  AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
-  AuthenticatedSendRoute: typeof AuthenticatedSendRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
   AuthenticatedUserManagementRoute: typeof AuthenticatedUserManagementRoute
@@ -584,19 +379,14 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedActivityRoute: AuthenticatedActivityRoute,
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
   AuthenticatedBrainRoute: AuthenticatedBrainRoute,
-  AuthenticatedCandidatesRoute: AuthenticatedCandidatesRoute,
-  AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
-  AuthenticatedConversationsRoute: AuthenticatedConversationsRouteWithChildren,
   AuthenticatedGroupsRoute: AuthenticatedGroupsRoute,
   AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
-  AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedParticipantsRoute: AuthenticatedParticipantsRoute,
   AuthenticatedPeopleRoute: AuthenticatedPeopleRoute,
-  AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
-  AuthenticatedSendRoute: AuthenticatedSendRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedUsageRoute: AuthenticatedUsageRoute,
   AuthenticatedUserManagementRoute: AuthenticatedUserManagementRoute,

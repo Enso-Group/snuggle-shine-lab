@@ -10,18 +10,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  MessageSquare,
-  Send,
+  Activity,
   Settings as SettingsIcon,
-  ScrollText,
-  LayoutDashboard,
   LogOut,
   Bot,
   Users,
-  CalendarClock,
   Inbox,
   Gauge,
-  UserSearch,
   BookOpen,
   UserCog,
   ShieldX,
@@ -49,7 +44,7 @@ export const Route = createFileRoute("/_authenticated")({
     const isAdmin = isAdminEmail(email);
     let invited = isAdmin;
     if (!invited && email) {
-      const { data: inviteRow } = await (supabase as any)
+      const { data: inviteRow } = await supabase
         .from("invited_emails")
         .select("email")
         .eq("email", email)
@@ -62,19 +57,17 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
+// Interim nav during the restructure: Activity is home; Group Manager,
+// People Memory, Bot Brain, Knowledge Base and Participants remain reachable
+// until their replacements (Command Center, Profiles, Behind the Scenes) land.
 const NAV = [
-  { to: "/", label: "Overview", icon: LayoutDashboard },
-  { to: "/brain", label: "Bot Brain", icon: BrainCircuit },
-  { to: "/conversations", label: "Chats", icon: MessageSquare },
-  { to: "/participants", label: "Participants", icon: Users },
-  { to: "/chat", label: "AI Chat", icon: Bot },
-  { to: "/send", label: "Send Message", icon: Send },
-  { to: "/schedule", label: "Weekly Scheduler", icon: CalendarClock },
-  { to: "/approvals", label: "Approvals", icon: Inbox },
+  { to: "/activity", label: "Activity", icon: Activity },
   { to: "/groups", label: "Group Manager", icon: Users2 },
-  { to: "/knowledge", label: "Knowledge Base", icon: Library },
   { to: "/people", label: "People Memory", icon: Brain },
-  { to: "/candidates", label: "Candidates", icon: UserSearch },
+  { to: "/approvals", label: "Approvals", icon: Inbox },
+  { to: "/brain", label: "Bot Brain", icon: BrainCircuit },
+  { to: "/knowledge", label: "Knowledge Base", icon: Library },
+  { to: "/participants", label: "Participants", icon: Users },
 ] as const;
 
 // Behind-the-scenes / system pages — admin only.
@@ -83,7 +76,6 @@ const SYSTEM_NAV = [
   { to: "/instructions", label: "Instructions", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
   { to: "/usage", label: "Usage & Costs", icon: Gauge },
-  { to: "/logs", label: "Logs", icon: ScrollText },
 ] as const;
 
 function AuthedLayout() {
@@ -144,7 +136,7 @@ function AuthedLayout() {
         <nav className="flex-1 p-2 space-y-1 overflow-auto">
           {NAV.map((n) => {
             const Icon = n.icon;
-            const active = pathname === n.to || (n.to !== "/" && pathname.startsWith(n.to));
+            const active = pathname.startsWith(n.to);
             return (
               <Link
                 key={n.to}
