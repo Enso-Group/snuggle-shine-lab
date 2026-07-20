@@ -53,37 +53,80 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
       // deployed build and what day/time window the server is evaluating.
       GET: async () => {
         const w = currentWindow(new Date());
+        // Report which secret sources exist — booleans only, never values.
+        let dbSecretConfigured = false;
+        try {
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            { auth: { autoRefreshToken: false, persistSession: false } },
+          );
+          const { data } = await supabase
+            .from("bot_settings")
+            .select("cron_secret")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          dbSecretConfigured = !!(data as any)?.cron_secret;
+        } catch {
+          // diagnostics must never take the endpoint down
+        }
         return Response.json({
           ok: true,
           info: "Scheduled-send cron endpoint. POST with x-cron-secret to trigger a run.",
+          build: "cron-auth-v2",
           now_israel: `${w.wd} ${w.hh}:${w.mm}`,
           day_of_week: w.dow,
           window: [w.fromTime, w.toTime],
           grace_minutes: GRACE_MINUTES,
           dedupe_minutes: DEDUPE_MINUTES,
-          cron_secret_configured: !!process.env.CRON_SECRET,
+          env_secret_configured: !!process.env.CRON_SECRET,
+          db_secret_configured: dbSecretConfigured,
           last_cron_post: lastPost,
         });
       },
       POST: async ({ request }) => {
         try {
-          // Require a shared secret so only the configured cron can trigger sends.
-          const cronSecret = process.env.CRON_SECRET;
-          if (cronSecret) {
-            const url = new URL(request.url);
-            const provided =
-              request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
-            const authorized = provided === cronSecret;
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            { auth: { autoRefreshToken: false, persistSession: false } },
+          );
+
+          // One settings read serves auth, the approval gate, and the AI prompt.
+          const { data: botSettings } = await supabase
+            .from("bot_settings")
+            .select("require_approval_all, system_prompt, cron_secret")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          // The expected secret may live in two places:
+          //  - env CRON_SECRET — only refreshes on a redeploy/restart, so it can
+          //    silently go stale after a secret update;
+          //  - bot_settings.cron_secret — updatable instantly, and the pg_cron
+          //    job reads the SAME row when it fires, so the value the cron sends
+          //    and the value we expect cannot drift apart.
+          // Accept a match against either, so both wiring styles keep working.
+          const url = new URL(request.url);
+          const provided =
+            request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
+          const envSecret = process.env.CRON_SECRET || "";
+          const dbSecret = (botSettings as any)?.cron_secret || "";
+          if (envSecret || dbSecret) {
+            const authorized =
+              (!!envSecret && provided === envSecret) ||
+              (!!dbSecret && provided === dbSecret);
             lastPost = {
               at: new Date().toISOString(),
               authorized,
               header_present: provided !== null,
               provided_length: provided?.length ?? 0,
-              expected_length: cronSecret.length,
+              expected_length: (envSecret || dbSecret).length,
             };
             if (!authorized) {
               console.error(
-                `[cron] rejected — header_present=${provided !== null} provided_len=${provided?.length ?? 0} expected_len=${cronSecret.length}`,
+                `[cron] rejected — header_present=${provided !== null} provided_len=${provided?.length ?? 0} env_len=${envSecret.length} db_len=${dbSecret.length}`,
               );
               return new Response(JSON.stringify({ error: "forbidden" }), {
                 status: 403,
@@ -92,15 +135,9 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             }
           } else {
             console.warn(
-              "[cron] no CRON_SECRET configured — scheduled-send endpoint is UNAUTHENTICATED.",
+              "[cron] no cron secret configured (env or DB) — endpoint is UNAUTHENTICATED.",
             );
           }
-
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!,
-            { auth: { autoRefreshToken: false, persistSession: false } },
-          );
 
           const now = new Date();
           const { wd, hh, mm, dow, fromTime, toTime } = currentWindow(now);
@@ -119,13 +156,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < dedupeTs);
 
           // Global approval gate — when on, every scheduled send is queued too.
-          // Also grab the system prompt for AI-mode generation.
-          const { data: botSettings } = await supabase
-            .from("bot_settings")
-            .select("require_approval_all, system_prompt")
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle();
+          // (Settings were loaded once, above, alongside the auth check.)
           const globalApproval = !!botSettings?.require_approval_all;
           const systemPrompt = botSettings?.system_prompt ?? "אתה עוזר חכם בעברית.";
 
