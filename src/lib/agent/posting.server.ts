@@ -15,6 +15,7 @@ import { logDecision } from "./decisions.server";
 import { loadKnowledge } from "./kb.server";
 import { groupPromptBlock, listEnabledGroupProfiles, type GroupProfile } from "./groups.server";
 import { parseJsonLoose } from "@/lib/llm.server";
+import { approvalMatchesPost } from "./approval-match";
 import { computeDueSlots } from "./posting-schedule";
 import { buildHumanizeRules, buildDateContext } from "./prompts.server";
 import { sanitizeParts } from "./stages.server";
@@ -103,25 +104,10 @@ async function reconcileDecidedApprovals(deps: AgentDeps): Promise<void> {
     .in("status", ["pending", "approved", "rejected"]);
   if (!approvals?.length) return;
 
-  const matches = (
-    a: {
-      planned_post_id?: string | null;
-      target_chat_id: string;
-      body: string;
-      created_at: string;
-    },
-    p: { id: string; group_chat_id: string; body: string | null; created_at: string },
-  ) =>
-    a.planned_post_id
-      ? a.planned_post_id === p.id
-      : a.target_chat_id === p.group_chat_id &&
-        a.created_at >= p.created_at &&
-        (p.body ?? "").includes(a.body);
-
   for (const post of queued) {
-    if (approvals.some((a) => a.status === "pending" && matches(a, post))) continue;
+    if (approvals.some((a) => a.status === "pending" && approvalMatchesPost(a, post))) continue;
     const decided = approvals
-      .filter((a) => a.status !== "pending" && matches(a, post))
+      .filter((a) => a.status !== "pending" && approvalMatchesPost(a, post))
       .sort((a, b) => (b.decided_at ?? "").localeCompare(a.decided_at ?? ""))[0];
     if (!decided) continue;
     await deps.supabase
