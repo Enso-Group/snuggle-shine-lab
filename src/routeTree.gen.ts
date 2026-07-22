@@ -12,14 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedUserManagementRouteImport } from './routes/_authenticated/user-management'
-import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedSystemRouteImport } from './routes/_authenticated/system'
 import { Route as AuthenticatedProfilesRouteImport } from './routes/_authenticated/profiles'
-import { Route as AuthenticatedParticipantsRouteImport } from './routes/_authenticated/participants'
-import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
-import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
-import { Route as AuthenticatedBrainRouteImport } from './routes/_authenticated/brain'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticated/activity'
 import { Route as ApiPublicWhapiWebhookRouteImport } from './routes/api/public/whapi-webhook'
@@ -40,47 +34,14 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedUserManagementRoute =
-  AuthenticatedUserManagementRouteImport.update({
-    id: '/user-management',
-    path: '/user-management',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedUsageRoute = AuthenticatedUsageRouteImport.update({
-  id: '/usage',
-  path: '/usage',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AuthenticatedSystemRoute = AuthenticatedSystemRouteImport.update({
+  id: '/system',
+  path: '/system',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedProfilesRoute = AuthenticatedProfilesRouteImport.update({
   id: '/profiles',
   path: '/profiles',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedParticipantsRoute =
-  AuthenticatedParticipantsRouteImport.update({
-    id: '/participants',
-    path: '/participants',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedKnowledgeRoute = AuthenticatedKnowledgeRouteImport.update({
-  id: '/knowledge',
-  path: '/knowledge',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedInstructionsRoute =
-  AuthenticatedInstructionsRouteImport.update({
-    id: '/instructions',
-    path: '/instructions',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedBrainRoute = AuthenticatedBrainRouteImport.update({
-  id: '/brain',
-  path: '/brain',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedApprovalsRoute = AuthenticatedApprovalsRouteImport.update({
@@ -116,14 +77,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/activity': typeof AuthenticatedActivityRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
-  '/brain': typeof AuthenticatedBrainRoute
-  '/instructions': typeof AuthenticatedInstructionsRoute
-  '/knowledge': typeof AuthenticatedKnowledgeRoute
-  '/participants': typeof AuthenticatedParticipantsRoute
   '/profiles': typeof AuthenticatedProfilesRoute
-  '/settings': typeof AuthenticatedSettingsRoute
-  '/usage': typeof AuthenticatedUsageRoute
-  '/user-management': typeof AuthenticatedUserManagementRoute
+  '/system': typeof AuthenticatedSystemRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
   '/api/public/hooks/send-scheduled-messages': typeof ApiPublicHooksSendScheduledMessagesRoute
@@ -132,14 +87,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/activity': typeof AuthenticatedActivityRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
-  '/brain': typeof AuthenticatedBrainRoute
-  '/instructions': typeof AuthenticatedInstructionsRoute
-  '/knowledge': typeof AuthenticatedKnowledgeRoute
-  '/participants': typeof AuthenticatedParticipantsRoute
   '/profiles': typeof AuthenticatedProfilesRoute
-  '/settings': typeof AuthenticatedSettingsRoute
-  '/usage': typeof AuthenticatedUsageRoute
-  '/user-management': typeof AuthenticatedUserManagementRoute
+  '/system': typeof AuthenticatedSystemRoute
   '/': typeof AuthenticatedIndexRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
@@ -151,14 +100,8 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/activity': typeof AuthenticatedActivityRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
-  '/_authenticated/brain': typeof AuthenticatedBrainRoute
-  '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
-  '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
-  '/_authenticated/participants': typeof AuthenticatedParticipantsRoute
   '/_authenticated/profiles': typeof AuthenticatedProfilesRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
-  '/_authenticated/usage': typeof AuthenticatedUsageRoute
-  '/_authenticated/user-management': typeof AuthenticatedUserManagementRoute
+  '/_authenticated/system': typeof AuthenticatedSystemRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/api/public/whapi-webhook': typeof ApiPublicWhapiWebhookRoute
   '/api/public/hooks/process-bot-jobs': typeof ApiPublicHooksProcessBotJobsRoute
@@ -171,14 +114,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/activity'
     | '/approvals'
-    | '/brain'
-    | '/instructions'
-    | '/knowledge'
-    | '/participants'
     | '/profiles'
-    | '/settings'
-    | '/usage'
-    | '/user-management'
+    | '/system'
     | '/api/public/whapi-webhook'
     | '/api/public/hooks/process-bot-jobs'
     | '/api/public/hooks/send-scheduled-messages'
@@ -187,14 +124,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/activity'
     | '/approvals'
-    | '/brain'
-    | '/instructions'
-    | '/knowledge'
-    | '/participants'
     | '/profiles'
-    | '/settings'
-    | '/usage'
-    | '/user-management'
+    | '/system'
     | '/'
     | '/api/public/whapi-webhook'
     | '/api/public/hooks/process-bot-jobs'
@@ -205,14 +136,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/activity'
     | '/_authenticated/approvals'
-    | '/_authenticated/brain'
-    | '/_authenticated/instructions'
-    | '/_authenticated/knowledge'
-    | '/_authenticated/participants'
     | '/_authenticated/profiles'
-    | '/_authenticated/settings'
-    | '/_authenticated/usage'
-    | '/_authenticated/user-management'
+    | '/_authenticated/system'
     | '/_authenticated/'
     | '/api/public/whapi-webhook'
     | '/api/public/hooks/process-bot-jobs'
@@ -250,25 +175,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/user-management': {
-      id: '/_authenticated/user-management'
-      path: '/user-management'
-      fullPath: '/user-management'
-      preLoaderRoute: typeof AuthenticatedUserManagementRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/usage': {
-      id: '/_authenticated/usage'
-      path: '/usage'
-      fullPath: '/usage'
-      preLoaderRoute: typeof AuthenticatedUsageRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+    '/_authenticated/system': {
+      id: '/_authenticated/system'
+      path: '/system'
+      fullPath: '/system'
+      preLoaderRoute: typeof AuthenticatedSystemRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/profiles': {
@@ -276,34 +187,6 @@ declare module '@tanstack/react-router' {
       path: '/profiles'
       fullPath: '/profiles'
       preLoaderRoute: typeof AuthenticatedProfilesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/participants': {
-      id: '/_authenticated/participants'
-      path: '/participants'
-      fullPath: '/participants'
-      preLoaderRoute: typeof AuthenticatedParticipantsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/knowledge': {
-      id: '/_authenticated/knowledge'
-      path: '/knowledge'
-      fullPath: '/knowledge'
-      preLoaderRoute: typeof AuthenticatedKnowledgeRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/instructions': {
-      id: '/_authenticated/instructions'
-      path: '/instructions'
-      fullPath: '/instructions'
-      preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/brain': {
-      id: '/_authenticated/brain'
-      path: '/brain'
-      fullPath: '/brain'
-      preLoaderRoute: typeof AuthenticatedBrainRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/approvals': {
@@ -347,28 +230,16 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedActivityRoute: typeof AuthenticatedActivityRoute
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
-  AuthenticatedBrainRoute: typeof AuthenticatedBrainRoute
-  AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
-  AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
-  AuthenticatedParticipantsRoute: typeof AuthenticatedParticipantsRoute
   AuthenticatedProfilesRoute: typeof AuthenticatedProfilesRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
-  AuthenticatedUserManagementRoute: typeof AuthenticatedUserManagementRoute
+  AuthenticatedSystemRoute: typeof AuthenticatedSystemRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedActivityRoute: AuthenticatedActivityRoute,
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
-  AuthenticatedBrainRoute: AuthenticatedBrainRoute,
-  AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
-  AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
-  AuthenticatedParticipantsRoute: AuthenticatedParticipantsRoute,
   AuthenticatedProfilesRoute: AuthenticatedProfilesRoute,
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedUsageRoute: AuthenticatedUsageRoute,
-  AuthenticatedUserManagementRoute: AuthenticatedUserManagementRoute,
+  AuthenticatedSystemRoute: AuthenticatedSystemRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 

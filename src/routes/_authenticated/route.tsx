@@ -11,19 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Activity,
-  Settings as SettingsIcon,
   LayoutDashboard,
   LogOut,
   Bot,
-  Users,
   Inbox,
-  Gauge,
-  BookOpen,
-  UserCog,
   ShieldX,
-  Library,
   Users2,
-  BrainCircuit,
+  Wrench,
 } from "lucide-react";
 import { isAdminEmail } from "@/lib/admin";
 
@@ -57,30 +51,19 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
-// Interim nav during the restructure: Bot Brain, Knowledge Base and
-// Participants remain reachable until Behind the Scenes (step 4) absorbs them.
+// The final five-page structure.
 const NAV = [
   { to: "/", label: "Command Center", icon: LayoutDashboard },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/profiles", label: "Profiles", icon: Users2 },
   { to: "/approvals", label: "Approvals", icon: Inbox },
-  { to: "/brain", label: "Bot Brain", icon: BrainCircuit },
-  { to: "/knowledge", label: "Knowledge Base", icon: Library },
-  { to: "/participants", label: "Participants", icon: Users },
-] as const;
-
-// Behind-the-scenes / system pages — admin only.
-const SYSTEM_NAV = [
-  { to: "/user-management", label: "User Management", icon: UserCog },
-  { to: "/instructions", label: "Instructions", icon: BookOpen },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
-  { to: "/usage", label: "Usage & Costs", icon: Gauge },
+  { to: "/system", label: "Behind the Scenes", icon: Wrench },
 ] as const;
 
 function AuthedLayout() {
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { isAdmin, invited, user } = Route.useRouteContext();
+  const { invited, user } = Route.useRouteContext();
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -151,33 +134,6 @@ function AuthedLayout() {
               </Link>
             );
           })}
-
-          {isAdmin && (
-            <>
-              <div className="pt-4 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/60">
-                Behind the scenes
-              </div>
-              {SYSTEM_NAV.map((n) => {
-                const Icon = n.icon;
-                const active =
-                  pathname === n.to || ((n.to as string) !== "/" && pathname.startsWith(n.to));
-                return (
-                  <Link
-                    key={n.to}
-                    to={n.to}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                      active
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm"
-                        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                    }`}
-                  >
-                    <Icon className="size-4" />
-                    {n.label}
-                  </Link>
-                );
-              })}
-            </>
-          )}
         </nav>
         <div className="p-2 border-t border-sidebar-border">
           <Button
