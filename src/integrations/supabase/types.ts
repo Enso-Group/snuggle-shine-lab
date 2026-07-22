@@ -862,7 +862,6 @@ export type Database = {
           created_at: string
           decided_at: string | null
           id: string
-          planned_post_id: string | null
           poll: Json | null
           scheduled_message_id: string | null
           source: string
@@ -877,7 +876,6 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           id?: string
-          planned_post_id?: string | null
           poll?: Json | null
           scheduled_message_id?: string | null
           source?: string
@@ -892,7 +890,6 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           id?: string
-          planned_post_id?: string | null
           poll?: Json | null
           scheduled_message_id?: string | null
           source?: string
@@ -907,13 +904,6 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scheduled_approvals_planned_post_id_fkey"
-            columns: ["planned_post_id"]
-            isOneToOne: false
-            referencedRelation: "planned_posts"
             referencedColumns: ["id"]
           },
           {
