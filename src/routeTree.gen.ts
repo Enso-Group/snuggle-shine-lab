@@ -15,11 +15,10 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedUserManagementRouteImport } from './routes/_authenticated/user-management'
 import { Route as AuthenticatedUsageRouteImport } from './routes/_authenticated/usage'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedPeopleRouteImport } from './routes/_authenticated/people'
+import { Route as AuthenticatedProfilesRouteImport } from './routes/_authenticated/profiles'
 import { Route as AuthenticatedParticipantsRouteImport } from './routes/_authenticated/participants'
 import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
 import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
-import { Route as AuthenticatedGroupsRouteImport } from './routes/_authenticated/groups'
 import { Route as AuthenticatedBrainRouteImport } from './routes/_authenticated/brain'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticated/activity'
@@ -57,9 +56,9 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedPeopleRoute = AuthenticatedPeopleRouteImport.update({
-  id: '/people',
-  path: '/people',
+const AuthenticatedProfilesRoute = AuthenticatedProfilesRouteImport.update({
+  id: '/profiles',
+  path: '/profiles',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedParticipantsRoute =
@@ -79,11 +78,6 @@ const AuthenticatedInstructionsRoute =
     path: '/instructions',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedGroupsRoute = AuthenticatedGroupsRouteImport.update({
-  id: '/groups',
-  path: '/groups',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedBrainRoute = AuthenticatedBrainRouteImport.update({
   id: '/brain',
   path: '/brain',
@@ -123,11 +117,10 @@ export interface FileRoutesByFullPath {
   '/activity': typeof AuthenticatedActivityRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/brain': typeof AuthenticatedBrainRoute
-  '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/participants': typeof AuthenticatedParticipantsRoute
-  '/people': typeof AuthenticatedPeopleRoute
+  '/profiles': typeof AuthenticatedProfilesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/user-management': typeof AuthenticatedUserManagementRoute
@@ -140,11 +133,10 @@ export interface FileRoutesByTo {
   '/activity': typeof AuthenticatedActivityRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/brain': typeof AuthenticatedBrainRoute
-  '/groups': typeof AuthenticatedGroupsRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/participants': typeof AuthenticatedParticipantsRoute
-  '/people': typeof AuthenticatedPeopleRoute
+  '/profiles': typeof AuthenticatedProfilesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/usage': typeof AuthenticatedUsageRoute
   '/user-management': typeof AuthenticatedUserManagementRoute
@@ -160,11 +152,10 @@ export interface FileRoutesById {
   '/_authenticated/activity': typeof AuthenticatedActivityRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
   '/_authenticated/brain': typeof AuthenticatedBrainRoute
-  '/_authenticated/groups': typeof AuthenticatedGroupsRoute
   '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
   '/_authenticated/participants': typeof AuthenticatedParticipantsRoute
-  '/_authenticated/people': typeof AuthenticatedPeopleRoute
+  '/_authenticated/profiles': typeof AuthenticatedProfilesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/usage': typeof AuthenticatedUsageRoute
   '/_authenticated/user-management': typeof AuthenticatedUserManagementRoute
@@ -181,11 +172,10 @@ export interface FileRouteTypes {
     | '/activity'
     | '/approvals'
     | '/brain'
-    | '/groups'
     | '/instructions'
     | '/knowledge'
     | '/participants'
-    | '/people'
+    | '/profiles'
     | '/settings'
     | '/usage'
     | '/user-management'
@@ -198,11 +188,10 @@ export interface FileRouteTypes {
     | '/activity'
     | '/approvals'
     | '/brain'
-    | '/groups'
     | '/instructions'
     | '/knowledge'
     | '/participants'
-    | '/people'
+    | '/profiles'
     | '/settings'
     | '/usage'
     | '/user-management'
@@ -217,11 +206,10 @@ export interface FileRouteTypes {
     | '/_authenticated/activity'
     | '/_authenticated/approvals'
     | '/_authenticated/brain'
-    | '/_authenticated/groups'
     | '/_authenticated/instructions'
     | '/_authenticated/knowledge'
     | '/_authenticated/participants'
-    | '/_authenticated/people'
+    | '/_authenticated/profiles'
     | '/_authenticated/settings'
     | '/_authenticated/usage'
     | '/_authenticated/user-management'
@@ -283,11 +271,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/people': {
-      id: '/_authenticated/people'
-      path: '/people'
-      fullPath: '/people'
-      preLoaderRoute: typeof AuthenticatedPeopleRouteImport
+    '/_authenticated/profiles': {
+      id: '/_authenticated/profiles'
+      path: '/profiles'
+      fullPath: '/profiles'
+      preLoaderRoute: typeof AuthenticatedProfilesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/participants': {
@@ -309,13 +297,6 @@ declare module '@tanstack/react-router' {
       path: '/instructions'
       fullPath: '/instructions'
       preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/groups': {
-      id: '/_authenticated/groups'
-      path: '/groups'
-      fullPath: '/groups'
-      preLoaderRoute: typeof AuthenticatedGroupsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/brain': {
@@ -367,11 +348,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedActivityRoute: typeof AuthenticatedActivityRoute
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
   AuthenticatedBrainRoute: typeof AuthenticatedBrainRoute
-  AuthenticatedGroupsRoute: typeof AuthenticatedGroupsRoute
   AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
   AuthenticatedParticipantsRoute: typeof AuthenticatedParticipantsRoute
-  AuthenticatedPeopleRoute: typeof AuthenticatedPeopleRoute
+  AuthenticatedProfilesRoute: typeof AuthenticatedProfilesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedUsageRoute: typeof AuthenticatedUsageRoute
   AuthenticatedUserManagementRoute: typeof AuthenticatedUserManagementRoute
@@ -382,11 +362,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedActivityRoute: AuthenticatedActivityRoute,
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
   AuthenticatedBrainRoute: AuthenticatedBrainRoute,
-  AuthenticatedGroupsRoute: AuthenticatedGroupsRoute,
   AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
   AuthenticatedParticipantsRoute: AuthenticatedParticipantsRoute,
-  AuthenticatedPeopleRoute: AuthenticatedPeopleRoute,
+  AuthenticatedProfilesRoute: AuthenticatedProfilesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedUsageRoute: AuthenticatedUsageRoute,
   AuthenticatedUserManagementRoute: AuthenticatedUserManagementRoute,

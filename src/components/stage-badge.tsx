@@ -20,6 +20,7 @@ export const STAGE_LABELS: Record<string, { label: string; cls: string }> = {
   welcome: { label: "Welcome", cls: "bg-lime-500/15 text-lime-600 dark:text-lime-400" },
   post: { label: "Post", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
   insight: { label: "Insight", cls: "bg-slate-500/15 text-slate-600 dark:text-slate-400" },
+  config: { label: "Config", cls: "bg-blue-500/15 text-blue-600 dark:text-blue-400" },
   skipped: { label: "Skipped", cls: "bg-muted text-muted-foreground" },
   error: { label: "Error", cls: "bg-rose-500/15 text-rose-600 dark:text-rose-400" },
 };

@@ -155,7 +155,7 @@ export const getGroupActivity = createServerFn({ method: "GET" })
     const [posts, actions, insights, stats, memo] = await Promise.all([
       supabaseAdmin
         .from("planned_posts")
-        .select("id, source, pillar, body, status, sent_at, engagement, created_at")
+        .select("id, source, pillar, prompt, body, status, sent_at, engagement, created_at")
         .eq("group_chat_id", data.chat_id)
         .order("created_at", { ascending: false })
         .limit(10),

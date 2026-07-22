@@ -16,6 +16,7 @@ import {
   Inbox,
   MessageCircle,
   Newspaper,
+  Settings2,
   Shield,
   Timer,
   UserPlus,
@@ -41,6 +42,7 @@ const KIND_META: Record<ActivityKind, { label: string; icon: typeof MessageCircl
     welcome: { label: "Welcomes", icon: UserPlus, cls: "text-lime-600 dark:text-lime-400" },
     follow_up: { label: "Follow-ups", icon: Timer, cls: "text-cyan-600 dark:text-cyan-400" },
     insight: { label: "Insights", icon: ActivityIcon, cls: "text-slate-500" },
+    config: { label: "Config changes", icon: Settings2, cls: "text-blue-600 dark:text-blue-400" },
     new_contact: {
       label: "New contacts",
       icon: UserPlus,
@@ -59,6 +61,7 @@ const FILTERS: Array<{ value: string; label: string }> = [
   { value: "follow_up", label: "Follow-ups" },
   { value: "new_contact", label: "New contacts" },
   { value: "gate", label: "Reply gate" },
+  { value: "config", label: "Config changes" },
   { value: "alert", label: "Alerts" },
   { value: "error", label: "Errors" },
 ];

@@ -26,6 +26,7 @@ export type DecisionEntry = {
     | "welcome"
     | "post"
     | "insight"
+    | "config"
     | "error";
   status?: "ok" | "skip" | "error";
   summary?: string;

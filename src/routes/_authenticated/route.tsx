@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   Activity,
   Settings as SettingsIcon,
+  LayoutDashboard,
   LogOut,
   Bot,
   Users,
@@ -21,7 +22,6 @@ import {
   UserCog,
   ShieldX,
   Library,
-  Brain,
   Users2,
   BrainCircuit,
 } from "lucide-react";
@@ -57,13 +57,12 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
-// Interim nav during the restructure: Activity is home; Group Manager,
-// People Memory, Bot Brain, Knowledge Base and Participants remain reachable
-// until their replacements (Command Center, Profiles, Behind the Scenes) land.
+// Interim nav during the restructure: Bot Brain, Knowledge Base and
+// Participants remain reachable until Behind the Scenes (step 4) absorbs them.
 const NAV = [
+  { to: "/", label: "Command Center", icon: LayoutDashboard },
   { to: "/activity", label: "Activity", icon: Activity },
-  { to: "/groups", label: "Group Manager", icon: Users2 },
-  { to: "/people", label: "People Memory", icon: Brain },
+  { to: "/profiles", label: "Profiles", icon: Users2 },
   { to: "/approvals", label: "Approvals", icon: Inbox },
   { to: "/brain", label: "Bot Brain", icon: BrainCircuit },
   { to: "/knowledge", label: "Knowledge Base", icon: Library },
@@ -136,7 +135,7 @@ function AuthedLayout() {
         <nav className="flex-1 p-2 space-y-1 overflow-auto">
           {NAV.map((n) => {
             const Icon = n.icon;
-            const active = pathname.startsWith(n.to);
+            const active = n.to === "/" ? pathname === "/" : pathname.startsWith(n.to);
             return (
               <Link
                 key={n.to}

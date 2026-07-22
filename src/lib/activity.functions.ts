@@ -20,6 +20,7 @@ export type ActivityKind =
   | "welcome"
   | "follow_up"
   | "insight"
+  | "config"
   | "new_contact"
   | "alert"
   | "error";
@@ -65,6 +66,8 @@ function standaloneKind(stage: string, status: string): ActivityKind {
       return "follow_up";
     case "insight":
       return "insight";
+    case "config":
+      return "config";
     default:
       return "handled";
   }
