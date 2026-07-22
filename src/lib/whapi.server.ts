@@ -137,8 +137,8 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
 
 /**
  * Send a native WhatsApp poll (tappable, with live vote counts).
- * WhatsApp requires 2-12 unique options; `count` = how many options a voter
- * may select (1 = single choice).
+ * WhatsApp requires 2-12 unique options; `count` accepts only 0 or 1 —
+ * 1 = single choice, 0 = voters may pick any number (use pollCount()).
  */
 export async function sendPoll(chatId: string, title: string, options: string[], count = 1) {
   const to = sanitizeWhapiTo(chatId);

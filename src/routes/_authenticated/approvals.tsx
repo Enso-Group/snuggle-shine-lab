@@ -64,9 +64,14 @@ function ApprovalsPage() {
       if (DEMO_MODE) return;
       return approveFn({ data: { id, body } });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       invalidate();
-      toast.success("Sent");
+      const warnings = (res as { warnings?: string[] } | undefined)?.warnings ?? [];
+      if (warnings.length) {
+        warnings.forEach((w) => toast.warning(w, { duration: 12000 }));
+      } else {
+        toast.success("Sent");
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });

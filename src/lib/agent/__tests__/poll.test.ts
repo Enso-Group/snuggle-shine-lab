@@ -39,9 +39,11 @@ describe("normalizePoll", () => {
     expect(normalizePoll("text")).toBeNull();
   });
 
-  it("multi=true allows selecting all options", () => {
-    const poll = normalizePoll({ question: "Q", options: ["A", "B", "C"], multi: true });
-    expect(pollCount(poll!)).toBe(3);
+  it("multi=true maps to Whapi count=0 (any number selectable), single to 1", () => {
+    const multi = normalizePoll({ question: "Q", options: ["A", "B", "C"], multi: true });
+    expect(pollCount(multi!)).toBe(0);
+    const single = normalizePoll({ question: "Q", options: ["A", "B", "C"], multi: false });
+    expect(pollCount(single!)).toBe(1);
   });
 });
 

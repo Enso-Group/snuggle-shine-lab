@@ -342,22 +342,39 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       };
       textSendId = sendRes?.message?.id ?? null;
     }
+    // A poll failure after the text went out must not mark the post failed
+    // (it was delivered) — record the send and surface the poll error.
     let pollSendId: string | null = null;
+    let pollSent = false;
+    let pollError = "";
     if (poll) {
-      const pollRes = (await deps.whapi.sendPoll(
-        profile.chat_id,
-        poll.question,
-        poll.options,
-        pollCount(poll),
-      )) as { message?: { id?: string } };
-      pollSendId = pollRes?.message?.id ?? null;
+      try {
+        const pollRes = (await deps.whapi.sendPoll(
+          profile.chat_id,
+          poll.question,
+          poll.options,
+          pollCount(poll),
+        )) as { message?: { id?: string } };
+        pollSendId = pollRes?.message?.id ?? null;
+        pollSent = true;
+      } catch (e) {
+        pollError = String((e as Error)?.message ?? e);
+        console.warn("[posting] poll send failed:", pollError);
+        // Nothing was delivered at all — let the normal failure path handle it.
+        if (!final) throw new Error(`poll send failed: ${pollError}`);
+      }
     }
 
+    const sentBody = [final, poll && pollSent ? pollAsHistoryText(poll) : ""]
+      .filter(Boolean)
+      .join("\n\n");
     await supabase
       .from("planned_posts")
       .update({
-        body: bodyForRecord,
-        reasoning: reviewNote,
+        body: sentBody,
+        reasoning: [reviewNote, pollError ? `poll send failed: ${pollError}` : ""]
+          .filter(Boolean)
+          .join(" | "),
         status: "sent",
         sent_at: new Date().toISOString(),
         whapi_message_id: textSendId ?? pollSendId,
@@ -382,7 +399,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
           body: final,
         });
       }
-      if (poll) {
+      if (poll && pollSent) {
         await supabase.from("messages").insert({
           conversation_id: conv.id,
           whapi_message_id: pollSendId,
@@ -398,7 +415,10 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       chat_id: profile.chat_id,
       trigger: "scheduled",
       stage: "post",
-      summary: `Published a ${post.source} post${post.pillar ? ` (${post.pillar})` : ""}${poll ? " with a native poll" : ""} in ${profile.name ?? profile.chat_id}`,
+      status: pollError ? "error" : "ok",
+      summary: pollError
+        ? `Published a ${post.source} post in ${profile.name ?? profile.chat_id}, but its poll failed: ${pollError.slice(0, 150)}`
+        : `Published a ${post.source} post${post.pillar ? ` (${post.pillar})` : ""}${poll ? " with a native poll" : ""} in ${profile.name ?? profile.chat_id}`,
       data: {
         post: final,
         poll: poll as unknown as Record<string, unknown>,
@@ -406,7 +426,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         planned_post_id: post.id,
       },
     });
-    return "sent";
+    return pollError ? "sent_poll_failed" : "sent";
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
     await supabase

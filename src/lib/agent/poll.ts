@@ -45,9 +45,13 @@ export function normalizePoll(raw: unknown): PollSpec | null {
   return { question, options, multi: obj.multi === true };
 }
 
-/** Selectable-answers count for the Whapi payload. */
+/**
+ * Whapi `count` payload value. The API only accepts 0 or 1:
+ * 1 = voters pick a single option, 0 = voters may pick any number.
+ * (Passing options.length gets rejected with "Whapi 400: invalid parameters".)
+ */
 export function pollCount(poll: PollSpec): number {
-  return poll.multi ? poll.options.length : 1;
+  return poll.multi ? 0 : 1;
 }
 
 /** Plain-text rendering for message history / timelines (not for sending). */

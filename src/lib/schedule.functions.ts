@@ -114,46 +114,84 @@ export const approvePending = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), body: z.string().min(1).max(4000).optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    const log = (msg: string) => console.log(`[approve ${data.id.slice(0, 8)}] ${msg}`);
+    const warnings: string[] = [];
+
     const { data: row, error } = await context.supabase
       .from("scheduled_approvals")
       .select("*")
       .eq("id", data.id)
       .eq("status", "pending")
       .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!row) throw new Error("Not found");
+    if (error) {
+      log(`FAILED loading approval row: ${error.message}`);
+      throw new Error(error.message);
+    }
+    if (!row) {
+      log("no pending row found (already decided?)");
+      throw new Error("Not found");
+    }
     const body = data.body ?? row.body;
     const { sendTextMessage, sendPoll } = await import("./whapi.server");
     const { normalizePoll, pollCount, pollAsHistoryText } = await import("./agent/poll");
     const poll = normalizePoll((row as { poll?: unknown }).poll);
+    log(
+      `row loaded: source=${row.source} chat=${row.target_chat_id} poll=${
+        poll
+          ? `${poll.options.length} options (raw present)`
+          : (row as { poll?: unknown }).poll
+            ? "RAW PRESENT BUT INVALID"
+            : "none"
+      } planned_post_id=${(row as ApprovalRowShape).planned_post_id ?? "null"}`,
+    );
+
     // Poll-only approvals store the poll question as their body; send just the
     // native poll then, so the question doesn't go out twice.
     const textBody = poll && body.trim() === poll.question.trim() ? "" : body;
     type SendResult = { message?: { id?: string } } | null;
     let textRes: SendResult = null;
-    if (textBody) textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
+    if (textBody) {
+      textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
+      log(`text sent, whapi id=${textRes?.message?.id ?? "?"}`);
+    }
+    // A poll failure must never strand the approval: the text is already in
+    // the group, so record the state transition regardless and surface the
+    // poll error to the UI instead of aborting half-way.
     let pollRes: SendResult = null;
     if (poll) {
-      pollRes = (await sendPoll(
-        row.target_chat_id,
-        poll.question,
-        poll.options,
-        pollCount(poll),
-      )) as SendResult;
+      try {
+        pollRes = (await sendPoll(
+          row.target_chat_id,
+          poll.question,
+          poll.options,
+          pollCount(poll),
+        )) as SendResult;
+        log(`poll sent, whapi id=${pollRes?.message?.id ?? "?"}`);
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        log(`POLL SEND FAILED: ${msg}`);
+        warnings.push(`Text sent, but the poll failed: ${msg}`);
+      }
     }
+
     const { error: decideErr } = await context.supabase
       .from("scheduled_approvals")
       .update({ status: "approved", decided_at: new Date().toISOString(), body })
       .eq("id", row.id);
-    if (decideErr) console.warn("[approvals] approve status update failed:", decideErr.message);
+    if (decideErr) {
+      log(`FAILED marking approval approved: ${decideErr.message}`);
+      throw new Error(`Message sent, but recording the approval failed: ${decideErr.message}`);
+    }
+    log("approval marked approved");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     // Move the linked planned post out of the approval queue so the dashboard
     // shows it under Recent posts instead of Upcoming.
     const plannedPostId = await resolvePlannedPostId(supabaseAdmin, row as ApprovalRowShape);
+    log(`planned post resolved: ${plannedPostId ?? "none"}`);
     if (plannedPostId) {
-      const plannedBody = [textBody, poll ? pollAsHistoryText(poll) : ""]
+      const plannedBody = [textBody, poll && pollRes ? pollAsHistoryText(poll) : ""]
         .filter(Boolean)
         .join("\n\n");
       const { error: postErr } = await supabaseAdmin
@@ -167,7 +205,12 @@ export const approvePending = createServerFn({ method: "POST" })
         })
         .eq("id", plannedPostId)
         .eq("status", "queued_approval");
-      if (postErr) console.warn("[approvals] planned post update failed:", postErr.message);
+      if (postErr) {
+        log(`FAILED planned post update: ${postErr.message}`);
+        warnings.push(`Post sent but the dashboard row didn't update: ${postErr.message}`);
+      } else {
+        log("planned post -> sent");
+      }
     }
 
     // Mirror the outbound into the conversation history. AI replies carry
@@ -193,7 +236,7 @@ export const approvePending = createServerFn({ method: "POST" })
           raw: textRes as Json,
         });
       }
-      if (poll) {
+      if (poll && pollRes) {
         await supabaseAdmin.from("messages").insert({
           conversation_id: conversationId,
           whapi_message_id: pollRes?.message?.id ?? null,
@@ -204,6 +247,7 @@ export const approvePending = createServerFn({ method: "POST" })
           raw: pollRes as Json,
         });
       }
+      log("mirrored to conversation");
       // Anti-ban pacing only tracks the DM reply pipeline.
       if (row.conversation_id) {
         const { recordOutbound } = await import("./anti-ban.server");
@@ -211,17 +255,29 @@ export const approvePending = createServerFn({ method: "POST" })
       }
     }
 
+    const { logDecision } = await import("./agent/decisions.server");
     if (plannedPostId) {
-      const { logDecision } = await import("./agent/decisions.server");
       logDecision(supabaseAdmin, {
         chat_id: row.target_chat_id,
         trigger: "scheduled",
         stage: "post",
-        summary: `Approved post published in ${row.target_name ?? row.target_chat_id}`,
+        status: warnings.length ? "error" : "ok",
+        summary: warnings.length
+          ? `Approved post published in ${row.target_name ?? row.target_chat_id}, with problems: ${warnings.join("; ")}`
+          : `Approved post published in ${row.target_name ?? row.target_chat_id}`,
         data: { planned_post_id: plannedPostId, post: textBody || body },
       });
+    } else if (warnings.length) {
+      logDecision(supabaseAdmin, {
+        chat_id: row.target_chat_id,
+        trigger: "scheduled",
+        stage: "error",
+        status: "error",
+        summary: `Approval ${data.id.slice(0, 8)} sent with problems: ${warnings.join("; ")}`,
+      });
     }
-    return { ok: true };
+    log(warnings.length ? `done with warnings: ${warnings.join("; ")}` : "done");
+    return { ok: true, warnings };
   });
 
 export const updatePendingBody = createServerFn({ method: "POST" })
