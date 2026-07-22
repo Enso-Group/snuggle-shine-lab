@@ -8,6 +8,10 @@ export function realWhapiPort(): WhapiPort {
       const { sendTextMessage } = await import("@/lib/whapi.server");
       return sendTextMessage(chatId, body);
     },
+    async sendPoll(chatId, title, options, count) {
+      const { sendPoll } = await import("@/lib/whapi.server");
+      return sendPoll(chatId, title, options, count);
+    },
     async markRead(messageId) {
       const { markMessageRead } = await import("@/lib/whapi.server");
       await markMessageRead(messageId);
@@ -25,6 +29,7 @@ export function realWhapiPort(): WhapiPort {
 
 export type RecordedWhapiCall =
   | { kind: "sendText"; chatId: string; body: string }
+  | { kind: "sendPoll"; chatId: string; title: string; options: string[]; count: number }
   | { kind: "markRead"; messageId: string }
   | { kind: "react"; messageId: string; emoji: string }
   | { kind: "presence"; chatId: string; presence: string; delaySec: number };
@@ -35,6 +40,11 @@ export function recordingWhapiPort(): { port: WhapiPort; calls: RecordedWhapiCal
   const port: WhapiPort = {
     async sendText(chatId, body) {
       calls.push({ kind: "sendText", chatId, body });
+      msgCounter += 1;
+      return { message: { id: `sim-out-${msgCounter}` } };
+    },
+    async sendPoll(chatId, title, options, count) {
+      calls.push({ kind: "sendPoll", chatId, title, options, count });
       msgCounter += 1;
       return { message: { id: `sim-out-${msgCounter}` } };
     },

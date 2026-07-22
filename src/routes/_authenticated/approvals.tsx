@@ -171,10 +171,33 @@ function ApprovalCard({
             className="text-sm"
           />
         ) : (
-          <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3">
+          <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3" dir="auto">
             {row.body}
           </p>
         )}
+
+        {(() => {
+          const poll = (row as { poll?: { question?: string; options?: string[] } | null }).poll;
+          if (!poll?.question || !Array.isArray(poll.options)) return null;
+          return (
+            <div
+              className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+              dir="auto"
+            >
+              <p className="font-medium">📊 {poll.question}</p>
+              <ul className="mt-1.5 space-y-1">
+                {poll.options.map((o, i) => (
+                  <li key={i} className="rounded border bg-background px-2 py-1 text-xs">
+                    {o}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Sent as a native tappable WhatsApp poll on approval.
+              </p>
+            </div>
+          );
+        })()}
 
         <div className="flex flex-wrap gap-2">
           {editing ? (

@@ -10,6 +10,7 @@
 //    stats, engagement of recent posts, and a topics read that can trigger
 //    a reactive post when the profile allows it.
 import { callLLM } from "@/lib/llm.server";
+import type { Json } from "@/integrations/supabase/types";
 import { logDecision } from "./decisions.server";
 import { loadKnowledge } from "./kb.server";
 import { groupPromptBlock, listEnabledGroupProfiles, type GroupProfile } from "./groups.server";
@@ -156,7 +157,14 @@ ${post.prompt ? `- הנחיה לפוסט: ${post.prompt}` : ""}
 - מטרת הפוסט: להניע שיחה אמיתית בקבוצה, לא "תוכן שיווקי".
 - אורך וואטסאפ טבעי: 2-5 משפטים. מותר אימוג'י אחד-שניים. בלי כותרות מודגשות מוגזמות.
 - אל תחזור על פוסטים קודמים.
-החזר רק את טקסט הפוסט.`;
+
+פורמט פלט (חובה): החזר JSON בלבד:
+{"post": "טקסט הפוסט (או מחרוזת ריקה אם הכל בסקר)", "poll": {"question": "שאלת הסקר", "options": ["אפשרות", ...], "multi": false} או null}
+
+חוקי סקר (קריטי):
+- כלול poll רק אם ההנחיה לפוסט / הוראות המנהל מבקשות סקר או הצבעה. אחרת poll=null.
+- סקר נשלח כסקר וואטסאפ אמיתי (לחיץ) — לעולם אל תכתוב את הסקר או את האפשרויות בתוך טקסט הפוסט, בלי 1️⃣2️⃣3️⃣ ובלי רשימות ממוספרות של אפשרויות.
+- 2 עד 12 אפשרויות, קצרות וייחודיות, בשפת הקבוצה. multi=true רק אם הגיוני לבחור כמה תשובות.`;
 
     const draftUser = `פעילות אחרונה בקבוצה:
 ${activity || "(שקט בקבוצה)"}
@@ -177,8 +185,19 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       ],
     });
 
+    // Parse the structured draft ({post, poll}); tolerate plain-text output.
+    const { normalizePoll, pollCount, pollAsHistoryText } = await import("./poll");
+    let final = "";
+    let poll: import("./poll").PollSpec | null = null;
+    try {
+      const parsedDraft = parseJsonLoose<{ post?: unknown; poll?: unknown }>(draft.content);
+      final = String(parsedDraft.post ?? "").trim();
+      poll = normalizePoll(parsedDraft.poll);
+    } catch {
+      final = draft.content.trim();
+    }
+
     // Self-review.
-    let final = draft.content.trim();
     let reviewNote = "";
     try {
       const review = await callLLM({
@@ -189,25 +208,31 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         messages: [
           {
             role: "system",
-            content: `אתה עורך תוכן קפדן. בדוק את הפוסט והחזר JSON בלבד: {"ok": true/false, "post": "הגרסה הסופית", "note": "what was fixed, in English — or empty"}.
-בדוק: מתאים למטרת הקבוצה ולטון (${profile.tone ?? "מקצועי-חם"}), בשפה ${profile.language}, לא חוזר על פוסטים קודמים, בלי עובדות עסקיות שאינן במאגר הידע, בלי רמז לבוט/AI, אורך וואטסאפ סביר. תקן בעצמך אם צריך.`,
+            content: `אתה עורך תוכן קפדן. בדוק את הפוסט והחזר JSON בלבד: {"ok": true/false, "post": "הגרסה הסופית של הטקסט", "poll": {"question": "...", "options": [...], "multi": false} או null, "note": "what was fixed, in English — or empty"}.
+בדוק: מתאים למטרת הקבוצה ולטון (${profile.tone ?? "מקצועי-חם"}), בשפה ${profile.language}, לא חוזר על פוסטים קודמים, בלי עובדות עסקיות שאינן במאגר הידע, בלי רמז לבוט/AI, אורך וואטסאפ סביר.
+כלל סקרים: אם יש poll — הטקסט אסור שיכיל את שאלת הסקר או את האפשרויות (בלי 1️⃣2️⃣3️⃣ ובלי רשימות אפשרויות בטקסט); הסקר נשלח בנפרד כסקר לחיץ. אם הטקסט מכיל סקר-בטקסט — העבר אותו לשדה poll ונקה את הטקסט. שמור על ה-poll אם הוא תקין. תקן בעצמך אם צריך.`,
           },
           {
             role: "user",
-            content: `הפוסט:\n"""${final}"""\n\nפוסטים קודמים:\n${pastPosts.map((p) => p.slice(0, 120)).join("\n") || "(אין)"}${kb.count ? `\n\nמאגר הידע:\n${kb.block}` : ""}`,
+            content: `הפוסט:\n"""${final}"""\n\nסקר מצורף:\n${poll ? JSON.stringify(poll) : "(אין)"}\n\nפוסטים קודמים:\n${pastPosts.map((p) => p.slice(0, 120)).join("\n") || "(אין)"}${kb.count ? `\n\nמאגר הידע:\n${kb.block}` : ""}`,
           },
         ],
       });
-      const parsed = parseJsonLoose<{ ok?: boolean; post?: string; note?: string }>(review.content);
-      if (parsed.post && String(parsed.post).trim()) {
-        final = String(parsed.post).trim();
-        reviewNote = String(parsed.note ?? "");
-      }
+      const parsed = parseJsonLoose<{
+        ok?: boolean;
+        post?: unknown;
+        poll?: unknown;
+        note?: string;
+      }>(review.content);
+      if (parsed.post !== undefined) final = String(parsed.post ?? "").trim();
+      if (parsed.poll !== undefined) poll = normalizePoll(parsed.poll) ?? poll;
+      reviewNote = String(parsed.note ?? "");
     } catch (e) {
       console.warn("[posting] review failed, using draft:", e);
     }
     final = sanitizeParts([final]).parts[0] ?? "";
-    if (!final) throw new Error("post generation returned empty text");
+    if (!final && !poll) throw new Error("post generation returned neither text nor poll");
+    const bodyForRecord = [final, poll ? pollAsHistoryText(poll) : ""].filter(Boolean).join("\n\n");
 
     // Approval gate.
     if (settings.require_approval_all) {
@@ -218,18 +243,30 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         .limit(1)
         .maybeSingle();
       if (!adminRole?.user_id) throw new Error("no approval owner");
-      await supabase.from("scheduled_approvals").insert({
+      const approvalRow = {
         user_id: adminRole.user_id,
         target_chat_id: profile.chat_id,
         target_name: profile.name ?? profile.chat_id,
-        body: final,
+        body: final || poll!.question,
         source: "group_post",
         status: "pending",
-      });
+      };
+      const { error: apprErr } = await supabase
+        .from("scheduled_approvals")
+        .insert({ ...approvalRow, poll: poll as unknown as Json });
+      if (apprErr) {
+        // Pre-migration fallback (poll column absent): embed the poll as text
+        // so nothing is lost, and flag it in the log.
+        console.warn("[posting] approval insert with poll failed, falling back:", apprErr.message);
+        await supabase.from("scheduled_approvals").insert({
+          ...approvalRow,
+          body: bodyForRecord,
+        });
+      }
       await supabase
         .from("planned_posts")
         .update({
-          body: final,
+          body: bodyForRecord,
           reasoning: reviewNote,
           status: "queued_approval",
           updated_at: new Date().toISOString(),
@@ -238,17 +275,33 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       return "queued_approval";
     }
 
-    const sendRes = (await deps.whapi.sendText(profile.chat_id, final)) as {
-      message?: { id?: string };
-    };
+    // Send: text first (when present), then the native tappable poll.
+    let textSendId: string | null = null;
+    if (final) {
+      const sendRes = (await deps.whapi.sendText(profile.chat_id, final)) as {
+        message?: { id?: string };
+      };
+      textSendId = sendRes?.message?.id ?? null;
+    }
+    let pollSendId: string | null = null;
+    if (poll) {
+      const pollRes = (await deps.whapi.sendPoll(
+        profile.chat_id,
+        poll.question,
+        poll.options,
+        pollCount(poll),
+      )) as { message?: { id?: string } };
+      pollSendId = pollRes?.message?.id ?? null;
+    }
+
     await supabase
       .from("planned_posts")
       .update({
-        body: final,
+        body: bodyForRecord,
         reasoning: reviewNote,
         status: "sent",
         sent_at: new Date().toISOString(),
-        whapi_message_id: sendRes?.message?.id ?? null,
+        whapi_message_id: textSendId ?? pollSendId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", post.id);
@@ -260,22 +313,39 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       .eq("whapi_chat_id", profile.chat_id)
       .maybeSingle();
     if (conv) {
-      await supabase.from("messages").insert({
-        conversation_id: conv.id,
-        whapi_message_id: sendRes?.message?.id ?? null,
-        direction: "outbound",
-        sender_name: settings.bot_name || "Bot",
-        sender_id: "bot",
-        body: final,
-      });
+      if (final) {
+        await supabase.from("messages").insert({
+          conversation_id: conv.id,
+          whapi_message_id: textSendId,
+          direction: "outbound",
+          sender_name: settings.bot_name || "Bot",
+          sender_id: "bot",
+          body: final,
+        });
+      }
+      if (poll) {
+        await supabase.from("messages").insert({
+          conversation_id: conv.id,
+          whapi_message_id: pollSendId,
+          direction: "outbound",
+          sender_name: settings.bot_name || "Bot",
+          sender_id: "bot",
+          body: pollAsHistoryText(poll),
+        });
+      }
     }
 
     logDecision(supabase, {
       chat_id: profile.chat_id,
       trigger: "scheduled",
       stage: "post",
-      summary: `Published a ${post.source} post${post.pillar ? ` (${post.pillar})` : ""} in ${profile.name ?? profile.chat_id}`,
-      data: { post: final, review_note: reviewNote, planned_post_id: post.id },
+      summary: `Published a ${post.source} post${post.pillar ? ` (${post.pillar})` : ""}${poll ? " with a native poll" : ""} in ${profile.name ?? profile.chat_id}`,
+      data: {
+        post: final,
+        poll: poll as unknown as Record<string, unknown>,
+        review_note: reviewNote,
+        planned_post_id: post.id,
+      },
     });
     return "sent";
   } catch (e) {

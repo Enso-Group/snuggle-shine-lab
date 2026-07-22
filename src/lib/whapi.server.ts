@@ -20,16 +20,18 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       signal: ctrl.signal,
       headers: {
-        "Authorization": `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        Accept: "application/json",
         "User-Agent": "Mozilla/5.0 (compatible; Lovable WhatsApp sync)",
         ...(init?.headers ?? {}),
       },
     });
   } catch (e: any) {
     if (e?.name === "AbortError") {
-      throw new Error("The connection to WhatsApp took too long. Check that the connection is active and try again.");
+      throw new Error(
+        "The connection to WhatsApp took too long. Check that the connection is active and try again.",
+      );
     }
     throw e;
   } finally {
@@ -38,7 +40,9 @@ async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   if (!res.ok) {
     if (res.status === 402 && text.includes("trial version limit exceeded")) {
-      throw new Error("Whapi is currently blocking data retrieval due to the Trial limit. You need to upgrade/remove the limit in Whapi and then refresh the group.");
+      throw new Error(
+        "Whapi is currently blocking data retrieval due to the Trial limit. You need to upgrade/remove the limit in Whapi and then refresh the group.",
+      );
     }
     throw new Error(`Whapi ${res.status}: ${text.slice(0, 500)}`);
   }
@@ -69,9 +73,8 @@ function sanitizeWhapiTo(chatId: string): string {
   const suffix = atIdx >= 0 ? raw.slice(atIdx) : "";
   // Whapi requires local part to match ^[\d-]{9,31}$ — strip device suffixes like ":5" and any other chars.
   const baseLocal = local.split(":")[0];
-  const cleanedLocal = suffix === "@g.us"
-    ? baseLocal.replace(/[^\d-]/g, "")
-    : normalizePhoneLocalPart(baseLocal);
+  const cleanedLocal =
+    suffix === "@g.us" ? baseLocal.replace(/[^\d-]/g, "") : normalizePhoneLocalPart(baseLocal);
   return suffix ? `${cleanedLocal}${suffix}` : cleanedLocal;
 }
 
@@ -79,7 +82,9 @@ export async function sendTextMessage(chatId: string, body: string) {
   const to = sanitizeWhapiTo(chatId);
   const localPart = to.split("@")[0] ?? "";
   if (!/^[\d-]{9,31}$/.test(localPart)) {
-    throw new Error(`Invalid recipient for WhatsApp: "${chatId}". Please choose a real contact or group (a phone number or group ID), not a name.`);
+    throw new Error(
+      `Invalid recipient for WhatsApp: "${chatId}". Please choose a real contact or group (a phone number or group ID), not a name.`,
+    );
   }
   return whapi("/messages/text", {
     method: "POST",
@@ -121,11 +126,30 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
   } catch (e) {
     console.error("[whapi] listAllMessagesByChatId failed", e);
     if (isWhapiTrialLimitError(e)) {
-      throw new Error("Whapi is currently blocking message retrieval due to the Trial limit. You need to upgrade/remove the limit in Whapi and then refresh the group.");
+      throw new Error(
+        "Whapi is currently blocking message retrieval due to the Trial limit. You need to upgrade/remove the limit in Whapi and then refresh the group.",
+      );
     }
   }
 
   return all;
+}
+
+/**
+ * Send a native WhatsApp poll (tappable, with live vote counts).
+ * WhatsApp requires 2-12 unique options; `count` = how many options a voter
+ * may select (1 = single choice).
+ */
+export async function sendPoll(chatId: string, title: string, options: string[], count = 1) {
+  const to = sanitizeWhapiTo(chatId);
+  const localPart = to.split("@")[0] ?? "";
+  if (!/^[\d-]{9,31}$/.test(localPart)) {
+    throw new Error(`Invalid recipient for WhatsApp poll: "${chatId}".`);
+  }
+  return whapi("/messages/poll", {
+    method: "POST",
+    body: JSON.stringify({ to, title, options, count }),
+  });
 }
 
 /** Delete a message (ours or a contact's — requires admin rights for others' messages in groups). */
@@ -186,7 +210,11 @@ export async function reactToMessage(messageId: string, emoji: string): Promise<
   }
 }
 
-export async function sendPresence(chatId: string, presence: "typing" | "recording" | "paused" = "typing", delaySec = 3) {
+export async function sendPresence(
+  chatId: string,
+  presence: "typing" | "recording" | "paused" = "typing",
+  delaySec = 3,
+) {
   try {
     await whapi(`/presences/${encodeURIComponent(chatId)}`, {
       method: "PUT",
@@ -200,7 +228,9 @@ export async function sendPresence(chatId: string, presence: "typing" | "recordi
 
 export async function listGroups(): Promise<Array<{ id: string; name: string }>> {
   try {
-    const r = await whapi<{ groups?: Array<{ id: string; name?: string; subject?: string }> }>("/groups?count=500");
+    const r = await whapi<{ groups?: Array<{ id: string; name?: string; subject?: string }> }>(
+      "/groups?count=500",
+    );
     return (r.groups ?? []).map((g) => ({ id: g.id, name: g.name || g.subject || g.id }));
   } catch (e) {
     console.error("[whapi] listGroups failed", e);
@@ -210,7 +240,9 @@ export async function listGroups(): Promise<Array<{ id: string; name: string }>>
 
 export async function getGroup(groupId: string, resync = false): Promise<any | null> {
   try {
-    return await whapi<any>(`/groups/${encodeURIComponent(groupId)}${resync ? "?resync=true" : ""}`);
+    return await whapi<any>(
+      `/groups/${encodeURIComponent(groupId)}${resync ? "?resync=true" : ""}`,
+    );
   } catch (e) {
     console.error("[whapi] getGroup failed", e);
     if (isWhapiTrialLimitError(e)) throw e;
@@ -218,16 +250,30 @@ export async function getGroup(groupId: string, resync = false): Promise<any | n
   }
 }
 
-export async function listContacts(): Promise<Array<{ id: string; name: string; pushname?: string }>> {
+export async function listContacts(): Promise<
+  Array<{ id: string; name: string; pushname?: string }>
+> {
   try {
-    const contacts: Array<{ id: string; name?: string; pushname?: string; first_name?: string; last_name?: string }> = [];
+    const contacts: Array<{
+      id: string;
+      name?: string;
+      pushname?: string;
+      first_name?: string;
+      last_name?: string;
+    }> = [];
     const seen = new Set<string>();
     const pageSize = 500;
     let offset = 0;
 
     while (true) {
       const r = await whapi<{
-        contacts?: Array<{ id: string; name?: string; pushname?: string; first_name?: string; last_name?: string }>;
+        contacts?: Array<{
+          id: string;
+          name?: string;
+          pushname?: string;
+          first_name?: string;
+          last_name?: string;
+        }>;
         total?: number;
       }>(`/contacts?count=${pageSize}&offset=${offset}`);
       const page = r.contacts ?? [];
@@ -255,7 +301,9 @@ export async function listContacts(): Promise<Array<{ id: string; name: string; 
 }
 
 export async function listContactLids(contactIds: string[]): Promise<Record<string, string>> {
-  const ids = [...new Set(contactIds.map((id) => id.replace(/@.*$/, "").replace(/\D/g, "")).filter(Boolean))];
+  const ids = [
+    ...new Set(contactIds.map((id) => id.replace(/@.*$/, "").replace(/\D/g, "")).filter(Boolean)),
+  ];
   const out: Record<string, string> = {};
 
   try {
@@ -266,7 +314,8 @@ export async function listContactLids(contactIds: string[]): Promise<Record<stri
       );
       for (const [phoneId, value] of Object.entries(r ?? {})) {
         const phone = phoneId.replace(/@.*$/, "").replace(/\D/g, "");
-        if (phone && value?.lid) out[phone] = String(value.lid).replace(/@.*$/, "").replace(/\D/g, "");
+        if (phone && value?.lid)
+          out[phone] = String(value.lid).replace(/@.*$/, "").replace(/\D/g, "");
       }
     }
   } catch (e) {
@@ -357,7 +406,9 @@ function normalizeQrImage(raw: unknown): string {
 }
 
 function extractQrImage(payload: any): string {
-  const direct = normalizeQrImage(payload?.base64 ?? payload?.image ?? payload?.qr ?? payload?.qrcode ?? payload?.qr_code);
+  const direct = normalizeQrImage(
+    payload?.base64 ?? payload?.image ?? payload?.qr ?? payload?.qrcode ?? payload?.qr_code,
+  );
   if (direct) return direct;
 
   const nested = normalizeQrImage(
@@ -373,7 +424,11 @@ function extractQrImage(payload: any): string {
   return nested;
 }
 
-export async function getWhapiLoginQrImage(): Promise<{ image: string; status: string; expire?: number }> {
+export async function getWhapiLoginQrImage(): Promise<{
+  image: string;
+  status: string;
+  expire?: number;
+}> {
   let lastStatus = "";
   let lastError = "";
 
@@ -381,9 +436,7 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
   // Poll up to ~60s and return as soon as base64 is available.
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
-      const qr = await whapi<any>(
-        "/users/login?wakeup=true&size=360&width=360&height=360",
-      );
+      const qr = await whapi<any>("/users/login?wakeup=true&size=360&width=360&height=360");
       lastStatus = qr.status ?? "";
       const image = extractQrImage(qr);
       if (image) {
@@ -395,7 +448,9 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
     } catch (e: any) {
       lastError = String(e?.message ?? e);
       if (lastError.includes("Whapi 409")) {
-        throw new Error("The connection is still active. Unlink the linked device from WhatsApp or try again in a few seconds.");
+        throw new Error(
+          "The connection is still active. Unlink the linked device from WhatsApp or try again in a few seconds.",
+        );
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -405,24 +460,45 @@ export async function getWhapiLoginQrImage(): Promise<{ image: string; status: s
   if (lastStatus) {
     return { image: "", status: lastStatus };
   }
-  throw new Error(`No real QR code was generated yet. ${lastError || "Try again in a few seconds."}`);
+  throw new Error(
+    `No real QR code was generated yet. ${lastError || "Try again in a few seconds."}`,
+  );
 }
-
 
 export async function listChats(): Promise<Array<{ id: string; name: string; type: string }>> {
   try {
-    const r = await whapi<{ chats?: Array<{ id: string; name?: string; type?: string }> }>("/chats?count=500");
-    return (r.chats ?? []).map((c) => ({ id: c.id, name: c.name || c.id, type: c.type || "contact" }));
+    const r = await whapi<{ chats?: Array<{ id: string; name?: string; type?: string }> }>(
+      "/chats?count=500",
+    );
+    return (r.chats ?? []).map((c) => ({
+      id: c.id,
+      name: c.name || c.id,
+      type: c.type || "contact",
+    }));
   } catch (e) {
     console.error("[whapi] listChats failed", e);
     return [];
   }
 }
 
-export async function checkHealth(): Promise<{ ok: boolean; status?: string; userName?: string; userId?: string; error?: string }> {
+export async function checkHealth(): Promise<{
+  ok: boolean;
+  status?: string;
+  userName?: string;
+  userId?: string;
+  error?: string;
+}> {
   try {
-    const r = await whapi<{ status?: { text?: string }; user?: { name?: string; pushname?: string; id?: string } }>("/health");
-    return { ok: true, status: r.status?.text, userName: r.user?.name || r.user?.pushname || r.user?.id, userId: r.user?.id };
+    const r = await whapi<{
+      status?: { text?: string };
+      user?: { name?: string; pushname?: string; id?: string };
+    }>("/health");
+    return {
+      ok: true,
+      status: r.status?.text,
+      userName: r.user?.name || r.user?.pushname || r.user?.id,
+      userId: r.user?.id,
+    };
   } catch (e: any) {
     return { ok: false, error: String(e?.message ?? e) };
   }

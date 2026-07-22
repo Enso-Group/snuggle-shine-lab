@@ -38,7 +38,7 @@ const TOOLS = [
     function: {
       name: "plan_post",
       description:
-        "Queue a one-off campaign post for this group. The posting engine drafts, self-reviews and publishes it within ~1 minute (or routes it to Approvals when approval mode is on).",
+        "Queue a one-off campaign post for this group. The posting engine drafts, self-reviews and publishes it within ~1 minute (or routes it to Approvals when approval mode is on). If the manager wants a poll, say so explicitly in the prompt (e.g. 'include a poll asking X with options A/B/C') — the engine sends it as a native tappable WhatsApp poll, never as inline text.",
       parameters: {
         type: "object",
         properties: {

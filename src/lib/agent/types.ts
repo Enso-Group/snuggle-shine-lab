@@ -38,6 +38,12 @@ export type WhapiPort = {
     chatId: string,
     body: string,
   ): Promise<{ message?: { id?: string } } | Record<string, unknown>>;
+  sendPoll(
+    chatId: string,
+    title: string,
+    options: string[],
+    count: number,
+  ): Promise<{ message?: { id?: string } } | Record<string, unknown>>;
   markRead(messageId: string): Promise<void>;
   react(messageId: string, emoji: string): Promise<void>;
   presence(chatId: string, presence: "typing" | "paused", delaySec: number): Promise<void>;

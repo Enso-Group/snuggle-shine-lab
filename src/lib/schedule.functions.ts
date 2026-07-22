@@ -60,10 +60,7 @@ export const deleteScheduledMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("scheduled_messages")
-      .delete()
-      .eq("id", data.id);
+    const { error } = await context.supabase.from("scheduled_messages").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -95,8 +92,15 @@ export const approvePending = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Not found");
     const body = data.body ?? row.body;
-    const { sendTextMessage } = await import("./whapi.server");
+    const { sendTextMessage, sendPoll } = await import("./whapi.server");
     const sendRes: any = await sendTextMessage(row.target_chat_id, body);
+    // If the approval carries a structured poll, send it as a native tappable
+    // WhatsApp poll right after the text.
+    const { normalizePoll, pollCount } = await import("./agent/poll");
+    const poll = normalizePoll((row as { poll?: unknown }).poll);
+    if (poll) {
+      await sendPoll(row.target_chat_id, poll.question, poll.options, pollCount(poll));
+    }
     await context.supabase
       .from("scheduled_approvals")
       .update({ status: "approved", decided_at: new Date().toISOString(), body })
@@ -145,4 +149,3 @@ export const rejectPending = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
