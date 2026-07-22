@@ -1,0 +1,1 @@
+ALTER TABLE public.scheduled_approvals ADD COLUMN IF NOT EXISTS poll JSONB;
