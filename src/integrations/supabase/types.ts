@@ -862,7 +862,6 @@ export type Database = {
           created_at: string
           decided_at: string | null
           id: string
-          poll: Json | null
           scheduled_message_id: string | null
           source: string
           status: string
@@ -876,7 +875,6 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           id?: string
-          poll?: Json | null
           scheduled_message_id?: string | null
           source?: string
           status?: string
@@ -890,7 +888,6 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           id?: string
-          poll?: Json | null
           scheduled_message_id?: string | null
           source?: string
           status?: string
