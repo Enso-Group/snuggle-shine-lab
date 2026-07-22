@@ -63,7 +63,7 @@ function ApprovalsPage() {
       invalidate();
       toast.success("Sent");
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
   const reject = useMutation({
     mutationFn: async (id: string) => {
@@ -74,7 +74,7 @@ function ApprovalsPage() {
       invalidate();
       toast.success("Deleted");
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
   const updateBody = useMutation({
     mutationFn: async ({ id, body }: { id: string; body: string }) => {
@@ -85,7 +85,7 @@ function ApprovalsPage() {
       invalidate();
       toast.success("Updated");
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   return (

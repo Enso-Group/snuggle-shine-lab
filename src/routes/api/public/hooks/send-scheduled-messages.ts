@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 
 // A cron that runs every few minutes — or misses a tick — shouldn't skip a
 // send for a whole week, so a run picks up anything due in this window.
@@ -56,7 +57,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
         // Report which secret sources exist — booleans only, never values.
         let dbSecretConfigured = false;
         try {
-          const supabase = createClient(
+          const supabase = createClient<Database>(
             process.env.SUPABASE_URL!,
             process.env.SUPABASE_SERVICE_ROLE_KEY!,
             { auth: { autoRefreshToken: false, persistSession: false } },
@@ -67,7 +68,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             .order("created_at", { ascending: true })
             .limit(1)
             .maybeSingle();
-          dbSecretConfigured = !!(data as any)?.cron_secret;
+          dbSecretConfigured = !!data?.cron_secret;
         } catch {
           // diagnostics must never take the endpoint down
         }
@@ -87,7 +88,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
       },
       POST: async ({ request }) => {
         try {
-          const supabase = createClient(
+          const supabase = createClient<Database>(
             process.env.SUPABASE_URL!,
             process.env.SUPABASE_SERVICE_ROLE_KEY!,
             { auth: { autoRefreshToken: false, persistSession: false } },
@@ -111,7 +112,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           const url = new URL(request.url);
           const provided = request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
           const envSecret = process.env.CRON_SECRET || "";
-          const dbSecret = (botSettings as any)?.cron_secret || "";
+          const dbSecret = botSettings?.cron_secret || "";
           if (envSecret || dbSecret) {
             const authorized =
               (!!envSecret && provided === envSecret) || (!!dbSecret && provided === dbSecret);
@@ -152,7 +153,7 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
           if (error) throw new Error(error.message);
 
           const dedupeTs = new Date(now.getTime() - DEDUPE_MINUTES * 60 * 1000).toISOString();
-          const due = (rows ?? []).filter((r: any) => !r.last_sent_at || r.last_sent_at < dedupeTs);
+          const due = (rows ?? []).filter((r) => !r.last_sent_at || r.last_sent_at < dedupeTs);
 
           // Global approval gate — when on, every scheduled send is queued too.
           // (Settings were loaded once, above, alongside the auth check.)
@@ -161,7 +162,13 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
 
           const { sendTextMessage } = await import("@/lib/whapi.server");
           const { runCommand } = await import("@/lib/ai-brain.server");
-          const results: any[] = [];
+          const results: Array<{
+            id: string;
+            ok?: boolean;
+            queued?: boolean;
+            skipped?: string;
+            error?: string;
+          }> = [];
           for (const r of due) {
             // Claim the row before doing any work. Overlapping cron runs (the
             // project can have more than one job pointed here) would otherwise
@@ -214,14 +221,14 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
                 await sendTextMessage(r.target_chat_id, body);
                 results.push({ id: r.id, ok: true });
               }
-            } catch (e: any) {
+            } catch (e) {
               // Release the claim so a later run can retry this occurrence,
               // instead of it being stuck "sent" until next week.
               await supabase
                 .from("scheduled_messages")
                 .update({ last_sent_at: r.last_sent_at })
                 .eq("id", r.id);
-              results.push({ id: r.id, ok: false, error: String(e?.message ?? e) });
+              results.push({ id: r.id, ok: false, error: String((e as Error)?.message ?? e) });
             }
           }
           // Echo what this run actually looked for — without it, a "nothing
@@ -240,8 +247,8 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
             }),
             { headers: { "Content-Type": "application/json" } },
           );
-        } catch (e: any) {
-          return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
+        } catch (e) {
+          return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {
             status: 500,
             headers: { "Content-Type": "application/json" },
           });

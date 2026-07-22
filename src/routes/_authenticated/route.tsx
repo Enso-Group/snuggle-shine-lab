@@ -20,6 +20,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { isAdminEmail } from "@/lib/admin";
+import { useWhatsAppConnection } from "@/hooks/use-connection";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -64,6 +65,7 @@ function AuthedLayout() {
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { invited, user } = Route.useRouteContext();
+  const { connected, userName } = useWhatsAppConnection();
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -135,7 +137,16 @@ function AuthedLayout() {
             );
           })}
         </nav>
-        <div className="p-2 border-t border-sidebar-border">
+        <div className="border-t border-sidebar-border p-2">
+          <div className="flex items-center gap-2 px-3 py-2 text-xs text-sidebar-foreground/70">
+            <span
+              className={`size-2 shrink-0 rounded-full ${connected ? "bg-emerald-500" : "bg-rose-500"}`}
+              aria-hidden
+            />
+            <span className="truncate" dir="auto">
+              {connected ? `WhatsApp · ${userName ?? "connected"}` : "WhatsApp offline"}
+            </span>
+          </div>
           <Button
             variant="ghost"
             className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

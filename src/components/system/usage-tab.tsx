@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Gauge } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getAiUsageSummary, listAiUsage } from "@/lib/usage.functions";
 
 const RANGES: Record<string, number> = { day: 24, week: 24 * 7, month: 24 * 30 };
@@ -81,6 +82,45 @@ export function UsageTab() {
           </Card>
         ))}
       </div>
+
+      {summary && summary.series.length > 1 && (
+        <Card>
+          <CardContent className="p-4">
+            <h3 className="mb-2 text-sm font-semibold">Estimated cost per day (USD)</h3>
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={summary.series} margin={{ top: 4, right: 4, bottom: 0, left: -14 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(d: string) => d.slice(5)}
+                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => `$${v.toFixed(v >= 1 ? 0 : 2)}`}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                  contentStyle={{
+                    background: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: "var(--popover-foreground)",
+                  }}
+                  labelStyle={{ color: "var(--muted-foreground)" }}
+                  formatter={(value: number) => [fmtUSD(Number(value)), "Cost"]}
+                />
+                <Bar dataKey="cost" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {summary && Object.keys(summary.byModel).length > 0 && (
         <Card>

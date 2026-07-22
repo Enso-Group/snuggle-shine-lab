@@ -20,6 +20,15 @@ import {
   Users2,
 } from "lucide-react";
 import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { GroupProfileEditor } from "@/components/group-profile-editor";
 import { commandChat, type CommandAction } from "@/lib/command.functions";
 import { getGroupActivity, listManagedGroups, type ManagedGroup } from "@/lib/groups.functions";
@@ -47,7 +56,9 @@ function CommandCenter() {
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ["managed-groups"],
     queryFn: () => listFn(),
-    refetchInterval: 60000,
+    // listManagedGroups calls the external Whapi API — don't refetch eagerly.
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
   const current: ManagedGroup | undefined = groups.find((g) => g.chat_id === selected);
@@ -257,6 +268,98 @@ function CommandCenter() {
                         📋 Current strategy (week of {activity.memo.week_start})
                       </p>
                       <p className="whitespace-pre-wrap">{activity.memo.memo}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {activity && activity.stats.length > 1 && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">Engagement, last 7 days</h3>
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2 w-3 rounded-sm bg-[var(--chart-2)]" aria-hidden />
+                            Messages
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <svg width="14" height="6" aria-hidden>
+                              <line
+                                x1="0"
+                                y1="3"
+                                x2="14"
+                                y2="3"
+                                stroke="var(--chart-1)"
+                                strokeWidth="2"
+                                strokeDasharray="4 3"
+                              />
+                            </svg>
+                            Active members
+                          </span>
+                        </div>
+                      </div>
+                      <ResponsiveContainer width="100%" height={150}>
+                        <AreaChart
+                          data={activity.stats}
+                          margin={{ top: 4, right: 4, bottom: 0, left: -18 }}
+                        >
+                          <defs>
+                            <linearGradient id="ccMsgs" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.25} />
+                              <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke="var(--border)"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="date"
+                            tickFormatter={(d: string) => d.slice(5)}
+                            tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                            axisLine={false}
+                            tickLine={false}
+                            allowDecimals={false}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 8,
+                              fontSize: 12,
+                              color: "var(--popover-foreground)",
+                            }}
+                            labelStyle={{ color: "var(--muted-foreground)" }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="messages"
+                            name="Messages"
+                            stroke="var(--chart-2)"
+                            strokeWidth={2}
+                            fill="url(#ccMsgs)"
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="active_members"
+                            name="Active members"
+                            stroke="var(--chart-1)"
+                            strokeWidth={2}
+                            strokeDasharray="5 4"
+                            fill="transparent"
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
                     </CardContent>
                   </Card>
                 )}

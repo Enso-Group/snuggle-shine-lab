@@ -60,7 +60,8 @@ function ProfilesPage() {
   const { data: people = [], isLoading: listLoading } = useQuery({
     queryKey: ["people-memory"],
     queryFn: () => listFn(),
-    refetchInterval: 30000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   });
 
   const filtered = useMemo(() => {
