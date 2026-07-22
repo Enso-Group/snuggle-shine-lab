@@ -105,7 +105,7 @@ export async function handleInboundMessage(
       trigger: deps.trigger,
       stage: "skipped",
       status: "skip",
-      summary: "בקשת הפסקה — איש הקשר נחסם ולא יקבל עוד הודעות",
+      summary: "Stop request — contact blocked from any further messages",
     });
     return { action: "blocked", conversationId: convId };
   }
@@ -141,7 +141,7 @@ export async function handleInboundMessage(
       trigger: deps.trigger,
       stage: "skipped",
       status: "skip",
-      summary: "הודעה טריוויאלית — סומנה בריאקציה במקום תשובה",
+      summary: "Trivial message — acknowledged with a reaction instead of a reply",
     });
     return { action: "trivial_ack", conversationId: convId };
   }
@@ -171,7 +171,7 @@ export async function handleInboundMessage(
     chat_id: m.chatId,
     trigger: deps.trigger,
     stage: "received",
-    summary: `הודעה מ${m.senderName || m.chatId} התקבלה לטיפול`,
+    summary: `Message from ${m.senderName || m.chatId} accepted for handling`,
     data: { body_preview: m.body.slice(0, 120), reply_delay_s: delaySeconds },
   });
 

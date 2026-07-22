@@ -37,7 +37,12 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
 
   const settings = await loadAgentSettings(supabase);
   if (!settings || !settings.enabled) {
-    logDecision(supabase, { ...base, stage: "skipped", status: "skip", summary: "הבוט כבוי" });
+    logDecision(supabase, {
+      ...base,
+      stage: "skipped",
+      status: "skip",
+      summary: "Bot is disabled",
+    });
     return { action: "skipped", reason: "bot disabled" };
   }
   if (!job.conversation_id) return { action: "skipped", reason: "no conversation" };
@@ -70,7 +75,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   logDecision(supabase, {
     ...base,
     stage: "context",
-    summary: `נטענו ${ctx.history.length} הודעות היסטוריה${ctx.person ? ` + פרופיל עם ${ctx.person.facts.length} עובדות` : ""}`,
+    summary: `Loaded ${ctx.history.length} history messages${ctx.person ? ` + profile with ${ctx.person.facts.length} stored facts` : ""}`,
     data: {
       history_count: ctx.history.length,
       is_group: message.isGroup,
@@ -93,7 +98,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       ...base,
       stage: "skipped",
       status: "skip",
-      summary: "הגיעה הודעה חדשה יותר — התשובה תיכתב בהקשר שלה",
+      summary: "A newer message arrived — the reply will be written in its context",
     });
     return { action: "skipped", reason: "superseded" };
   }
@@ -104,7 +109,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   logDecision(supabase, {
     ...base,
     stage: "intent",
-    summary: `כוונה: ${intent.intent} | שפה: ${intent.language} | דחיפות: ${intent.urgency}${intent.escalate ? " | דורש הסלמה" : ""}`,
+    summary: `Intent: ${intent.intent} | Language: ${intent.language} | Urgency: ${intent.urgency}${intent.escalate ? " | needs escalation" : ""}`,
     data: intent as unknown as Record<string, unknown>,
     duration_ms: Date.now() - t,
   });
@@ -119,7 +124,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   logDecision(supabase, {
     ...base,
     stage: "draft",
-    summary: draft.reasoning || `נכתבה טיוטה של ${draft.messages.length} הודעות`,
+    summary: draft.reasoning || `Drafted ${draft.messages.length} message(s)`,
     data: { messages: draft.messages },
     duration_ms: Date.now() - t,
   });
@@ -133,8 +138,8 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     stage: "critique",
     summary:
       critique.verdict === "revise"
-        ? `תוקן: ${critique.issues.join("; ") || critique.reasoning}`
-        : "הטיוטה עברה את בדיקת האיכות",
+        ? `Revised: ${critique.issues.join("; ") || critique.reasoning}`
+        : "Draft passed the quality review",
     data: {
       verdict: critique.verdict,
       issues: critique.issues,
@@ -154,7 +159,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
         ...base,
         stage: "error",
         status: "error",
-        summary: "אין משתמש שאפשר לשייך אליו את האישור",
+        summary: "No user found to own the approval row",
       });
       return { action: "failed", error: "no approval owner" };
     }
@@ -171,8 +176,8 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       ...base,
       stage: "queued_approval",
       summary: intent.escalate
-        ? `הועבר לאישור אנושי — ${intent.escalate_reason ?? "הסלמה"}`
-        : "מצב אישור-לכל פעיל — ממתין לאישור",
+        ? `Escalated to human approval — ${intent.escalate_reason ?? "escalation"}`
+        : "Approval-all mode is on — awaiting human approval",
       data: { draft: joined, escalated: intent.escalate },
     });
     if (intent.escalate && ctx.groupProfile?.owner_dm) {
@@ -201,7 +206,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
         ...base,
         stage: "skipped",
         status: "skip",
-        summary: `נחסם על ידי מגן אנטי-חסימה: ${guard.reason}`,
+        summary: `Blocked by the anti-ban guard: ${guard.reason}`,
         data: { code: guard.code },
       });
       return { action: "skipped", reason: guard.code };
@@ -219,7 +224,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       ...base,
       stage: "skipped",
       status: "skip",
-      summary: "כבר נשלחה תשובה להודעה הזו",
+      summary: "Already replied to this message",
     });
     return { action: "skipped", reason: "already replied" };
   }
@@ -234,7 +239,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     logDecision(supabase, {
       ...base,
       stage: "deliver",
-      summary: `נשלחו ${delivery.parts.length} הודעות`,
+      summary: `Sent ${delivery.parts.length} message(s)`,
       data: { parts: delivery.parts, whapi_ids: delivery.sentMessageIds },
       duration_ms: Date.now() - t,
     });
@@ -249,8 +254,8 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
           ...base,
           stage: "memory",
           summary: extraction.facts.length
-            ? `נשמרו ${extraction.facts.length} עובדות חדשות על ${ctx.person.display_name ?? message.senderName ?? "איש הקשר"}`
-            : "אין עובדות חדשות לשמירה",
+            ? `Stored ${extraction.facts.length} new fact(s) about ${ctx.person.display_name ?? message.senderName ?? "the contact"}`
+            : "No new facts worth storing",
           data: extraction as unknown as Record<string, unknown>,
           duration_ms: Date.now() - t,
         });
@@ -269,7 +274,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
           logDecision(supabase, {
             ...base,
             stage: "follow_up",
-            summary: `תוזמן מעקב בעוד ${extraction.follow_up.hours} שעות — ${extraction.follow_up.reason}`,
+            summary: `Follow-up scheduled in ${extraction.follow_up.hours}h — ${extraction.follow_up.reason}`,
             data: { ...extraction.follow_up },
           });
         }
@@ -290,7 +295,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
         ...base,
         stage: "error",
         status: "error",
-        summary: "וואטסאפ הגביל את החשבון — הבוט הושבת והמנהל קיבל התראה",
+        summary: "WhatsApp restricted the account — bot disabled and the admin was alerted",
       });
       throw new PermanentJobError(String(err?.message ?? err));
     }
@@ -298,7 +303,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       ...base,
       stage: "error",
       status: "error",
-      summary: `שליחה נכשלה: ${String(err?.message ?? err).slice(0, 200)}`,
+      summary: `Send failed: ${String(err?.message ?? err).slice(0, 200)}`,
     });
     throw err;
   }

@@ -22,7 +22,8 @@ export async function extractAndStoreMemory(
   sentParts: string[],
 ): Promise<MemoryExtraction | null> {
   const system = `אתה מנהל זיכרון לקוחות. מתוך חילופי ההודעות, חלץ רק מידע יציב ושימושי לעתיד והחזר JSON בלבד:
-{"facts": ["עובדה חדשה וקצרה", ...], "language": "he/en/... או null", "sentiment": "מילה-שתיים או null", "funnel_stage": "lead/customer/community/vip/churned או null", "follow_up": {"hours": מספר, "reason": "למה"} או null}
+{"facts": ["short new fact, in English", ...], "language": "he/en/... או null", "sentiment": "one-two words in English or null", "funnel_stage": "lead/customer/community/vip/churned או null", "follow_up": {"hours": מספר, "reason": "why, in English"} או null}
+כל הטקסטים החופשיים (facts/sentiment/reason) — באנגלית; הם מוצגים בלוח בקרה באנגלית.
 
 חוקים:
 - facts: רק עובדות חדשות שלא מופיעות ברשימה הקיימת — שם, צרכים, העדפות, התנגדויות, הבטחות שניתנו, פרטים אישיים רלוונטיים. בלי פרשנות, בלי כפילויות. אם אין — [].

@@ -36,7 +36,7 @@ export const runSimulation = createServerFn({ method: "POST" })
       data.chatId && data.chatId.endsWith(SIM_CHAT_SUFFIX)
         ? data.chatId
         : `sim-${Date.now().toString(36)}${SIM_CHAT_SUFFIX}`;
-    const senderName = data.senderName || "לקוח סימולציה";
+    const senderName = data.senderName || "Simulation Customer";
     const { port, calls } = recordingWhapiPort();
 
     const outcomes: Array<{ message: string; action: string }> = [];
@@ -44,7 +44,7 @@ export const runSimulation = createServerFn({ method: "POST" })
     for (let i = 0; i < data.messages.length; i++) {
       const m = parseWhapiMessage({
         chat_id: chatId,
-        chat_name: `סימולציה — ${senderName}`,
+        chat_name: `Simulation — ${senderName}`,
         from: chatId,
         from_name: senderName,
         id: `sim-in-${Date.now()}-${i}`,

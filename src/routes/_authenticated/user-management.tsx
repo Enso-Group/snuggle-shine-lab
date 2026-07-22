@@ -42,10 +42,7 @@ function UserManagementPage() {
     refetchInterval: 30000,
   });
 
-  const invitedSet = useMemo(
-    () => new Set(invites.map((i) => i.email.toLowerCase())),
-    [invites],
-  );
+  const invitedSet = useMemo(() => new Set(invites.map((i) => i.email.toLowerCase())), [invites]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["invited-emails"] });
@@ -122,7 +119,8 @@ function UserManagementPage() {
               </Button>
             </form>
             <p className="mt-2 text-xs text-muted-foreground">
-              They can sign in as soon as they're added — no password needed, just their Google account.
+              They can sign in as soon as they're added — no password needed, just their Google
+              account.
             </p>
           </CardContent>
         </Card>
@@ -148,7 +146,9 @@ function UserManagementPage() {
               <CardContent className="divide-y p-0">
                 {invites.map((inv) => {
                   const admin = isAdminEmail(inv.email);
-                  const hasAccount = users.some((u) => u.email.toLowerCase() === inv.email.toLowerCase());
+                  const hasAccount = users.some(
+                    (u) => u.email.toLowerCase() === inv.email.toLowerCase(),
+                  );
                   return (
                     <div key={inv.email} className="flex items-center gap-3 p-4">
                       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -178,7 +178,11 @@ function UserManagementPage() {
                           className="size-8 shrink-0 text-destructive"
                           title="Remove from invite list"
                           onClick={() => {
-                            if (window.confirm(`Remove ${inv.email} from the invite list? They'll lose access on their next visit. Their existing data is kept.`))
+                            if (
+                              window.confirm(
+                                `Remove ${inv.email} from the invite list? They'll lose access on their next visit. Their existing data is kept.`,
+                              )
+                            )
                               remove.mutate(inv.email);
                           }}
                           disabled={busy}

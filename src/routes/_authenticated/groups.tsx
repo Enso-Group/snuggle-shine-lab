@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_authenticated/groups")({
   component: GroupsPage,
 });
 
-const DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 type Slot = { day: number | null; time: string; pillar?: string; prompt?: string };
 
@@ -254,32 +254,33 @@ function GroupsPage() {
 
                   <div>
                     <label className="mb-1 block text-xs font-medium">
-                      הוראות למנהל־הבוט (טקסט חופשי — כאן מלמדים אותו איך לנהל)
+                      Manager instructions (free text — this is where you teach the bot how to run
+                      the group; any language)
                     </label>
                     <Textarea
                       value={form.instructions}
                       onChange={(e) => set("instructions", e.target.value)}
                       dir="auto"
                       rows={5}
-                      placeholder="למשל: זו קבוצת לקוחות של המותג. תפקידך לשמור על אווירה חיובית, לענות על שאלות על המוצרים לפי מאגר הידע, לפרסם טיפ יומי בבוקר, ולהעביר אליי כל תלונה חריפה..."
+                      placeholder="e.g. This is our customers community. Keep the vibe positive, answer product questions from the knowledge base, post a daily morning tip, and escalate any serious complaint to me…"
                     />
                   </div>
 
                   <div className="grid gap-2 sm:grid-cols-3">
                     <Input
-                      placeholder="מטרת הקבוצה"
+                      placeholder="Group purpose"
                       value={form.purpose}
                       onChange={(e) => set("purpose", e.target.value)}
                       dir="auto"
                     />
                     <Input
-                      placeholder="קהל היעד"
+                      placeholder="Audience"
                       value={form.audience}
                       onChange={(e) => set("audience", e.target.value)}
                       dir="auto"
                     />
                     <Input
-                      placeholder="טון (למשל: חם ומקצועי)"
+                      placeholder="Tone (e.g. warm and professional)"
                       value={form.tone}
                       onChange={(e) => set("tone", e.target.value)}
                       dir="auto"
@@ -288,13 +289,13 @@ function GroupsPage() {
 
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Input
-                      placeholder="עמודי תוכן, מופרדים בפסיק"
+                      placeholder="Content pillars, comma-separated"
                       value={form.pillarsText}
                       onChange={(e) => set("pillarsText", e.target.value)}
                       dir="auto"
                     />
                     <Input
-                      placeholder="נושאים אסורים, מופרדים בפסיק"
+                      placeholder="Forbidden topics, comma-separated"
                       value={form.forbiddenText}
                       onChange={(e) => set("forbiddenText", e.target.value)}
                       dir="auto"
@@ -303,14 +304,14 @@ function GroupsPage() {
 
                   <div>
                     <label className="mb-1 block text-xs font-medium">
-                      חוקי הקבוצה (חוק בכל שורה)
+                      Group rules (one per line, in the group's language)
                     </label>
                     <Textarea
                       value={form.rulesText}
                       onChange={(e) => set("rulesText", e.target.value)}
                       dir="auto"
                       rows={3}
-                      placeholder={"בלי פרסומות וקישורים חיצוניים\nשיח מכבד בלבד"}
+                      placeholder={"No ads or external links\nRespectful discussion only"}
                     />
                   </div>
                 </CardContent>
@@ -340,10 +341,10 @@ function GroupsPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="daily">כל יום</SelectItem>
+                          <SelectItem value="daily">Every day</SelectItem>
                           {DAYS.map((d, di) => (
                             <SelectItem key={di} value={String(di)}>
-                              יום {d}
+                              {d}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -364,7 +365,7 @@ function GroupsPage() {
                       />
                       <Input
                         className="min-w-32 flex-1"
-                        placeholder="עמוד תוכן / הנחיה לפוסט (אופציונלי)"
+                        placeholder="Content pillar / post prompt (optional)"
                         dir="auto"
                         value={slot.pillar ?? ""}
                         onChange={(e) =>
@@ -425,21 +426,21 @@ function GroupsPage() {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      אכיפת חוקים (מודרציה)
+                      Enforce rules (moderation)
                       <Switch
                         checked={form.modEnabled}
                         onCheckedChange={(v) => set("modEnabled", v)}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      מחיקת הודעות מפרות (דורש מנהל)
+                      Delete violating messages (requires admin)
                       <Switch
                         checked={form.modDelete}
                         onCheckedChange={(v) => set("modDelete", v)}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      אזהרה פומבית אחרי (הפרות)
+                      Public warning after (violations)
                       <Input
                         type="number"
                         min={1}
@@ -450,7 +451,7 @@ function GroupsPage() {
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      הסרה מהקבוצה אחרי (הפרות)
+                      Remove from group after (violations)
                       <Input
                         type="number"
                         min={1}
@@ -461,28 +462,28 @@ function GroupsPage() {
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      לענות כשמזכירים את הבוט
+                      Reply when the bot is mentioned
                       <Switch
                         checked={form.replyWhenMentioned}
                         onCheckedChange={(v) => set("replyWhenMentioned", v)}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      לענות על שאלות פתוחות בקבוצה
+                      Answer open questions in the group
                       <Switch
                         checked={form.replyToQuestions}
                         onCheckedChange={(v) => set("replyToQuestions", v)}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs">
-                      ברכת הצטרפות לחברים חדשים
+                      Welcome new members
                       <Switch
                         checked={form.welcomeEnabled}
                         onCheckedChange={(v) => set("welcomeEnabled", v)}
                       />
                     </label>
                     <Input
-                      placeholder="הנחיה לברכה (אופציונלי)"
+                      placeholder="Welcome hint (optional)"
                       value={form.welcomeHint}
                       onChange={(e) => set("welcomeHint", e.target.value)}
                       dir="auto"
@@ -491,20 +492,20 @@ function GroupsPage() {
                   <div className="grid gap-2 border-t pt-3 sm:grid-cols-2">
                     <Textarea
                       rows={2}
-                      placeholder="מתי להסלים אליי (טקסט חופשי)"
+                      placeholder="When to escalate to me (free text)"
                       value={form.escalationRules}
                       onChange={(e) => set("escalationRules", e.target.value)}
                       dir="auto"
                     />
                     <div className="space-y-2">
                       <Input
-                        placeholder="מספר וואטסאפ להתראות (למשל 9725...)"
+                        placeholder="WhatsApp number for alerts (e.g. 9725…)"
                         value={form.ownerDm}
                         onChange={(e) => set("ownerDm", e.target.value)}
                         dir="ltr"
                       />
                       <Input
-                        placeholder="KPIs (אופציונלי)"
+                        placeholder="KPIs (optional)"
                         value={form.kpis}
                         onChange={(e) => set("kpis", e.target.value)}
                         dir="auto"
@@ -536,7 +537,7 @@ function GroupsPage() {
                         dir="auto"
                       >
                         <p className="mb-1 font-semibold">
-                          📋 מזכר אסטרטגיה שבועי ({activity.memo.week_start})
+                          📋 Weekly strategy memo ({activity.memo.week_start})
                         </p>
                         <p className="whitespace-pre-wrap">{activity.memo.memo}</p>
                       </div>

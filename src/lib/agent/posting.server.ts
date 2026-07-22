@@ -189,7 +189,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         messages: [
           {
             role: "system",
-            content: `אתה עורך תוכן קפדן. בדוק את הפוסט והחזר JSON בלבד: {"ok": true/false, "post": "הגרסה הסופית", "note": "מה תוקן או ריק"}.
+            content: `אתה עורך תוכן קפדן. בדוק את הפוסט והחזר JSON בלבד: {"ok": true/false, "post": "הגרסה הסופית", "note": "what was fixed, in English — or empty"}.
 בדוק: מתאים למטרת הקבוצה ולטון (${profile.tone ?? "מקצועי-חם"}), בשפה ${profile.language}, לא חוזר על פוסטים קודמים, בלי עובדות עסקיות שאינן במאגר הידע, בלי רמז לבוט/AI, אורך וואטסאפ סביר. תקן בעצמך אם צריך.`,
           },
           {
@@ -274,7 +274,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       chat_id: profile.chat_id,
       trigger: "scheduled",
       stage: "post",
-      summary: `פורסם פוסט (${post.source}${post.pillar ? ` / ${post.pillar}` : ""}) בקבוצה ${profile.name ?? profile.chat_id}`,
+      summary: `Published a ${post.source} post${post.pillar ? ` (${post.pillar})` : ""} in ${profile.name ?? profile.chat_id}`,
       data: { post: final, review_note: reviewNote, planned_post_id: post.id },
     });
     return "sent";
@@ -293,7 +293,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       trigger: "scheduled",
       stage: "error",
       status: "error",
-      summary: `פרסום פוסט נכשל: ${msg.slice(0, 150)}`,
+      summary: `Post publishing failed: ${msg.slice(0, 150)}`,
     });
     return "failed";
   }
@@ -339,7 +339,7 @@ async function maybeRefreshInsights(
   await supabase.from("group_insights").insert({
     group_chat_id: profile.chat_id,
     kind: "activity",
-    content: `בשבוע האחרון: ${inbound.length} הודעות (${perDay} ביום בממוצע) מ-${activeMembers} חברים פעילים.`,
+    content: `Last 7 days: ${inbound.length} messages (${perDay}/day average) from ${activeMembers} active members.`,
     data: { messages_7d: inbound.length, per_day: perDay, active_members: activeMembers },
   });
 
@@ -383,7 +383,7 @@ async function maybeRefreshInsights(
           {
             role: "system",
             content: `נתח את השיחות האחרונות בקבוצה והחזר JSON בלבד:
-{"topics": "משפט-שניים: על מה מדברים ומה מעניין את החברים", "hot_topic": "נושא חם שמצדיק תגובה מהקבוצה עכשיו, או null"}`,
+{"topics": "one-two sentences IN ENGLISH: what members are discussing and what interests them", "hot_topic": "a hot topic that justifies a post right now (in English), or null"}`,
           },
           { role: "user", content: activity.slice(0, 6000) },
         ],
@@ -418,7 +418,7 @@ async function maybeRefreshInsights(
             chat_id: profile.chat_id,
             trigger: "scheduled",
             stage: "insight",
-            summary: `זוהה נושא חם ("${parsed.hot_topic}") — תוכנן פוסט תגובתי`,
+            summary: `Hot topic detected ("${parsed.hot_topic}") — reactive post planned`,
           });
         }
       }
@@ -431,7 +431,7 @@ async function maybeRefreshInsights(
     chat_id: profile.chat_id,
     trigger: "scheduled",
     stage: "insight",
-    summary: `תובנות עודכנו: ${perDay} הודעות/יום, ${activeMembers} פעילים`,
+    summary: `Insights refreshed: ${perDay} messages/day, ${activeMembers} active members`,
   });
   return true;
 }

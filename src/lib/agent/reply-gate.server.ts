@@ -73,19 +73,19 @@ async function ownedQuestionCheck(
     .filter((h) => h.body)
     .map(
       (h) =>
-        `${h.direction === "outbound" ? "אנחנו" : h.sender_name || "חבר"}: ${String(h.body).slice(0, 200)}`,
+        `${h.direction === "outbound" ? "Us" : h.sender_name || "Member"}: ${String(h.body).slice(0, 200)}`,
     )
     .join("\n");
 
-  const system = `אתה שומר הסף של מנהל קבוצת וואטסאפ. החלט אם ההודעה האחרונה דורשת תגובה מהמנהל, והחזר JSON בלבד:
-{"respond": true/false, "reason": "משפט קצר"}
+  const system = `You are the gatekeeper for a WhatsApp group's manager. Decide whether the LATEST message requires a response from the manager. Return JSON only:
+{"respond": true/false, "reason": "short sentence in English"}
 
-הקבוצה: ${ctx.profile.purpose ?? "קהילה"}${ctx.profile.instructions ? `\nהנחיות המנהל: ${ctx.profile.instructions.slice(0, 500)}` : ""}
+Group purpose: ${ctx.profile.purpose ?? "community"}${ctx.profile.instructions ? `\nManager's instructions: ${ctx.profile.instructions.slice(0, 500)}` : ""}
 
-כלל ברזל — ברירת המחדל היא respond=false. respond=true רק אם:
-- שאלה שמופנית בבירור למנהל/לעסק (לא לחבר אחר בקבוצה), או
-- שאלה בתחום שהקבוצה קיימת בשבילו, שאף אחד לא ענה עליה.
-שיחת חולין בין חברים, תגובות אחד לשני, דעות, בדיחות — respond=false תמיד. בספק — false.`;
+Iron rule — the default is respond=false. respond=true ONLY if:
+- the question is clearly aimed at the manager/business (not at another member), or
+- it is an unanswered question squarely in the group's domain that the manager owns.
+Small talk between members, member-to-member replies, opinions, jokes — respond=false, always. When in doubt — false. The message may be in any language; your reason must be in English.`;
 
   try {
     const res = await callLLM({
@@ -100,7 +100,7 @@ async function ownedQuestionCheck(
         { role: "system", content: system },
         {
           role: "user",
-          content: `שיחה אחרונה:\n${history || "(ריק)"}\n\nההודעה לבדיקה מאת ${m.senderName || "חבר"}:\n"""${m.body.slice(0, 600)}"""`,
+          content: `Recent conversation:\n${history || "(empty)"}\n\nMessage to evaluate, from ${m.senderName || "a member"}:\n"""${m.body.slice(0, 600)}"""`,
         },
       ],
     });
@@ -108,14 +108,16 @@ async function ownedQuestionCheck(
     return {
       respond: parsed.respond === true,
       signal: "owned_question",
-      reason: String(parsed.reason ?? (parsed.respond ? "שאלה שבבעלות המנהל" : "שיחה כללית")),
+      reason: String(
+        parsed.reason ?? (parsed.respond ? "Question owned by the manager" : "General chatter"),
+      ),
     };
   } catch (e) {
     // The gate must fail CLOSED — an error never makes the bot butt in.
     return {
       respond: false,
       signal: "owned_question",
-      reason: `בדיקת הסיווג נכשלה — ברירת מחדל שקטה (${String((e as Error)?.message ?? e).slice(0, 80)})`,
+      reason: `Classification failed — staying silent by default (${String((e as Error)?.message ?? e).slice(0, 80)})`,
     };
   }
 }
@@ -142,13 +144,13 @@ export async function decideGroupReply(
       decision = {
         respond: false,
         signal,
-        reason: "פנייה ישירה, אבל פרופיל הקבוצה מכבה תגובות לאזכורים",
+        reason: "Directly addressed, but the group profile disables mention replies",
       };
     } else {
       const labels: Record<string, string> = {
-        mentioned: "הבוט תויג ישירות",
-        reply_to_bot: "תגובה להודעה של הבוט",
-        named: "השם של הבוט הוזכר",
+        mentioned: "Bot was directly @-mentioned",
+        reply_to_bot: "Reply to one of the bot's messages",
+        named: "Bot's name was used",
       };
       decision = { respond: true, signal, reason: labels[signal] ?? signal };
     }
@@ -162,7 +164,7 @@ export async function decideGroupReply(
     decision = {
       respond: false,
       signal: "none",
-      reason: "שיחה כללית בין חברי הקבוצה — לא מופנית לבוט",
+      reason: "General chatter between members — not addressed to the bot",
     };
   }
 
@@ -172,7 +174,7 @@ export async function decideGroupReply(
     trigger: deps.trigger,
     stage: "reply_gate",
     status: decision.respond ? "ok" : "skip",
-    summary: `${decision.respond ? "עונה" : "שותק"} — ${decision.reason}`,
+    summary: `${decision.respond ? "Responding" : "Staying silent"} — ${decision.reason}`,
     data: {
       signal: decision.signal,
       sender: m.senderName || m.senderId,

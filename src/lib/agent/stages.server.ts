@@ -41,14 +41,15 @@ export async function analyzeIntent(ctx: AgentContext): Promise<IntentAnalysis> 
     language: detectLanguageFallback(ctx.message.body),
     urgency: "normal",
     sentiment: "neutral",
-    goal: "לענות בצורה מועילה ומקצועית",
+    goal: "Reply helpfully and professionally",
     escalate: false,
     escalate_reason: null,
   };
 
   const system = `אתה מנתח הודעות נכנסות בוואטסאפ עבור צוות עסקי. נתח את ההודעה האחרונה בהקשר השיחה והחזר JSON בלבד, בלי טקסט נוסף, במבנה:
 {"intent": "מה האדם באמת רוצה, במשפט קצר", "language": "קוד שפה של ההודעה האחרונה: he/en/ru/ar/...", "urgency": "low/normal/high", "sentiment": "מצב רגשי במילה-שתיים", "goal": "מה איש מקצוע מצטיין היה מנסה להשיג בתשובה הזו", "escalate": true/false, "escalate_reason": "אם escalate=true — סיבה קצרה, אחרת null"}
-escalate=true רק אם יש איום משפטי, דרישת החזר כספי, נושא רגיש/משברי, או בקשה מפורשת לדבר עם בן אדם.`;
+escalate=true רק אם יש איום משפטי, דרישת החזר כספי, נושא רגיש/משברי, או בקשה מפורשת לדבר עם בן אדם.
+חשוב: כתוב את הערכים של intent / sentiment / goal / escalate_reason באנגלית (הם מוצגים בלוח בקרה באנגלית). שדה language נשאר קוד שפה.`;
 
   const user = `היסטוריה אחרונה:
 ${condensedHistory(ctx, 10) || "(שיחה חדשה)"}
@@ -107,7 +108,7 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
 - דחיפות: ${intent.urgency} | מצב רגשי: ${intent.sentiment}
 - המטרה שלך בתשובה: ${intent.goal}
 
-פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "משפט על למה זו התשובה הנכונה"}.
+פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply"}.
 - בין 1 ל-${maxParts} הודעות, כמו שאדם כותב בוואטסאפ: קצרות, בלי חומות טקסט.
 - ברוב המקרים הודעה אחת מספיקה. פצל רק אם יש באמת שני חלקים נפרדים (למשל תשובה + שאלת המשך).`;
 
@@ -142,7 +143,7 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
   // Model ignored the JSON format — treat its whole output as one reply.
   const plain = normalizeReplyParts([res.content], maxParts);
   if (!plain.length) throw new Error("Draft stage returned an empty reply");
-  return { messages: plain, reasoning: "פלט חופשי — נשלח כפי שהוא" };
+  return { messages: plain, reasoning: "Free-form output — sent as-is" };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +164,7 @@ export async function critiqueAndRevise(
   if (ctx.settings.agent_config?.skip_critique) return approved;
 
   const system = `אתה עורך איכות קפדן של תשובות וואטסאפ עסקיות. בדוק את הטיוטה מול הקריטריונים והחזר JSON בלבד:
-{"verdict": "approve" או "revise", "issues": ["בעיה שנמצאה", ...], "messages": ["הגרסה הסופית של כל הודעה", ...], "reasoning": "משפט הסבר"}
+{"verdict": "approve" או "revise", "issues": ["issue found, in English", ...], "messages": ["הגרסה הסופית של כל הודעה", ...], "reasoning": "one sentence in English"}
 
 קריטריונים (כל כשל = revise עם תיקון):
 1. שפה: התשובה חייבת להיות בשפה ${intent.language} בלבד.

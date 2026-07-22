@@ -32,31 +32,35 @@ export const Route = createFileRoute("/_authenticated/activity")({
 
 const KIND_META: Record<ActivityKind, { label: string; icon: typeof MessageCircle; cls: string }> =
   {
-    reply: { label: "תשובות", icon: MessageCircle, cls: "text-emerald-600 dark:text-emerald-400" },
-    approval: { label: "לאישור", icon: Inbox, cls: "text-amber-600 dark:text-amber-400" },
-    handled: { label: "טופלו", icon: CheckCheck, cls: "text-sky-600 dark:text-sky-400" },
-    gate: { label: "שער תגובה", icon: VolumeX, cls: "text-muted-foreground" },
-    post: { label: "פוסטים", icon: Newspaper, cls: "text-emerald-600 dark:text-emerald-400" },
-    moderation: { label: "מודרציה", icon: Shield, cls: "text-orange-600 dark:text-orange-400" },
-    welcome: { label: "ברכות", icon: UserPlus, cls: "text-lime-600 dark:text-lime-400" },
-    follow_up: { label: "מעקבים", icon: Timer, cls: "text-cyan-600 dark:text-cyan-400" },
-    insight: { label: "תובנות", icon: ActivityIcon, cls: "text-slate-500" },
-    new_contact: { label: "אנשי קשר", icon: UserPlus, cls: "text-violet-600 dark:text-violet-400" },
-    alert: { label: "התראות", icon: Bell, cls: "text-rose-600 dark:text-rose-400" },
-    error: { label: "שגיאות", icon: AlertTriangle, cls: "text-rose-600 dark:text-rose-400" },
+    reply: { label: "Replies", icon: MessageCircle, cls: "text-emerald-600 dark:text-emerald-400" },
+    approval: { label: "Approvals", icon: Inbox, cls: "text-amber-600 dark:text-amber-400" },
+    handled: { label: "Handled", icon: CheckCheck, cls: "text-sky-600 dark:text-sky-400" },
+    gate: { label: "Reply gate", icon: VolumeX, cls: "text-muted-foreground" },
+    post: { label: "Posts", icon: Newspaper, cls: "text-emerald-600 dark:text-emerald-400" },
+    moderation: { label: "Moderation", icon: Shield, cls: "text-orange-600 dark:text-orange-400" },
+    welcome: { label: "Welcomes", icon: UserPlus, cls: "text-lime-600 dark:text-lime-400" },
+    follow_up: { label: "Follow-ups", icon: Timer, cls: "text-cyan-600 dark:text-cyan-400" },
+    insight: { label: "Insights", icon: ActivityIcon, cls: "text-slate-500" },
+    new_contact: {
+      label: "New contacts",
+      icon: UserPlus,
+      cls: "text-violet-600 dark:text-violet-400",
+    },
+    alert: { label: "Alerts", icon: Bell, cls: "text-rose-600 dark:text-rose-400" },
+    error: { label: "Errors", icon: AlertTriangle, cls: "text-rose-600 dark:text-rose-400" },
   };
 
 const FILTERS: Array<{ value: string; label: string }> = [
-  { value: "all", label: "הכל" },
-  { value: "reply", label: "תשובות" },
-  { value: "approval", label: "לאישור" },
-  { value: "post", label: "פוסטים" },
-  { value: "moderation", label: "מודרציה" },
-  { value: "follow_up", label: "מעקבים" },
-  { value: "new_contact", label: "אנשי קשר" },
-  { value: "gate", label: "שער תגובה" },
-  { value: "alert", label: "התראות" },
-  { value: "error", label: "שגיאות" },
+  { value: "all", label: "All" },
+  { value: "reply", label: "Replies" },
+  { value: "approval", label: "Approvals" },
+  { value: "post", label: "Posts" },
+  { value: "moderation", label: "Moderation" },
+  { value: "follow_up", label: "Follow-ups" },
+  { value: "new_contact", label: "New contacts" },
+  { value: "gate", label: "Reply gate" },
+  { value: "alert", label: "Alerts" },
+  { value: "error", label: "Errors" },
 ];
 
 function dayLabel(ts: string): string {
@@ -64,9 +68,9 @@ function dayLabel(ts: string): string {
   const today = new Date();
   const yesterday = new Date(Date.now() - 24 * 3600_000);
   const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (sameDay(d, today)) return "היום";
-  if (sameDay(d, yesterday)) return "אתמול";
-  return d.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  if (sameDay(d, today)) return "Today";
+  if (sameDay(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
 function EntryRow({ entry }: { entry: ActivityEntry }) {
@@ -87,14 +91,14 @@ function EntryRow({ entry }: { entry: ActivityEntry }) {
           <div className="min-w-0 flex-1" dir="auto">
             <p className="text-sm leading-snug">{entry.title}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {entry.chat_name ?? entry.chat_id ?? ""}
+              <span dir="auto">{entry.chat_name ?? entry.chat_id ?? ""}</span>
               {expandable && (
-                <span className="ms-2 text-primary/70 group-open:hidden">· פירוט ▾</span>
+                <span className="ms-2 text-primary/70 group-open:hidden">· details ▾</span>
               )}
             </p>
           </div>
           <span className="shrink-0 pt-0.5 text-xs text-muted-foreground" dir="ltr">
-            {new Date(entry.ts).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+            {new Date(entry.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
           </span>
         </summary>
         {expandable && (
@@ -146,19 +150,19 @@ function ActivityPage() {
       <PageHeader
         icon={ActivityIcon}
         title="Activity"
-        description="כל מה שהבוט עשה — הודעות, תשובות, פוסטים, מודרציה, מעקבים — עם הנימוק המלא לכל פעולה."
+        description="Everything the bot did — messages, replies, posts, moderation, follow-ups — with full reasoning for every action."
         maxWidthClass="max-w-4xl"
         actions={
           <Tabs value={range} onValueChange={(v) => setRange(v as typeof range)}>
             <TabsList className="h-8">
               <TabsTrigger value="day" className="text-xs">
-                יום
+                Day
               </TabsTrigger>
               <TabsTrigger value="week" className="text-xs">
-                שבוע
+                Week
               </TabsTrigger>
               <TabsTrigger value="month" className="text-xs">
-                חודש
+                Month
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -203,8 +207,8 @@ function ActivityPage() {
             <CardContent>
               <EmptyState
                 icon={ActivityIcon}
-                title="שקט כאן"
-                description="לא נרשמה פעילות בטווח הזמן שנבחר. כל פעולה של הבוט תופיע כאן ברגע שתקרה."
+                title="All quiet"
+                description="No activity recorded in the selected range. Every bot action will appear here the moment it happens."
               />
             </CardContent>
           </Card>

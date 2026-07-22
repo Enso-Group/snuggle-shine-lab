@@ -133,8 +133,8 @@ async function sendOneFollowUp(
     )
     .eq("id", row.conversation_id)
     .maybeSingle();
-  if (!conv) return finish(deps, row, "cancelled", "השיחה כבר לא קיימת");
-  if (conv.blocked) return finish(deps, row, "cancelled", "איש הקשר חסום — אין מעקבים");
+  if (!conv) return finish(deps, row, "cancelled", "Conversation no longer exists");
+  if (conv.blocked) return finish(deps, row, "cancelled", "Contact is blocked — no follow-ups");
 
   // Still relevant? Any message since the follow-up was scheduled cancels it:
   // an inbound means they came back; an outbound means someone already pinged.
@@ -145,7 +145,12 @@ async function sendOneFollowUp(
     .gt("created_at", row.created_at)
     .limit(1);
   if (newer?.length) {
-    return finish(deps, row, "cancelled", "הייתה תכתובת מאז שנקבע המעקב — אין צורך");
+    return finish(
+      deps,
+      row,
+      "cancelled",
+      "Conversation moved on since scheduling — follow-up no longer needed",
+    );
   }
 
   // Draft the nudge.
@@ -207,7 +212,7 @@ async function sendOneFollowUp(
       source: "follow_up",
       status: "pending",
     });
-    return finish(deps, row, "queued_approval", "מעקב ממתין לאישור אנושי");
+    return finish(deps, row, "queued_approval", "Follow-up awaiting human approval");
   }
 
   // Anti-ban guards right before the send.
@@ -215,7 +220,7 @@ async function sendOneFollowUp(
   const guard = await checkOutboundAllowed(supabase, conv, text);
   if (!guard.ok) {
     if (guard.code === "consecutive_limit" || guard.code === "blocked") {
-      return finish(deps, row, "cancelled", `מעקב בוטל על ידי מגן אנטי-חסימה: ${guard.reason}`);
+      return finish(deps, row, "cancelled", `Cancelled by the anti-ban guard: ${guard.reason}`);
     }
     // Temporary condition (min gap / hourly cap) — try again later.
     await supabase
@@ -253,5 +258,5 @@ async function sendOneFollowUp(
     humanPacing: deps.humanPacing,
     botName: settings.bot_name,
   });
-  return finish(deps, row, "sent", `נשלח מעקב: ${text.slice(0, 120)}`);
+  return finish(deps, row, "sent", `Follow-up sent: ${text.slice(0, 120)}`);
 }

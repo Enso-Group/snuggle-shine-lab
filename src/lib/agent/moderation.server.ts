@@ -29,7 +29,8 @@ const SPAM_PATTERNS = [
 ];
 
 export function heuristicSpam(text: string): string | null {
-  for (const re of SPAM_PATTERNS) if (re.test(text)) return "ספאם/קידום לא מאושר (זיהוי אוטומטי)";
+  for (const re of SPAM_PATTERNS)
+    if (re.test(text)) return "Spam / unapproved promotion (automatic detection)";
   return null;
 }
 
@@ -41,12 +42,17 @@ async function classifyViolation(
   const none: ModerationVerdict = { violation: false, rule: null, severity: "low", reasoning: "" };
   const heuristic = heuristicSpam(m.body);
   if (heuristic) {
-    return { violation: true, rule: heuristic, severity: "high", reasoning: "תבנית ספאם מובהקת" };
+    return {
+      violation: true,
+      rule: heuristic,
+      severity: "high",
+      reasoning: "Obvious spam pattern",
+    };
   }
   if (!profile.rules.length && !profile.forbidden_topics.length) return none;
 
   const system = `אתה מודרטור של קבוצת וואטסאפ. בדוק אם ההודעה מפרה את חוקי הקבוצה והחזר JSON בלבד:
-{"violation": true/false, "rule": "החוק שהופר או null", "severity": "low/medium/high", "reasoning": "משפט קצר"}
+{"violation": true/false, "rule": "the violated rule as written, or null", "severity": "low/medium/high", "reasoning": "short sentence in English"}
 
 חוקי הקבוצה:
 ${profile.rules.map((r) => `- ${r}`).join("\n") || "(אין)"}
@@ -209,7 +215,7 @@ export async function moderateGroupMessage(
       m,
       action: "remove",
       rule: verdict.rule,
-      reasoning: `${verdict.reasoning} (הפרה ${violations}/${removeLimit})`,
+      reasoning: `${verdict.reasoning} (violation ${violations}/${removeLimit})`,
       ok: rem.ok,
       error: rem.error,
     });
@@ -266,7 +272,7 @@ export async function moderateGroupMessage(
       m,
       action: "warn",
       rule: verdict.rule,
-      reasoning: `${verdict.reasoning} (הפרה ${violations})`,
+      reasoning: `${verdict.reasoning} (violation #${violations})`,
       ok: true,
     });
   } else {
@@ -276,7 +282,7 @@ export async function moderateGroupMessage(
       m,
       action: "escalate",
       rule: verdict.rule,
-      reasoning: `${verdict.reasoning} (הפרה ראשונה — מעקב בלבד)`,
+      reasoning: `${verdict.reasoning} (first strike — tracked only)`,
       ok: true,
     });
   }
@@ -287,7 +293,7 @@ export async function moderateGroupMessage(
     trigger: deps.trigger,
     stage: "moderation",
     status: "ok",
-    summary: `הפרת "${verdict.rule ?? "חוק"}" על ידי ${m.senderName || m.senderId} — הפרה מס' ${violations}`,
+    summary: `Rule violation "${verdict.rule ?? "group rules"}" by ${m.senderName || m.senderId} — violation #${violations}`,
     data: { verdict: verdict as unknown as Record<string, unknown>, violations },
   });
   return true;

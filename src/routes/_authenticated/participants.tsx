@@ -13,7 +13,12 @@ import {
 } from "@/lib/participants.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useWhatsAppConnection, WA_CONNECTION_QUERY_KEY } from "@/hooks/use-connection";
-import { DEMO_MODE, demoGroupConversations, demoParticipants, demoParticipantMessages } from "@/lib/demo";
+import {
+  DEMO_MODE,
+  demoGroupConversations,
+  demoParticipants,
+  demoParticipantMessages,
+} from "@/lib/demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -42,7 +47,15 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Users, MessageSquare, RefreshCw, Radio, Check, ChevronsUpDown, AlertTriangle } from "lucide-react";
+import {
+  Users,
+  MessageSquare,
+  RefreshCw,
+  Radio,
+  Check,
+  ChevronsUpDown,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PageHeader, PageContent } from "@/components/page-header";
 
@@ -171,7 +184,6 @@ function ParticipantsPage() {
       setGroupId("");
       setLoadingGroups(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
   function enableFullHistory() {
@@ -179,14 +191,21 @@ function ParticipantsPage() {
     enableHistorySync()
       .then((r: any) => {
         setFullHistory(r.fullHistory);
-        setHistoryNotice("The setting is enabled. Now you must reconnect WhatsApp so the old history is pulled into the connection.");
+        setHistoryNotice(
+          "The setting is enabled. Now you must reconnect WhatsApp so the old history is pulled into the connection.",
+        );
       })
       .catch(() => setHistoryNotice("Couldn't enable full history. Please try again in a moment."))
       .finally(() => setEnablingHistory(false));
   }
 
   function reconnectWhatsApp() {
-    if (!window.confirm("This will briefly disconnect WhatsApp and show a new QR code to scan. Continue?")) return;
+    if (
+      !window.confirm(
+        "This will briefly disconnect WhatsApp and show a new QR code to scan. Continue?",
+      )
+    )
+      return;
     setReconnecting(true);
     setHistoryNotice("");
     setQrImage("");
@@ -196,17 +215,30 @@ function ParticipantsPage() {
         setConnectionStatus(r.status);
         if (r.qrImage) {
           setQrImage(r.qrImage);
-          setHistoryNotice("A QR code was created. Scan it from your phone. Once the status returns to connected, select the group and refresh it.");
+          setHistoryNotice(
+            "A QR code was created. Scan it from your phone. Once the status returns to connected, select the group and refresh it.",
+          );
         } else {
-          setHistoryNotice(`Waiting for QR (status: ${r.qrStatus || "WAITING"})... will retry automatically.`);
+          setHistoryNotice(
+            `Waiting for QR (status: ${r.qrStatus || "WAITING"})... will retry automatically.`,
+          );
         }
       })
-      .catch((e: any) => setHistoryNotice(String(e?.message ?? "Couldn't generate a real QR code. Please try again in a moment.")))
+      .catch((e: any) =>
+        setHistoryNotice(
+          String(e?.message ?? "Couldn't generate a real QR code. Please try again in a moment."),
+        ),
+      )
       .finally(() => setReconnecting(false));
   }
 
   function resetPipeline() {
-    if (!window.confirm("This will reset the entire data flow: it enables full history and connects the Webhook to Whapi so every new message flows automatically into the site. Continue?")) return;
+    if (
+      !window.confirm(
+        "This will reset the entire data flow: it enables full history and connects the Webhook to Whapi so every new message flows automatically into the site. Continue?",
+      )
+    )
+      return;
     setResetting(true);
     setHistoryNotice("");
     const webhookUrl = `${window.location.origin}/api/public/whapi-webhook`;
@@ -216,9 +248,17 @@ function ParticipantsPage() {
         setConnectionStatus(r.status);
         const parts: string[] = [];
         parts.push(r.fullHistory ? "✓ Full history active" : "✗ Full history not enabled");
-        parts.push(r.webhookUrl ? `✓ Webhook registered: ${r.webhookUrl}` : "✗ Webhook not registered");
-        parts.push(r.connected ? `✓ Connected${r.userName ? ` as ${r.userName}` : ""}` : `Status: ${r.status ?? "not connected"} — scan QR or reconnect`);
-        parts.push("From now on, every new message flows automatically into the site. If you also want old history — disconnect the phone and reconnect.");
+        parts.push(
+          r.webhookUrl ? `✓ Webhook registered: ${r.webhookUrl}` : "✗ Webhook not registered",
+        );
+        parts.push(
+          r.connected
+            ? `✓ Connected${r.userName ? ` as ${r.userName}` : ""}`
+            : `Status: ${r.status ?? "not connected"} — scan QR or reconnect`,
+        );
+        parts.push(
+          "From now on, every new message flows automatically into the site. If you also want old history — disconnect the phone and reconnect.",
+        );
         setHistoryNotice(parts.join("\n"));
       })
       .catch((e: any) => setHistoryNotice(`Reset failed: ${e?.message ?? e}`))
@@ -234,16 +274,19 @@ function ParticipantsPage() {
           setConnectionStatus(r.status);
           if (r.qrImage) {
             setQrImage(r.qrImage);
-            setHistoryNotice("A QR code was created. Scan it from your phone. Once the status returns to connected, select the group and refresh it.");
+            setHistoryNotice(
+              "A QR code was created. Scan it from your phone. Once the status returns to connected, select the group and refresh it.",
+            );
           } else {
-            setHistoryNotice(`Waiting for QR (status: ${r.qrStatus || "WAITING"})... will retry automatically.`);
+            setHistoryNotice(
+              `Waiting for QR (status: ${r.qrStatus || "WAITING"})... will retry automatically.`,
+            );
           }
         })
         .catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
   }, [qrImage, historyNotice]);
-
 
   useEffect(() => {
     setParticipants([]);
@@ -255,14 +298,10 @@ function ParticipantsPage() {
     if (!groupId) return;
     const channel = supabase
       .channel(`participants-${groupId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => {
-          loadParticipants(groupId);
-          if (selected) loadMsgs(selected);
-        },
-      )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+        loadParticipants(groupId);
+        if (selected) loadMsgs(selected);
+      })
       .subscribe();
     // Auto-refresh every 10s so the table updates in near real-time
     const interval = setInterval(() => loadParticipants(groupId), 10000);
@@ -279,14 +318,11 @@ function ParticipantsPage() {
     return () => clearInterval(interval);
   }, [qrImage]);
 
-
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return participants;
     return participants.filter(
-      (p) =>
-        p.sender_name.toLowerCase().includes(q) ||
-        p.sender_id.toLowerCase().includes(q),
+      (p) => p.sender_name.toLowerCase().includes(q) || p.sender_id.toLowerCase().includes(q),
     );
   }, [filter, participants]);
 
@@ -332,209 +368,219 @@ function ParticipantsPage() {
       />
 
       <PageContent maxWidthClass="max-w-6xl" className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                disabled={loadingGroups}
-                className="w-full justify-between font-normal"
-              >
-                <span className="truncate">
-                  {loadingGroups
-                    ? "Loading groups from WhatsApp…"
-                    : groupId
-                    ? groups.find((g) => g.whapi_chat_id === groupId)?.name ?? "Select a group"
-                    : `Select a group (${groups.length})`}
-                </span>
-                <ChevronsUpDown className="size-4 opacity-50 shrink-0" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
-              <Command
-                filter={(value, search) =>
-                  value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
-                }
-              >
-                <CommandInput placeholder="Search a group…" />
-                <CommandList>
-                  <CommandEmpty>No groups found.</CommandEmpty>
-                  <CommandGroup>
-                    {groups.map((g) => (
-                      <CommandItem
-                        key={g.whapi_chat_id}
-                        value={`${g.name} ${g.whapi_chat_id}`}
-                        onSelect={() => setGroupId(g.whapi_chat_id)}
-                      >
-                        <Check
-                          className={cn(
-                            "size-4 ms-2",
-                            groupId === g.whapi_chat_id ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                        {g.name}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        </div>
-        <Input
-          placeholder="Filter participants…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="sm:max-w-xs"
-          disabled={!groupId}
-        />
-        {groupId && (
-          <Button
-            variant="default"
-            onClick={() => loadParticipants(groupId)}
-            disabled={loadingParts}
-          >
-            <RefreshCw className={`size-4 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
-            Refresh group
-          </Button>
-        )}
-      </div>
-
-      <Alert>
-        <AlertTriangle className="size-4" />
-        <AlertTitle>
-          {fullHistory === true
-            ? "Full history active"
-            : "Sync full history from WhatsApp"}
-        </AlertTitle>
-        <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-          <span>
-            To manage full history and the WhatsApp connection — see the <strong>Instructions</strong> page.
-          </span>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              onClick={resetPipeline}
-              disabled={resetting || reconnecting || enablingHistory}
-              variant="default"
-            >
-              <RefreshCw className={`size-3 ms-1 ${resetting ? "animate-spin" : ""}`} />
-              Reset all data flow
-            </Button>
-            <Button
-              size="sm"
-              onClick={enableFullHistory}
-              disabled={enablingHistory || reconnecting || resetting}
-              variant="outline"
-            >
-              <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
-              {fullHistory === true ? "Enable again" : "Enable full history"}
-            </Button>
-            <Button
-              size="sm"
-              onClick={reconnectWhatsApp}
-              disabled={reconnecting || enablingHistory || resetting}
-              variant="outline"
-            >
-              <RefreshCw className={`size-3 ms-1 ${reconnecting ? "animate-spin" : ""}`} />
-              Reconnect with QR
-            </Button>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  disabled={loadingGroups}
+                  className="w-full justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {loadingGroups
+                      ? "Loading groups from WhatsApp…"
+                      : groupId
+                        ? (groups.find((g) => g.whapi_chat_id === groupId)?.name ??
+                          "Select a group")
+                        : `Select a group (${groups.length})`}
+                  </span>
+                  <ChevronsUpDown className="size-4 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
+                <Command
+                  filter={(value, search) =>
+                    value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+                  }
+                >
+                  <CommandInput placeholder="Search a group…" />
+                  <CommandList>
+                    <CommandEmpty>No groups found.</CommandEmpty>
+                    <CommandGroup>
+                      {groups.map((g) => (
+                        <CommandItem
+                          key={g.whapi_chat_id}
+                          value={`${g.name} ${g.whapi_chat_id}`}
+                          onSelect={() => setGroupId(g.whapi_chat_id)}
+                        >
+                          <Check
+                            className={cn(
+                              "size-4 ms-2",
+                              groupId === g.whapi_chat_id ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                          {g.name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
-        </AlertDescription>
-      </Alert>
+          <Input
+            placeholder="Filter participants…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="sm:max-w-xs"
+            disabled={!groupId}
+          />
+          {groupId && (
+            <Button
+              variant="default"
+              onClick={() => loadParticipants(groupId)}
+              disabled={loadingParts}
+            >
+              <RefreshCw className={`size-4 ms-1 ${loadingParts ? "animate-spin" : ""}`} />
+              Refresh group
+            </Button>
+          )}
+        </div>
 
-      {qrImage && (
         <Alert>
-          <AlertTitle>Scan the QR to re-authorize the connection</AlertTitle>
-          <AlertDescription className="space-y-3">
-            <p>Open WhatsApp on your phone → Linked devices → Link a device, and scan the code. After connecting, the history will start syncing.</p>
-            <img src={qrImage} alt="QR for WhatsApp connection" className="w-64 max-w-full rounded-lg border bg-background p-2" />
+          <AlertTriangle className="size-4" />
+          <AlertTitle>
+            {fullHistory === true ? "Full history active" : "Sync full history from WhatsApp"}
+          </AlertTitle>
+          <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+            <span>
+              To manage full history and the WhatsApp connection — see the{" "}
+              <strong>Instructions</strong> page.
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={resetPipeline}
+                disabled={resetting || reconnecting || enablingHistory}
+                variant="default"
+              >
+                <RefreshCw className={`size-3 ms-1 ${resetting ? "animate-spin" : ""}`} />
+                Reset all data flow
+              </Button>
+              <Button
+                size="sm"
+                onClick={enableFullHistory}
+                disabled={enablingHistory || reconnecting || resetting}
+                variant="outline"
+              >
+                <RefreshCw className={`size-3 ms-1 ${enablingHistory ? "animate-spin" : ""}`} />
+                {fullHistory === true ? "Enable again" : "Enable full history"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={reconnectWhatsApp}
+                disabled={reconnecting || enablingHistory || resetting}
+                variant="outline"
+              >
+                <RefreshCw className={`size-3 ms-1 ${reconnecting ? "animate-spin" : ""}`} />
+                Reconnect with QR
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
-      )}
 
-      {historyNotice && (
-        <Alert>
-          <AlertDescription className="whitespace-pre-line">{historyNotice}</AlertDescription>
-        </Alert>
-      )}
+        {qrImage && (
+          <Alert>
+            <AlertTitle>Scan the QR to re-authorize the connection</AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>
+                Open WhatsApp on your phone → Linked devices → Link a device, and scan the code.
+                After connecting, the history will start syncing.
+              </p>
+              <img
+                src={qrImage}
+                alt="QR for WhatsApp connection"
+                className="w-64 max-w-full rounded-lg border bg-background p-2"
+              />
+            </AlertDescription>
+          </Alert>
+        )}
 
+        {historyNotice && (
+          <Alert>
+            <AlertDescription className="whitespace-pre-line">{historyNotice}</AlertDescription>
+          </Alert>
+        )}
 
-      {groupId && (
-        <>
-
-          <div className="text-sm text-muted-foreground">
-            {groupName} · {participantsCount} participants in the group · {participants.length} known · {messagesScanned} messages available in the connection
-          </div>
-          <div className="border rounded-lg overflow-hidden bg-card">
-            {loadingParts && participants.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">Loading participants…</div>
-            ) : participants.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">No participants found.</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-left">Participant</TableHead>
-                    <TableHead className="text-left">ID</TableHead>
-                    <TableHead className="text-left"># Messages</TableHead>
-                    <TableHead className="text-left">Last message</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((p) => (
-                    <TableRow
-                      key={p.sender_id || p.sender_name}
-                      className="cursor-pointer"
-                      onClick={() => openParticipant(p)}
-                    >
-                      <TableCell className="font-medium">{p.sender_name}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground" dir="ltr">
-                        {p.sender_id}
-                      </TableCell>
-                      <TableCell>{p.message_count}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {p.last_message_at ? new Date(p.last_message_at).toLocaleString("en-US") : "—"}
-                      </TableCell>
+        {groupId && (
+          <>
+            <div className="text-sm text-muted-foreground">
+              {groupName} · {participantsCount} participants in the group · {participants.length}{" "}
+              known · {messagesScanned} messages available in the connection
+            </div>
+            <div className="border rounded-lg overflow-hidden bg-card">
+              {loadingParts && participants.length === 0 ? (
+                <div className="p-6 text-sm text-muted-foreground">Loading participants…</div>
+              ) : participants.length === 0 ? (
+                <div className="p-6 text-sm text-muted-foreground">No participants found.</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-left">Participant</TableHead>
+                      <TableHead className="text-left">ID</TableHead>
+                      <TableHead className="text-left"># Messages</TableHead>
+                      <TableHead className="text-left">Last message</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-        </>
-      )}
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((p) => (
+                      <TableRow
+                        key={p.sender_id || p.sender_name}
+                        className="cursor-pointer"
+                        onClick={() => openParticipant(p)}
+                      >
+                        <TableCell className="font-medium">{p.sender_name}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground" dir="ltr">
+                          {p.sender_id}
+                        </TableCell>
+                        <TableCell>{p.message_count}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {p.last_message_at
+                            ? new Date(p.last_message_at).toLocaleString("en-US")
+                            : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </>
+        )}
 
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="left" className="w-full sm:max-w-xl flex flex-col">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <MessageSquare className="size-4" />
-              {selected?.sender_name}
-            </SheetTitle>
-            <SheetDescription>
-              Messages in group {groupName} ({msgs?.length ?? 0})
-            </SheetDescription>
-          </SheetHeader>
-          <div className="flex-1 overflow-auto mt-4 space-y-2 pl-1">
-            {loadingMsgs && <div className="text-sm text-muted-foreground">Loading messages…</div>}
-            {!loadingMsgs && msgs?.length === 0 && (
-              <div className="text-sm text-muted-foreground">No messages available.</div>
-            )}
-            {msgs?.map((m) => (
-              <div key={m.id} className="rounded-lg border bg-muted/30 px-3 py-2">
-                <div className="text-[11px] text-muted-foreground mb-1 flex items-center justify-between">
-                  <span>{new Date(m.created_at).toLocaleString("en-US")}</span>
-                  <span className="opacity-60">{m.source === "live" ? "WhatsApp" : "DB"}</span>
+        <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+          <SheetContent side="left" className="w-full sm:max-w-xl flex flex-col">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <MessageSquare className="size-4" />
+                {selected?.sender_name}
+              </SheetTitle>
+              <SheetDescription>
+                Messages in group {groupName} ({msgs?.length ?? 0})
+              </SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 overflow-auto mt-4 space-y-2 pl-1">
+              {loadingMsgs && (
+                <div className="text-sm text-muted-foreground">Loading messages…</div>
+              )}
+              {!loadingMsgs && msgs?.length === 0 && (
+                <div className="text-sm text-muted-foreground">No messages available.</div>
+              )}
+              {msgs?.map((m) => (
+                <div key={m.id} className="rounded-lg border bg-muted/30 px-3 py-2">
+                  <div className="text-[11px] text-muted-foreground mb-1 flex items-center justify-between">
+                    <span>{new Date(m.created_at).toLocaleString("en-US")}</span>
+                    <span className="opacity-60">{m.source === "live" ? "WhatsApp" : "DB"}</span>
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap break-words">{m.body || "—"}</div>
                 </div>
-                <div className="text-sm whitespace-pre-wrap break-words">{m.body || "—"}</div>
-              </div>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
+              ))}
+            </div>
+          </SheetContent>
+        </Sheet>
       </PageContent>
     </div>
   );

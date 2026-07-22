@@ -35,13 +35,13 @@ export const Route = createFileRoute("/_authenticated/knowledge")({
 });
 
 const KIND_OPTIONS = [
-  { value: "fact", label: "עובדה" },
-  { value: "product", label: "מוצר" },
-  { value: "price", label: "מחיר" },
-  { value: "policy", label: "מדיניות" },
-  { value: "faq", label: "שאלה נפוצה" },
-  { value: "link", label: "קישור" },
-  { value: "doc", label: "מסמך" },
+  { value: "fact", label: "Fact" },
+  { value: "product", label: "Product" },
+  { value: "price", label: "Price" },
+  { value: "policy", label: "Policy" },
+  { value: "faq", label: "FAQ" },
+  { value: "link", label: "Link" },
+  { value: "doc", label: "Document" },
 ] as const;
 
 const kindLabel = (kind: string) => KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
@@ -172,7 +172,7 @@ function KnowledgePage() {
                   </SelectContent>
                 </Select>
                 <Input
-                  placeholder="כותרת — למשל: מחיר חבילת פרימיום"
+                  placeholder="Title — e.g. Premium plan price"
                   value={form.title}
                   onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                   dir="auto"
@@ -180,7 +180,7 @@ function KnowledgePage() {
                 />
               </div>
               <Textarea
-                placeholder="התוכן עצמו — מה שהבוט רשאי לומר ללקוחות. למשל: חבילת פרימיום עולה 250 ש״ח לחודש וכוללת..."
+                placeholder="The content itself — what the bot is allowed to tell customers. Write it in the language your customers use."
                 value={form.content}
                 onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
                 dir="auto"
@@ -188,7 +188,7 @@ function KnowledgePage() {
               />
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
-                  placeholder="https:// קישור רלוונטי (אופציונלי)"
+                  placeholder="https:// related link (optional)"
                   value={form.url}
                   onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
                   dir="ltr"

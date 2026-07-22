@@ -173,7 +173,7 @@ function BrainPage() {
                     ))}
                     {ex.reactions.length > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        הבוט הגיב עם {ex.reactions.join(" ")}
+                        The bot reacted with {ex.reactions.join(" ")}
                       </p>
                     )}
                     {ex.botParts.length === 0 && ex.reactions.length === 0 && (
@@ -212,7 +212,7 @@ function BrainPage() {
               }}
             >
               <Input
-                placeholder="כתוב הודעה כאילו אתה לקוח..."
+                placeholder="Type a message as if you were a customer…"
                 value={simInput}
                 onChange={(e) => setSimInput(e.target.value)}
                 dir="auto"
@@ -264,7 +264,7 @@ function BrainPage() {
                   />
                 </div>
                 <label className="flex items-center justify-between gap-2 text-xs">
-                  השהיית תגובה (שניות, לאיחוד הודעות רצופות)
+                  Reply delay (seconds, merges rapid message bursts)
                   <Input
                     type="number"
                     min={0}
@@ -277,7 +277,7 @@ function BrainPage() {
                   />
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs">
-                  מקסימום הודעות בתשובה אחת
+                  Max messages per reply
                   <Input
                     type="number"
                     min={1}
@@ -290,21 +290,21 @@ function BrainPage() {
                   />
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs">
-                  ביקורת עצמית לפני שליחה (איכות מקסימלית)
+                  Self-critique before sending (maximum quality)
                   <Switch
                     checked={cfgForm.critique_enabled}
                     onCheckedChange={(v) => setCfgForm({ ...cfgForm, critique_enabled: v })}
                   />
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs">
-                  ריאקציה 👍 להודעות קצרות (תודה וכו')
+                  React 👍 to trivial messages ("thanks" etc.)
                   <Switch
                     checked={cfgForm.react_to_trivial}
                     onCheckedChange={(v) => setCfgForm({ ...cfgForm, react_to_trivial: v })}
                   />
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs">
-                  מעקבים אוטומטיים (follow-ups)
+                  Automatic follow-ups
                   <Switch
                     checked={cfgForm.follow_ups_enabled}
                     onCheckedChange={(v) => setCfgForm({ ...cfgForm, follow_ups_enabled: v })}

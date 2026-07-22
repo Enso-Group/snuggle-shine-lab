@@ -152,7 +152,7 @@ export const listActivity = createServerFn({ method: "GET" })
         chat_id: asc[0].chat_id,
         chat_name: null,
         title:
-          deliver?.summary ?? received?.summary ?? asc[asc.length - 1].summary ?? "טיפול בהודעה",
+          deliver?.summary ?? received?.summary ?? asc[asc.length - 1].summary ?? "Message handled",
         stages: asc.map((r) => ({
           stage: r.stage,
           status: r.status,
@@ -195,7 +195,7 @@ export const listActivity = createServerFn({ method: "GET" })
         kind: "new_contact",
         chat_id: p.wa_id,
         chat_name: p.display_name,
-        title: `איש קשר חדש: ${p.display_name ?? p.wa_id}`,
+        title: `New contact: ${p.display_name ?? p.wa_id}`,
         stages: [],
       });
     }
@@ -208,7 +208,7 @@ export const listActivity = createServerFn({ method: "GET" })
         kind: "alert",
         chat_id: null,
         chat_name: null,
-        title: String(a.prompt ?? "התראת מערכת").replace(/^\[ALERT\]\s*/, ""),
+        title: String(a.prompt ?? "System alert").replace(/^\[ALERT\]\s*/, ""),
         stages: a.result
           ? [
               {

@@ -55,18 +55,36 @@ function ApprovalsPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
 
   const approve = useMutation({
-    mutationFn: async ({ id, body }: { id: string; body?: string }) => { if (DEMO_MODE) return; return approveFn({ data: { id, body } }); },
-    onSuccess: () => { invalidate(); toast.success("Sent"); },
+    mutationFn: async ({ id, body }: { id: string; body?: string }) => {
+      if (DEMO_MODE) return;
+      return approveFn({ data: { id, body } });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Sent");
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const reject = useMutation({
-    mutationFn: async (id: string) => { if (DEMO_MODE) return; return rejectFn({ data: { id } }); },
-    onSuccess: () => { invalidate(); toast.success("Deleted"); },
+    mutationFn: async (id: string) => {
+      if (DEMO_MODE) return;
+      return rejectFn({ data: { id } });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Deleted");
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const updateBody = useMutation({
-    mutationFn: async ({ id, body }: { id: string; body: string }) => { if (DEMO_MODE) return; return updateFn({ data: { id, body } }); },
-    onSuccess: () => { invalidate(); toast.success("Updated"); },
+    mutationFn: async ({ id, body }: { id: string; body: string }) => {
+      if (DEMO_MODE) return;
+      return updateFn({ data: { id, body } });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Updated");
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -135,7 +153,9 @@ function ApprovalCard({
         <CardTitle className="text-base flex items-center justify-between gap-2">
           <span className="truncate">{row.target_name ?? row.target_chat_id}</span>
           <div className="flex items-center gap-2 shrink-0">
-            <Badge variant="outline" className="text-xs">{SOURCE_LABEL[row.source] ?? row.source}</Badge>
+            <Badge variant="outline" className="text-xs">
+              {SOURCE_LABEL[row.source] ?? row.source}
+            </Badge>
             <span className="text-xs text-muted-foreground font-normal">
               {new Date(row.created_at).toLocaleString("en-US")}
             </span>
@@ -144,34 +164,78 @@ function ApprovalCard({
       </CardHeader>
       <CardContent className="space-y-3">
         {editing ? (
-          <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={5} className="text-sm" />
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            className="text-sm"
+          />
         ) : (
-          <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3">{row.body}</p>
+          <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3">
+            {row.body}
+          </p>
         )}
 
         <div className="flex flex-wrap gap-2">
           {editing ? (
             <>
-              <Button size="sm" onClick={() => onApprove(draft)} disabled={pending || !draft.trim()}>
-                <Check className="size-3 ms-1" />Save and send
+              <Button
+                size="sm"
+                onClick={() => onApprove(draft)}
+                disabled={pending || !draft.trim()}
+              >
+                <Check className="size-3 ms-1" />
+                Save and send
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { onSaveEdit(draft); setEditing(false); }} disabled={pending || !draft.trim()}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onSaveEdit(draft);
+                  setEditing(false);
+                }}
+                disabled={pending || !draft.trim()}
+              >
                 Save without sending
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setDraft(row.body); setEditing(false); }}>
-                <X className="size-3 ms-1" />Cancel
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setDraft(row.body);
+                  setEditing(false);
+                }}
+              >
+                <X className="size-3 ms-1" />
+                Cancel
               </Button>
             </>
           ) : (
             <>
               <Button size="sm" onClick={() => onApprove()} disabled={pending}>
-                <Send className="size-3 ms-1" />Send
+                <Send className="size-3 ms-1" />
+                Send
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { setDraft(row.body); setEditing(true); }}>
-                <Pencil className="size-3 ms-1" />Edit
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setDraft(row.body);
+                  setEditing(true);
+                }}
+              >
+                <Pencil className="size-3 ms-1" />
+                Edit
               </Button>
-              <Button size="sm" variant="ghost" className="text-destructive" onClick={onReject} disabled={pending}>
-                <Trash2 className="size-3 ms-1" />Delete
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive"
+                onClick={onReject}
+                disabled={pending}
+              >
+                <Trash2 className="size-3 ms-1" />
+                Delete
               </Button>
             </>
           )}

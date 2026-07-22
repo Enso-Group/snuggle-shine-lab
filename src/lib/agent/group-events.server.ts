@@ -114,14 +114,14 @@ export async function handleGroupEvent(
           target_wa_id: event.participants[0]?.id ?? null,
           target_name: names,
           action: "welcome",
-          reasoning: "חבר/ה חדש/ה בקבוצה",
+          reasoning: "New member joined the group",
           status: "done",
         });
         logDecision(supabase, {
           chat_id: event.groupChatId,
           trigger: deps.trigger,
           stage: "welcome",
-          summary: `ברכת הצטרפות נשלחה ל: ${names}`,
+          summary: `Welcome sent to: ${names}`,
           data: { welcome },
         });
         return { action: "welcomed" };

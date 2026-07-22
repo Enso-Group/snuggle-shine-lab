@@ -204,7 +204,7 @@ async function maybeWriteStrategyMemo(
         {
           role: "system",
           content: `אתה מנהל קהילות בכיר שכותב מזכר אסטרטגיה שבועי לעצמו על קבוצת וואטסאפ שהוא מנהל. החזר JSON בלבד:
-{"memo": "מזכר של 4-8 משפטים בעברית: מה עבד, מה לא, מה משנים השבוע", "recommendations": {"best_times": ["HH:MM", ...], "pillar_ranking": ["עמוד תוכן מהכי מוצלח", ...], "notes": "הנחיה תמציתית לפוסטים הבאים"}}
+{"memo": "a 4-8 sentence memo IN ENGLISH: what worked, what didn't, what changes this week", "recommendations": {"best_times": ["HH:MM", ...], "pillar_ranking": ["content pillars, best first — keep pillar names exactly as defined", ...], "notes": "concise guidance for upcoming posts, in English"}}
 
 הקשר: מטרת הקבוצה — ${profile.purpose ?? "לא הוגדרה"}. עמודי תוכן מוגדרים: ${profile.content_pillars.join(", ") || "אין"}. KPIs: ${profile.kpis ?? "לא הוגדרו"}.
 בסס הכל על הנתונים בלבד; אל תמציא מספרים.`,
@@ -238,7 +238,7 @@ ${postLines.join("\n") || "(אין פוסטים עדיין)"}`,
       chat_id: profile.chat_id,
       trigger: "scheduled",
       stage: "insight",
-      summary: `נכתב מזכר אסטרטגיה שבועי לקבוצה ${profile.name ?? profile.chat_id}`,
+      summary: `Weekly strategy memo written for ${profile.name ?? profile.chat_id}`,
       data: { memo, recommendations: recommendations as unknown as Record<string, unknown> },
     });
     return true;
