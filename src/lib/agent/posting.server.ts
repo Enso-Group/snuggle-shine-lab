@@ -36,6 +36,8 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
   const settings = await loadAgentSettings(deps.supabase);
   if (!settings?.enabled) return result;
 
+  await reconcileDecidedApprovals(deps);
+
   const profiles = await listEnabledGroupProfiles(deps.supabase);
   if (!profiles.length) return result;
 
@@ -76,6 +78,66 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
     if (refreshed) result.insightsRefreshed.push(profile.name ?? profile.chat_id);
   }
   return result;
+}
+
+/**
+ * Posts stuck in queued_approval whose approval was already decided — either
+ * rows from before approvePending updated planned_posts, or a decide whose
+ * post update failed mid-flight. Flip them to sent/cancelled so the dashboard
+ * panels match reality. Matches by planned_post_id when the link column
+ * exists, else by same group + body containment; an approval older than the
+ * post can never be its approval, and posts with a still-pending approval are
+ * left for the approve flow.
+ */
+async function reconcileDecidedApprovals(deps: AgentDeps): Promise<void> {
+  const { data: queued } = await deps.supabase
+    .from("planned_posts")
+    .select("id, group_chat_id, body, created_at")
+    .eq("status", "queued_approval");
+  if (!queued?.length) return;
+
+  const { data: approvals } = await deps.supabase
+    .from("scheduled_approvals")
+    .select("*")
+    .eq("source", "group_post")
+    .in("status", ["pending", "approved", "rejected"]);
+  if (!approvals?.length) return;
+
+  const matches = (
+    a: {
+      planned_post_id?: string | null;
+      target_chat_id: string;
+      body: string;
+      created_at: string;
+    },
+    p: { id: string; group_chat_id: string; body: string | null; created_at: string },
+  ) =>
+    a.planned_post_id
+      ? a.planned_post_id === p.id
+      : a.target_chat_id === p.group_chat_id &&
+        a.created_at >= p.created_at &&
+        (p.body ?? "").includes(a.body);
+
+  for (const post of queued) {
+    if (approvals.some((a) => a.status === "pending" && matches(a, post))) continue;
+    const decided = approvals
+      .filter((a) => a.status !== "pending" && matches(a, post))
+      .sort((a, b) => (b.decided_at ?? "").localeCompare(a.decided_at ?? ""))[0];
+    if (!decided) continue;
+    await deps.supabase
+      .from("planned_posts")
+      .update(
+        decided.status === "approved"
+          ? {
+              status: "sent",
+              sent_at: decided.decided_at ?? new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }
+          : { status: "cancelled", updated_at: new Date().toISOString() },
+      )
+      .eq("id", post.id)
+      .eq("status", "queued_approval");
+  }
 }
 
 async function recentGroupActivity(deps: AgentDeps, chatId: string, limit = 30): Promise<string> {
@@ -253,10 +315,10 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       };
       const { error: apprErr } = await supabase
         .from("scheduled_approvals")
-        .insert({ ...approvalRow, poll: poll as unknown as Json });
+        .insert({ ...approvalRow, poll: poll as unknown as Json, planned_post_id: post.id });
       if (apprErr) {
-        // Pre-migration fallback (poll column absent): embed the poll as text
-        // so nothing is lost, and flag it in the log.
+        // Pre-migration fallback (poll/planned_post_id column absent): embed
+        // the poll as text so nothing is lost, and flag it in the log.
         console.warn("[posting] approval insert with poll failed, falling back:", apprErr.message);
         await supabase.from("scheduled_approvals").insert({
           ...approvalRow,

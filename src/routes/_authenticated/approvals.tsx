@@ -52,7 +52,12 @@ function ApprovalsPage() {
   });
   const rows = DEMO_MODE ? (demoApprovals as unknown as Approval[]) : realRows;
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["scheduled-approvals"] });
+    // Deciding an approval moves the linked planned post between the Command
+    // Center's Upcoming and Recent panels — refresh those without a reload.
+    qc.invalidateQueries({ queryKey: ["group-activity"] });
+  };
 
   const approve = useMutation({
     mutationFn: async ({ id, body }: { id: string; body?: string }) => {
