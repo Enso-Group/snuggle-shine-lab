@@ -317,13 +317,24 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         .from("scheduled_approvals")
         .insert({ ...approvalRow, poll: poll as unknown as Json, planned_post_id: post.id });
       if (apprErr) {
-        // Pre-migration fallback (poll/planned_post_id column absent): embed
-        // the poll as text so nothing is lost, and flag it in the log.
-        console.warn("[posting] approval insert with poll failed, falling back:", apprErr.message);
-        await supabase.from("scheduled_approvals").insert({
-          ...approvalRow,
-          body: bodyForRecord,
-        });
+        // planned_post_id column absent (its migration not applied yet):
+        // keep the native poll, drop only the link — approve falls back to
+        // matching the queued post by group + body.
+        console.warn("[posting] approval insert with link failed, retrying:", apprErr.message);
+        const { error: pollErr } = await supabase
+          .from("scheduled_approvals")
+          .insert({ ...approvalRow, poll: poll as unknown as Json });
+        if (pollErr) {
+          // poll column absent too: embed the poll as text so nothing is lost.
+          console.warn(
+            "[posting] approval insert with poll failed, falling back:",
+            pollErr.message,
+          );
+          await supabase.from("scheduled_approvals").insert({
+            ...approvalRow,
+            body: bodyForRecord,
+          });
+        }
       }
       await supabase
         .from("planned_posts")
