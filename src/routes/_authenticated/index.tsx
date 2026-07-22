@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -35,9 +35,6 @@ import { getGroupActivity, listManagedGroups, type ManagedGroup } from "@/lib/gr
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "Command Center — WhatsApp Bot" }] }),
-  beforeLoad: ({ context }) => {
-    if (!(context as { isAdmin?: boolean }).isAdmin) throw redirect({ to: "/approvals" });
-  },
   component: CommandCenter,
 });
 

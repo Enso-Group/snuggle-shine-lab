@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
@@ -28,9 +28,6 @@ import {
 
 export const Route = createFileRoute("/_authenticated/profiles")({
   head: () => ({ meta: [{ title: "Profiles — WhatsApp Bot" }] }),
-  beforeLoad: ({ context }) => {
-    if (!(context as { isAdmin?: boolean }).isAdmin) throw redirect({ to: "/approvals" });
-  },
   component: ProfilesPage,
 });
 

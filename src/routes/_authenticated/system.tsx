@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BookOpen, Bot, FlaskConical, Gauge, UserCog, Wifi, Wrench } from "lucide-react";
 import { PageHeader, PageContent } from "@/components/page-header";
@@ -11,9 +11,6 @@ import { UsageTab } from "@/components/system/usage-tab";
 
 export const Route = createFileRoute("/_authenticated/system")({
   head: () => ({ meta: [{ title: "Behind the Scenes — WhatsApp Bot" }] }),
-  beforeLoad: ({ context }) => {
-    if (!(context as { isAdmin?: boolean }).isAdmin) throw redirect({ to: "/approvals" });
-  },
   component: SystemPage,
 });
 
