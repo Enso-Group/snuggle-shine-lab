@@ -45,10 +45,20 @@ export const listManagedGroups = createServerFn({ method: "GET" })
   .handler(async (): Promise<ManagedGroup[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { listGroups } = await import("@/lib/whapi.server");
+    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
+    const { channelOrFilter } = await import("@/lib/agent/channel");
 
+    // Disconnected → no groups at all (the live list needs the account anyway).
+    const { connected, phone } = await getConnectedChannel();
+    if (!connected || !phone) return [];
+
+    let profilesQuery = supabaseAdmin.from("group_profiles").select("*");
+    if (await channelScopeReady(supabaseAdmin)) {
+      profilesQuery = profilesQuery.or(channelOrFilter(phone));
+    }
     const [waGroups, { data: profiles }] = await Promise.all([
       listGroups().catch(() => [] as Array<{ id: string; name: string }>),
-      supabaseAdmin.from("group_profiles").select("*"),
+      profilesQuery,
     ]);
     const profileByChat = new Map(
       ((profiles ?? []) as unknown as GroupProfileRow[]).map((p) => [p.chat_id, p]),

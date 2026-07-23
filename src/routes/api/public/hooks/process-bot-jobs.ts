@@ -190,8 +190,12 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             }
           };
 
-          // Self-healing data pass (self-throttled): runs FIRST so it can
-          // never be blocked by a failure in the heavier stages below.
+          // Data passes first (never blocked by the heavier stages below).
+          // Channel backfill before cleanup so scope tags exist for both.
+          const channel = await guarded("channel-backfill", async () => {
+            const { backfillChannelPhone } = await import("@/lib/agent/channel-backfill.server");
+            return backfillChannelPhone(supabase);
+          });
           const cleanup = await guarded("cleanup", async () => {
             const { cleanupNonParticipatedChats } = await import("@/lib/agent/cleanup.server");
             return cleanupNonParticipatedChats(supabase);
@@ -217,6 +221,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             groups,
             analytics,
             cleanup,
+            channel,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {

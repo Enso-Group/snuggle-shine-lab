@@ -105,7 +105,21 @@ export const listActivity = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }): Promise<ActivityResult> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
+    const { channelOrFilter } = await import("@/lib/agent/channel");
+    // Disconnected → no activity at all.
+    const { connected, phone } = await getConnectedChannel();
+    if (!connected || !phone) return { entries: [], counts: {} };
+    const scoped = await channelScopeReady(supabaseAdmin);
     const since = new Date(Date.now() - RANGES_H[data.range] * 3600_000).toISOString();
+
+    let peopleQuery = supabaseAdmin
+      .from("people")
+      .select("id, wa_id, display_name, funnel_stage, created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (scoped) peopleQuery = peopleQuery.or(channelOrFilter(phone));
 
     const [decisionsRes, peopleRes, alertsRes] = await Promise.all([
       supabaseAdmin
@@ -116,12 +130,7 @@ export const listActivity = createServerFn({ method: "GET" })
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .limit(600),
-      supabaseAdmin
-        .from("people")
-        .select("id, wa_id, display_name, funnel_stage, created_at")
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(100),
+      peopleQuery,
       supabaseAdmin
         .from("commands_log")
         .select("id, prompt, result, created_at")

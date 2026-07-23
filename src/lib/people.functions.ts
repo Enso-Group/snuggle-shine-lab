@@ -21,13 +21,22 @@ export const listPeople = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAdmin])
   .handler(async (): Promise<PersonListItem[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
+    const { channelOrFilter } = await import("@/lib/agent/channel");
+    // No connected WhatsApp → show nothing (never surface a previous session's
+    // contacts).
+    const { connected, phone } = await getConnectedChannel();
+    if (!connected || !phone) return [];
+
+    let q = supabaseAdmin
       .from("people")
       .select(
         "id, wa_id, display_name, language, sentiment, funnel_stage, facts, last_seen_at, first_seen_at",
       )
       .order("last_seen_at", { ascending: false })
       .limit(200);
+    if (await channelScopeReady(supabaseAdmin)) q = q.or(channelOrFilter(phone));
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     return (data ?? []) as PersonListItem[];
   });
@@ -97,12 +106,19 @@ export const getPersonDetail = createServerFn({ method: "GET" })
     // bare phone number and sometimes with an @s.whatsapp.net/@c.us suffix —
     // match on the phone part so the timeline is found either way.
     const barePhone = person.wa_id.replace(/@.*$/, "");
-    const { data: convs } = await supabaseAdmin
+    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
+    const { channelOrFilter } = await import("@/lib/agent/channel");
+    const { phone: channelPhone } = await getConnectedChannel();
+    let convQuery = supabaseAdmin
       .from("conversations")
       .select("id, whapi_chat_id")
       .eq("is_group", false)
       .or(`whapi_chat_id.eq.${person.wa_id},whapi_chat_id.like.${barePhone}@%`)
       .limit(1);
+    if (channelPhone && (await channelScopeReady(supabaseAdmin))) {
+      convQuery = convQuery.or(channelOrFilter(channelPhone));
+    }
+    const { data: convs } = await convQuery;
     const conv = convs?.[0] ?? null;
 
     const [timelineRes, intentsRes, memberRes] = await Promise.all([

@@ -19,10 +19,15 @@ function fuzzyMatches(haystack: string, needle: string) {
   if (!q) return false;
   if (hay.includes(q) || q.includes(hay)) return true;
   const tokens = q.split(" ").filter((token) => token.length > 1);
-  return tokens.length > 0 && tokens.every((token) => {
-    const withoutHebrewPrefix = token.startsWith("ה") ? token.slice(1) : token;
-    return hay.includes(token) || (withoutHebrewPrefix.length > 1 && hay.includes(withoutHebrewPrefix));
-  });
+  return (
+    tokens.length > 0 &&
+    tokens.every((token) => {
+      const withoutHebrewPrefix = token.startsWith("ה") ? token.slice(1) : token;
+      return (
+        hay.includes(token) || (withoutHebrewPrefix.length > 1 && hay.includes(withoutHebrewPrefix))
+      );
+    })
+  );
 }
 
 function extractChatLookup(content: string) {
@@ -33,7 +38,10 @@ function extractChatLookup(content: string) {
   const base = marker ?? content;
   const cleaned = base
     .replace(/\b\d{1,3}\b/g, " ")
-    .replace(/הודעות|הודעה|אחרונות|האחרונות|אחרונים|תביא|תן|לי|אפשר|בבקשה|קבוצה|צ[׳']?אט|chat|group|last|messages/gi, " ")
+    .replace(
+      /הודעות|הודעה|אחרונות|האחרונות|אחרונים|תביא|תן|לי|אפשר|בבקשה|קבוצה|צ[׳']?אט|chat|group|last|messages/gi,
+      " ",
+    )
     .replace(/[?:.,]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -49,9 +57,13 @@ function shouldDoDirectMessageLookup(
   content: string,
   prior: Array<{ role: "user" | "assistant"; content: string }>,
 ) {
-  const lookupWords = /הודעות|הודעה|אחרונות|האחרונות|קבוצה|צ[׳']?אט|chat|group|messages/i.test(content);
-  const previousAssistant = [...prior].reverse().find((msg) => msg.role === "assistant")?.content ?? "";
-  const answeringMissingName = /לא מוצא|לא נמצאה|שם המדויק|איזה שם/.test(previousAssistant) && content.trim().length <= 120;
+  const lookupWords = /הודעות|הודעה|אחרונות|האחרונות|קבוצה|צ[׳']?אט|chat|group|messages/i.test(
+    content,
+  );
+  const previousAssistant =
+    [...prior].reverse().find((msg) => msg.role === "assistant")?.content ?? "";
+  const answeringMissingName =
+    /לא מוצא|לא נמצאה|שם המדויק|איזה שם/.test(previousAssistant) && content.trim().length <= 120;
   return lookupWords || answeringMissingName;
 }
 
@@ -105,9 +117,7 @@ export const deleteThread = createServerFn({ method: "POST" })
 
 export const getThreadMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { threadId: string }) =>
-    z.object({ threadId: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { threadId: string }) => z.object({ threadId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: thread, error: tErr } = await supabase
@@ -181,8 +191,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         .limit(1)
         .maybeSingle();
       systemPrompt =
-        (settings?.system_prompt ??
-          "אתה עוזר חכם וידידותי שעונה בעברית בצורה טבעית כמו בן אדם.") +
+        (settings?.system_prompt ?? "אתה עוזר חכם וידידותי שעונה בעברית בצורה טבעית כמו בן אדם.") +
         `\n\n[מצב בדיקה: ענה בדיוק כפי שהיית עונה ל-WhatsApp בתור "${settings?.bot_name ?? "הבוט"}".]`;
     } else if (thread.mode === "admin") {
       systemPrompt = `אתה עוזר ניהול חכם לאדמין של בוט WhatsApp. ענה בעברית.
@@ -211,7 +220,8 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     // Admin tools (DB access via service role) — only enabled for admin mode
     let extraTools: any[] | undefined;
-    let toolExecutor: ((name: string, args: Record<string, unknown>) => Promise<string>) | undefined;
+    let toolExecutor:
+      ((name: string, args: Record<string, unknown>) => Promise<string>) | undefined;
     let directAdminReply: string | undefined;
     if (thread.mode === "admin") {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -239,9 +249,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           )
           .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
           .single();
-        return synced
-          ? ({ ...synced, source: "database" as const })
-          : candidate;
+        return synced ? { ...synced, source: "database" as const } : candidate;
       };
 
       const searchConversationCandidates = async (query: string) => {
@@ -255,11 +263,19 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           }
         };
 
-        const { data: dbRows, error } = await supabaseAdmin
+        const { getConnectedChannel, channelScopeReady } =
+          await import("@/lib/agent/channel.server");
+        const { channelOrFilter } = await import("@/lib/agent/channel");
+        const { phone: channelPhone } = await getConnectedChannel();
+        let dbQuery = supabaseAdmin
           .from("conversations")
           .select("id, name, whapi_chat_id, is_group, last_message_at, inbound_count")
           .order("last_message_at", { ascending: false, nullsFirst: false })
           .limit(200);
+        if (channelPhone && (await channelScopeReady(supabaseAdmin))) {
+          dbQuery = dbQuery.or(channelOrFilter(channelPhone));
+        }
+        const { data: dbRows, error } = await dbQuery;
         if (error) throw new Error(error.message);
 
         for (const row of dbRows ?? []) {
@@ -326,11 +342,16 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         if (!conversation?.id) {
           const suggestions = await searchConversationCandidates(chat);
           if (suggestions.length) {
-            return `לא נמצאה שיחה שמורה בשם "${chat}", אבל מצאתי אפשרויות דומות:\n` +
+            return (
+              `לא נמצאה שיחה שמורה בשם "${chat}", אבל מצאתי אפשרויות דומות:\n` +
               suggestions
                 .slice(0, 8)
-                .map((item, index) => `${index + 1}. ${item.name ?? item.whapi_chat_id} (${item.whapi_chat_id})`)
-                .join("\n");
+                .map(
+                  (item, index) =>
+                    `${index + 1}. ${item.name ?? item.whapi_chat_id} (${item.whapi_chat_id})`,
+                )
+                .join("\n")
+            );
           }
           return `לא נמצאה שיחה או קבוצה בשם "${chat}" גם במסד הנתונים וגם ברשימת הצ׳אטים החיה.`;
         }
@@ -351,7 +372,8 @@ export const sendChatMessage = createServerFn({ method: "POST" })
             const liveMessages = await listMessagesByChatId(conversation.whapi_chat_id, limit);
             const liveOrdered = liveMessages.reverse();
             if (liveOrdered.length) {
-              return `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${liveOrdered.length}\n\n` +
+              return (
+                `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${liveOrdered.length}\n\n` +
                 liveOrdered
                   .map((message: any) => {
                     const createdAt = message.timestamp
@@ -360,10 +382,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
                     const body = message.text?.body ?? message.body ?? message.caption ?? "";
                     const sender = message.from_me
                       ? "🤖 הבוט"
-                      : message.from_name ?? message.author_name ?? message.from ?? "אנונימי";
+                      : (message.from_name ?? message.author_name ?? message.from ?? "אנונימי");
                     return `[${createdAt}] ${sender}: ${body}`;
                   })
-                  .join("\n");
+                  .join("\n")
+              );
             }
           } catch (e) {
             console.warn("[admin-chat] live message lookup failed", e);
@@ -371,10 +394,15 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           return `מצאתי את ${conversation.is_group ? "הקבוצה" : "השיחה"} "${conversationName}" (${conversation.whapi_chat_id}), אבל עדיין אין לה הודעות שמורות במערכת וגם לא הצלחתי למשוך היסטוריה חיה מהחיבור.`;
         }
 
-        return `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${ordered.length}\n\n` +
+        return (
+          `שיחה: ${conversationName}\nסה"כ הודעות שהוחזרו: ${ordered.length}\n\n` +
           ordered
-            .map((m) => `[${m.created_at}] ${m.direction === "outbound" ? "🤖 הבוט" : m.sender_name ?? m.sender_id ?? "אנונימי"}: ${m.body ?? ""}`)
-            .join("\n");
+            .map(
+              (m) =>
+                `[${m.created_at}] ${m.direction === "outbound" ? "🤖 הבוט" : (m.sender_name ?? m.sender_id ?? "אנונימי")}: ${m.body ?? ""}`,
+            )
+            .join("\n")
+        );
       };
 
       // Let the LLM decide which tools to call — the heuristic shortcut was
@@ -386,7 +414,8 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           type: "function",
           function: {
             name: "search_conversations",
-            description: "חפש שיחות לפי שם (חלקי, case-insensitive). מחזיר id, שם, whapi_chat_id, האם קבוצה, וזמן הודעה אחרון.",
+            description:
+              "חפש שיחות לפי שם (חלקי, case-insensitive). מחזיר id, שם, whapi_chat_id, האם קבוצה, וזמן הודעה אחרון.",
             parameters: {
               type: "object",
               properties: { query: { type: "string" } },
@@ -454,12 +483,20 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           return formatMessagesForConversation(chat, limit);
         }
         if (name === "stats") {
-          const [{ count: convCount }, { count: msgCount }, { count: blockedCount }] = await Promise.all([
-            supabaseAdmin.from("conversations").select("*", { count: "exact", head: true }),
-            supabaseAdmin.from("messages").select("*", { count: "exact", head: true }),
-            supabaseAdmin.from("conversations").select("*", { count: "exact", head: true }).eq("blocked", true),
-          ]);
-          return JSON.stringify({ conversations: convCount, messages: msgCount, blocked: blockedCount }, null, 2);
+          const [{ count: convCount }, { count: msgCount }, { count: blockedCount }] =
+            await Promise.all([
+              supabaseAdmin.from("conversations").select("*", { count: "exact", head: true }),
+              supabaseAdmin.from("messages").select("*", { count: "exact", head: true }),
+              supabaseAdmin
+                .from("conversations")
+                .select("*", { count: "exact", head: true })
+                .eq("blocked", true),
+            ]);
+          return JSON.stringify(
+            { conversations: convCount, messages: msgCount, blocked: blockedCount },
+            null,
+            2,
+          );
         }
         return `כלי לא ידוע: ${name}`;
       };
@@ -467,19 +504,19 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     let replyText: string;
     try {
-      replyText = directAdminReply ??
-        await runAI({
+      replyText =
+        directAdminReply ??
+        (await runAI({
           systemPrompt,
           history: prior,
           userMessage: data.content,
           source: "dashboard",
           extraTools,
           toolExecutor,
-        });
+        }));
     } catch (e: any) {
       replyText = `Error: ${String(e?.message ?? e)}`;
     }
-
 
     await supabase.from("chat_messages").insert({
       thread_id: thread.id,
