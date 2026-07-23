@@ -15,7 +15,6 @@
 // * person profiles: kept iff the BOT/dashboard engaged them — a
 //   sender_id 'bot'/'manual' message in their 1:1 chat, bot-learned analysis
 //   (facts / funnel stage / sentiment), or an imminent engagement.
-import { logDecision } from "./decisions.server";
 import { planCleanup } from "./cleanup";
 import type { Supa } from "./types";
 
@@ -137,10 +136,14 @@ export async function cleanupNonParticipatedChats(
     }
 
     // Always logged (even 0/0) — the decision row is both the visibility in
-    // Activity and the throttle marker for the next run.
-    logDecision(supabase, {
+    // Activity and the throttle marker for the next run. AWAITED, not
+    // fire-and-forget: on Cloudflare a pending promise left behind when the
+    // response returns can be dropped, which would lose the marker and make
+    // the cleanup re-run every sweep while the health check shows nothing.
+    const { error: markerErr } = await supabase.from("bot_decisions").insert({
       trigger: "scheduled",
       stage: "config",
+      status: "ok",
       summary: `${CLEANUP_SUMMARY_PREFIX}: removed ${removedConversations} chat(s) and ${removedPeople} profile(s) the bot never engaged`,
       data: {
         removed_conversations: removedConversations,
@@ -148,6 +151,7 @@ export async function cleanupNonParticipatedChats(
         kept_conversations: plan.keptConvIds.length,
       },
     });
+    if (markerErr) console.error("[cleanup] marker insert failed", markerErr);
     return { ran: true, removedConversations, removedPeople };
   } catch (e) {
     console.error("[cleanup] failed", e);

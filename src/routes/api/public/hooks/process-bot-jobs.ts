@@ -54,12 +54,53 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           } catch {
             // bot_decisions unavailable — health check stays best-effort
           }
+
+          // Observability for the DM latency requirement and the JSON-leak
+          // guard: recent deliveries' timing numbers, and a scan of recently
+          // sent parts for anything JSON-shaped. Numbers and timestamps only —
+          // message content never leaves the server.
+          const recentDmReplies: Array<Record<string, unknown>> = [];
+          const leakScan: { scanned: number; leaks: number; last_leak_at: string | null } = {
+            scanned: 0,
+            leaks: 0,
+            last_leak_at: null,
+          };
+          try {
+            const { looksLikeStructuredOutput } = await import("@/lib/agent/inbound");
+            const { data: delivers } = await supabase
+              .from("bot_decisions")
+              .select("created_at, chat_id, data")
+              .eq("stage", "deliver")
+              .order("created_at", { ascending: false })
+              .limit(100);
+            for (const row of delivers ?? []) {
+              const d = (row.data ?? {}) as {
+                parts?: unknown;
+                latency_breakdown?: Record<string, unknown>;
+              };
+              const parts = Array.isArray(d.parts) ? d.parts.map((p) => String(p ?? "")) : [];
+              leakScan.scanned += 1;
+              if (parts.some((p) => looksLikeStructuredOutput(p))) {
+                leakScan.leaks += 1;
+                if (!leakScan.last_leak_at) leakScan.last_leak_at = row.created_at;
+              }
+              const isGroup = (row.chat_id ?? "").endsWith("@g.us");
+              if (!isGroup && d.latency_breakdown && recentDmReplies.length < 10) {
+                recentDmReplies.push({ at: row.created_at, ...d.latency_breakdown });
+              }
+            }
+          } catch {
+            // best-effort — never fail the health check over observability
+          }
+
           return Response.json({
             ok: true,
             info: "Bot-jobs sweeper. POST with x-cron-secret to trigger a run.",
             queue: counts,
             follow_ups_pending: followUpsPending,
             last_cleanup: lastCleanup,
+            recent_dm_replies: recentDmReplies,
+            leak_scan: leakScan,
           });
         } catch (e) {
           return Response.json(
@@ -134,16 +175,39 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             });
           }
 
-          const { processDueFollowUps } = await import("@/lib/agent/follow-ups.server");
-          const followUps = await processDueFollowUps(deps, { max: 2 });
-          const { runGroupEngine } = await import("@/lib/agent/posting.server");
-          const groups = await runGroupEngine(deps);
-          const { runAnalytics } = await import("@/lib/agent/analytics.server");
-          const analytics = await runAnalytics(deps);
-          // Self-healing data pass (self-throttled to every few hours): remove
-          // chats/profiles the account never participated in.
-          const { cleanupNonParticipatedChats } = await import("@/lib/agent/cleanup.server");
-          const cleanup = await cleanupNonParticipatedChats(supabase);
+          // Each maintenance stage is isolated: a failure in one (e.g. an LLM
+          // error inside the group engine) must not 500 the sweep or starve
+          // the stages after it.
+          const guarded = async <T>(
+            label: string,
+            fn: () => Promise<T>,
+          ): Promise<T | { error: string }> => {
+            try {
+              return await fn();
+            } catch (e) {
+              console.error(`[jobs] ${label} failed`, e);
+              return { error: String((e as Error)?.message ?? e).slice(0, 300) };
+            }
+          };
+
+          // Self-healing data pass (self-throttled): runs FIRST so it can
+          // never be blocked by a failure in the heavier stages below.
+          const cleanup = await guarded("cleanup", async () => {
+            const { cleanupNonParticipatedChats } = await import("@/lib/agent/cleanup.server");
+            return cleanupNonParticipatedChats(supabase);
+          });
+          const followUps = await guarded("follow-ups", async () => {
+            const { processDueFollowUps } = await import("@/lib/agent/follow-ups.server");
+            return processDueFollowUps(deps, { max: 2 });
+          });
+          const groups = await guarded("group-engine", async () => {
+            const { runGroupEngine } = await import("@/lib/agent/posting.server");
+            return runGroupEngine(deps);
+          });
+          const analytics = await guarded("analytics", async () => {
+            const { runAnalytics } = await import("@/lib/agent/analytics.server");
+            return runAnalytics(deps);
+          });
 
           return Response.json({
             ok: true,

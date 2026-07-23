@@ -15,7 +15,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
         Response.json({
           ok: true,
           info: "Whapi webhook endpoint",
-          rev: "2026-07-23-auto-cleanup",
+          rev: "2026-07-23-latency-probe",
         }),
       POST: async ({ request }) => {
         const url = new URL(request.url);
