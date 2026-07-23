@@ -91,12 +91,20 @@ export function ConnectionTab() {
     mutationFn: () => importDmsFn({ data: {} }),
     onSuccess: (r: {
       chats: number;
+      imported: number;
+      skipped: number;
       inserted: number;
-      results: Array<{ chat: string; inserted: number; fetched: number; error?: string }>;
+      results: Array<{
+        chat: string;
+        inserted: number;
+        fetched: number;
+        skipped?: string;
+        error?: string;
+      }>;
     }) => {
       const failed = r.results.filter((x) => x.error);
       const lines = [
-        `Imported ${r.inserted} messages across ${r.chats} direct chats.`,
+        `Imported ${r.inserted} messages from ${r.imported} chats (${r.skipped} skipped as not relevant — you never wrote in them).`,
         ...r.results
           .filter((x) => x.inserted > 0)
           .slice(0, 15)
@@ -104,7 +112,7 @@ export function ConnectionTab() {
         ...failed.map((x) => `✗ ${x.chat}: ${x.error}`),
       ];
       setNotice(lines.join("\n"));
-      toast.success(`Imported ${r.inserted} messages from ${r.chats} chats`);
+      toast.success(`Imported ${r.inserted} messages from ${r.imported} relevant chats`);
     },
     onError: (e: Error) => toast.error(e.message),
   });

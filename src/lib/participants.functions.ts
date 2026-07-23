@@ -610,12 +610,38 @@ export const syncDirectChatHistory = createServerFn({ method: "POST" })
           !c.id.startsWith("status@"),
       )
       .slice(0, data.maxChats);
-    if (!directChats.length) return { chats: 0, inserted: 0, results: [] };
+    if (!directChats.length) {
+      return { chats: 0, imported: 0, skipped: 0, inserted: 0, results: [] };
+    }
 
     const health = await checkHealth();
-    const results: Array<{ chat: string; inserted: number; fetched: number; error?: string }> = [];
+    const results: Array<{
+      chat: string;
+      inserted: number;
+      fetched: number;
+      skipped?: string;
+      error?: string;
+    }> = [];
     for (const chat of directChats) {
       try {
+        // Fetch first, decide second: only chats we actually participated in
+        // are relevant — a chat without a single message from our side is
+        // never saved (no conversation row, no person row, no messages).
+        const live = await listMessagesByChatId(chat.id, data.perChat);
+        if (!live.length) {
+          results.push({ chat: chat.name || chat.id, inserted: 0, fetched: 0, skipped: "empty" });
+          continue;
+        }
+        if (!live.some((m: any) => m.from_me)) {
+          results.push({
+            chat: chat.name || chat.id,
+            inserted: 0,
+            fetched: live.length,
+            skipped: "we never wrote in this chat",
+          });
+          continue;
+        }
+
         let { data: conv } = await supabaseAdmin
           .from("conversations")
           .select("id, whapi_chat_id")
@@ -630,10 +656,13 @@ export const syncDirectChatHistory = createServerFn({ method: "POST" })
           if (convErr) throw new Error(convErr.message);
           conv = created;
         }
-        const live = await listMessagesByChatId(chat.id, data.perChat);
-        const inserted = live.length
-          ? await importWhapiHistory(supabaseAdmin, conv!, live, health, listContactLids)
-          : 0;
+        const inserted = await importWhapiHistory(
+          supabaseAdmin,
+          conv!,
+          live,
+          health,
+          listContactLids,
+        );
         // A person row lets the Profiles page answer questions about them.
         await loadOrCreatePerson(supabaseAdmin, chat.id, chat.name);
         results.push({ chat: chat.name || chat.id, inserted, fetched: live.length });
@@ -648,6 +677,8 @@ export const syncDirectChatHistory = createServerFn({ method: "POST" })
     }
     return {
       chats: results.length,
+      imported: results.filter((r) => !r.skipped && !r.error).length,
+      skipped: results.filter((r) => r.skipped).length,
       inserted: results.reduce((s, r) => s + r.inserted, 0),
       results,
     };
