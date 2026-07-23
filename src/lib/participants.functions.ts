@@ -598,7 +598,6 @@ export const syncDirectChatHistory = createServerFn({ method: "POST" })
     const { listChats, listMessagesByChatId, checkHealth, listContactLids } =
       await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { loadOrCreatePerson } = await import("./agent/people.server");
 
     const chats = await listChats();
     const directChats = chats
@@ -663,8 +662,9 @@ export const syncDirectChatHistory = createServerFn({ method: "POST" })
           health,
           listContactLids,
         );
-        // A person row lets the Profiles page answer questions about them.
-        await loadOrCreatePerson(supabaseAdmin, chat.id, chat.name);
+        // Deliberately NO person row here: profiles are created by the
+        // pipeline when the bot actually engages the contact. Imported-only
+        // chats were cluttering the Profiles page with 0-fact "unknown" rows.
         results.push({ chat: chat.name || chat.id, inserted, fetched: live.length });
       } catch (e) {
         results.push({
