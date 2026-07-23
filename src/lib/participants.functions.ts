@@ -3,7 +3,9 @@ import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
 import { z } from "zod";
 
 function normalizePhone(raw: unknown) {
-  return String(raw ?? "").replace(/@.*$/, "").replace(/\D/g, "");
+  return String(raw ?? "")
+    .replace(/@.*$/, "")
+    .replace(/\D/g, "");
 }
 
 function normalizeWhapiTs(raw: unknown) {
@@ -41,7 +43,6 @@ export const resetWhatsAppPipeline = createServerFn({ method: "POST" })
       userName: health.userName ?? null,
     };
   });
-
 
 export const listGroupConversations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAdmin])
@@ -91,7 +92,13 @@ export const enableHistorySync = createServerFn({ method: "POST" })
 export const startWhatsAppReconnect = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
   .handler(async () => {
-    const { enableWhapiFullHistory, getWhapiLoginQrImage, getWhapiSettings, logoutWhapiUser, checkHealth } = await import("./whapi.server");
+    const {
+      enableWhapiFullHistory,
+      getWhapiLoginQrImage,
+      getWhapiSettings,
+      logoutWhapiUser,
+      checkHealth,
+    } = await import("./whapi.server");
     await enableWhapiFullHistory();
     await logoutWhapiUser();
     const qr = await getWhapiLoginQrImage();
@@ -125,7 +132,8 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     z.object({ whapiChatId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listAllMessagesByChatId, listContacts, listContactLids, checkHealth } = await import("./whapi.server");
+    const { getGroup, listAllMessagesByChatId, listContacts, listContactLids, checkHealth } =
+      await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [groupBase, liveMessages, contacts, health, conv] = await Promise.all([
@@ -155,7 +163,9 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     for (const [phone, lid] of Object.entries(phoneToLid)) {
       if (phone && lid) lidToPhone.set(lid, phone);
     }
-    const participantPhones = new Set(participants.map((p) => normalizeId(p.id ?? p.phone ?? "")).filter(Boolean));
+    const participantPhones = new Set(
+      participants.map((p) => normalizeId(p.id ?? p.phone ?? "")).filter(Boolean),
+    );
     const resolveSenderKey = (raw: string) => {
       const id = normalizeId(raw);
       if (!id) return "";
@@ -164,7 +174,12 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     const ownPhone = resolveSenderKey(health.userId ?? "") || normalizeId(health.userId ?? "");
     if (ownPhone) participantPhones.add(ownPhone);
     const getSenderId = (m: any) => {
-      if (m.from_me) return resolveSenderKey(m.from ?? m.author ?? ownPhone) || normalizeId(m.from ?? m.author ?? ownPhone) || ownPhone;
+      if (m.from_me)
+        return (
+          resolveSenderKey(m.from ?? m.author ?? ownPhone) ||
+          normalizeId(m.from ?? m.author ?? ownPhone) ||
+          ownPhone
+        );
       return resolveSenderKey(m.from ?? m.author ?? "") || m.from || m.author || data.whapiChatId;
     };
     const getSenderName = (m: any) => {
@@ -193,7 +208,9 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
           whapi_chat_id: data.whapiChatId,
           name: group?.name ?? group?.subject ?? data.whapiChatId,
           is_group: String(data.whapiChatId).endsWith("@g.us"),
-          last_message_at: liveMessages[0]?.timestamp ? normalizeWhapiTs(liveMessages[0].timestamp) : null,
+          last_message_at: liveMessages[0]?.timestamp
+            ? normalizeWhapiTs(liveMessages[0].timestamp)
+            : null,
         })
         .select("id")
         .single();
@@ -209,7 +226,9 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         .eq("conversation_id", convId)
         .not("whapi_message_id", "is", null)
         .limit(10000);
-      const existing = new Set((existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean));
+      const existing = new Set(
+        (existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean),
+      );
       const rows = (liveMessages ?? [])
         .filter((m: any) => m.id && !existing.has(m.id))
         .map((m: any) => ({
@@ -226,22 +245,40 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
         const batch = rows.slice(i, i + 500);
         if (batch.length) await supabaseAdmin.from("messages").insert(batch);
       }
-      const latest = rows.map((r) => r.created_at).sort().at(-1);
+      const latest = rows
+        .map((r) => r.created_at)
+        .sort()
+        .at(-1);
       if (latest) {
         await supabaseAdmin
           .from("conversations")
-          .update({ last_message_at: latest, name: group?.name ?? group?.subject ?? data.whapiChatId })
+          .update({
+            last_message_at: latest,
+            name: group?.name ?? group?.subject ?? data.whapiChatId,
+          })
           .eq("id", convId);
       }
     }
 
     const stats = new Map<
       string,
-      { sender_id: string; sender_name: string; message_count: number; last_message_at: string | null; last_body: string }
+      {
+        sender_id: string;
+        sender_name: string;
+        message_count: number;
+        last_message_at: string | null;
+        last_body: string;
+      }
     >();
     const countedMessageKeys = new Set<string>();
 
-    const addMessage = (senderId: string, senderName: string, body: string, ts: string | null, uniqueKey?: string | null) => {
+    const addMessage = (
+      senderId: string,
+      senderName: string,
+      body: string,
+      ts: string | null,
+      uniqueKey?: string | null,
+    ) => {
       const phone = resolveSenderKey(senderId) || normalizeId(senderId) || senderId;
       if (!phone) return;
       const countKey = uniqueKey || `${phone}-${ts ?? ""}-${body}`;
@@ -251,7 +288,8 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       const resolved = resolveName(senderId, senderName);
       if (cur) {
         cur.message_count += 1;
-        if ((!cur.sender_name || cur.sender_name === cur.sender_id) && resolved) cur.sender_name = resolved;
+        if ((!cur.sender_name || cur.sender_name === cur.sender_id) && resolved)
+          cur.sender_name = resolved;
         if (ts && (!cur.last_message_at || ts > cur.last_message_at)) {
           cur.last_message_at = ts;
           cur.last_body = body;
@@ -276,7 +314,11 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
     }
 
     if (participants.length === 0 && stats.size > 0) {
-      participants = [...stats.values()].map((p) => ({ id: p.sender_id, name: p.sender_name, rank: "member" }));
+      participants = [...stats.values()].map((p) => ({
+        id: p.sender_id,
+        name: p.sender_name,
+        rank: "member",
+      }));
       group = { ...(group ?? {}), participants, participants_count: participants.length };
     }
 
@@ -293,8 +335,15 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       for (const m of dbRows ?? []) {
         const senderId = m.sender_id ?? "";
         const normalized = resolveSenderKey(senderId) || normalizeId(senderId);
-        if (participantPhones.size > 0 && normalized && !participantPhones.has(normalized)) continue;
-        addMessage(senderId, m.sender_name ?? "", m.body ?? "", m.created_at, m.whapi_message_id ?? m.id);
+        if (participantPhones.size > 0 && normalized && !participantPhones.has(normalized))
+          continue;
+        addMessage(
+          senderId,
+          m.sender_name ?? "",
+          m.body ?? "",
+          m.created_at,
+          m.whapi_message_id ?? m.id,
+        );
       }
     }
 
@@ -306,7 +355,8 @@ export const listGroupParticipants = createServerFn({ method: "GET" })
       const rank = p.rank ?? (p.is_admin ? "admin" : p.is_super_admin ? "creator" : undefined);
       const existing = stats.get(phone);
       if (existing) {
-        if (!existing.sender_name || existing.sender_name === existing.sender_id) existing.sender_name = name;
+        if (!existing.sender_name || existing.sender_name === existing.sender_id)
+          existing.sender_name = name;
         (existing as any).rank = rank;
       } else {
         stats.set(phone, {
@@ -339,7 +389,8 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getGroup, listAllMessagesByChatId, listContactLids, checkHealth } = await import("./whapi.server");
+    const { getGroup, listAllMessagesByChatId, listContactLids, checkHealth } =
+      await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const seen = new Set<string>();
@@ -361,19 +412,31 @@ export const getParticipantMessages = createServerFn({ method: "GET" })
       return lidToPhone.get(id) ?? id;
     };
     const getSenderId = (m: any) => {
-      if (m.from_me) return resolveSenderKey(m.from ?? m.author ?? ownPhone) || normalizeId(m.from ?? m.author ?? ownPhone) || ownPhone;
+      if (m.from_me)
+        return (
+          resolveSenderKey(m.from ?? m.author ?? ownPhone) ||
+          normalizeId(m.from ?? m.author ?? ownPhone) ||
+          ownPhone
+        );
       return m.from ?? m.author ?? "";
     };
     const isSelectedSender = (rawId: string, rawName?: string | null) => {
       const id = normalizeId(rawId);
       const resolved = resolveSenderKey(rawId);
-      return resolved === selectedId || id === selectedId || id === selectedLid || rawName === data.senderId;
+      return (
+        resolved === selectedId ||
+        id === selectedId ||
+        id === selectedLid ||
+        rawName === data.senderId
+      );
     };
 
     const live = await listAllMessagesByChatId(data.whapiChatId);
     for (const m of live ?? []) {
       const senderId = getSenderId(m);
-      const senderName = m.from_me ? health.userName ?? "Me" : m.from_name ?? m.author_name ?? "";
+      const senderName = m.from_me
+        ? (health.userName ?? "Me")
+        : (m.from_name ?? m.author_name ?? "");
       if (!isSelectedSender(senderId, senderName)) continue;
       const id = String(m.id ?? `${m.timestamp}-${senderId}`);
       if (seen.has(id)) continue;
@@ -418,7 +481,8 @@ export const syncConversationHistory = createServerFn({ method: "POST" })
     z.object({ conversationId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { listAllMessagesByChatId, checkHealth, listContactLids } = await import("./whapi.server");
+    const { listAllMessagesByChatId, checkHealth, listContactLids } =
+      await import("./whapi.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: conv } = await supabaseAdmin
@@ -434,58 +498,157 @@ export const syncConversationHistory = createServerFn({ method: "POST" })
     ]);
     if (!live.length) return { inserted: 0, total: 0 };
 
-    const senderIds = [...new Set(live.map((m: any) => normalizePhone(m.from ?? m.author ?? "")).filter(Boolean))];
-    const phoneToLid = await listContactLids(senderIds);
-    const lidToPhone = new Map<string, string>();
-    for (const [phone, lid] of Object.entries(phoneToLid)) if (phone && lid) lidToPhone.set(lid, phone);
-    const ownPhone = normalizePhone(health.userId ?? "");
-    const resolveKey = (raw: string) => {
-      const id = normalizePhone(raw);
-      return lidToPhone.get(id) ?? id;
+    const inserted = await importWhapiHistory(supabaseAdmin, conv, live, health, listContactLids);
+    return { inserted, total: live.length };
+  });
+
+/**
+ * Insert Whapi message-history rows for one conversation, idempotently
+ * (dedup by whapi_message_id against what's already stored). Messages from
+ * the last 2 minutes are skipped — the live webhook owns those and importing
+ * them too would race it into duplicates. Returns the inserted count.
+ */
+async function importWhapiHistory(
+  supabaseAdmin: any,
+  conv: { id: string; whapi_chat_id: string },
+  live: any[],
+  health: { userId?: string; userName?: string },
+  listContactLids: (phones: string[]) => Promise<Record<string, string>>,
+): Promise<number> {
+  const senderIds = [
+    ...new Set(live.map((m: any) => normalizePhone(m.from ?? m.author ?? "")).filter(Boolean)),
+  ];
+  const phoneToLid = await listContactLids(senderIds);
+  const lidToPhone = new Map<string, string>();
+  for (const [phone, lid] of Object.entries(phoneToLid))
+    if (phone && lid) lidToPhone.set(lid, phone);
+  const ownPhone = normalizePhone(health.userId ?? "");
+  const resolveKey = (raw: string) => {
+    const id = normalizePhone(raw);
+    return lidToPhone.get(id) ?? id;
+  };
+
+  const { data: existingRows } = await supabaseAdmin
+    .from("messages")
+    .select("whapi_message_id")
+    .eq("conversation_id", conv.id)
+    .not("whapi_message_id", "is", null)
+    .limit(20000);
+  const existing = new Set(
+    (existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean),
+  );
+
+  const webhookOwnedAfter = Date.now() - 2 * 60 * 1000;
+  const rows = live
+    .filter((m: any) => m.id && !existing.has(m.id))
+    .map((m: any) => {
+      const fromMe = !!m.from_me;
+      const senderId = fromMe
+        ? resolveKey(m.from ?? m.author ?? ownPhone) || ownPhone
+        : resolveKey(m.from ?? m.author ?? "") || m.from || m.author || conv.whapi_chat_id;
+      const senderName = fromMe
+        ? health.userName || "Me"
+        : (m.from_name ?? m.author_name ?? m.pushname ?? "");
+      return {
+        conversation_id: conv.id,
+        whapi_message_id: m.id,
+        direction: fromMe ? "outbound" : "inbound",
+        sender_name: senderName || null,
+        sender_id: senderId,
+        body: getMessageBody(m),
+        raw: m,
+        created_at: normalizeWhapiTs(m.timestamp),
+      };
+    })
+    .filter((r: any) => new Date(r.created_at).getTime() < webhookOwnedAfter);
+
+  for (let i = 0; i < rows.length; i += 500) {
+    const batch = rows.slice(i, i + 500);
+    if (batch.length) await supabaseAdmin.from("messages").insert(batch);
+  }
+
+  const latest = rows
+    .map((r: any) => r.created_at)
+    .sort()
+    .at(-1);
+  if (latest) {
+    await supabaseAdmin.from("conversations").update({ last_message_at: latest }).eq("id", conv.id);
+  }
+
+  return rows.length;
+}
+
+/**
+ * Bulk-import recent 1:1 chat history from Whapi so the bot knows the people
+ * it talks to even though the DB only started filling at go-live. Creates
+ * missing conversation and person rows, then imports up to `perChat` recent
+ * messages per chat (idempotent — safe to re-run).
+ */
+export const syncDirectChatHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAdmin])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        maxChats: z.number().int().min(1).max(100).default(30),
+        perChat: z.number().int().min(20).max(1000).default(300),
+      })
+      .parse(d ?? {}),
+  )
+  .handler(async ({ data }) => {
+    const { listChats, listMessagesByChatId, checkHealth, listContactLids } =
+      await import("./whapi.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { loadOrCreatePerson } = await import("./agent/people.server");
+
+    const chats = await listChats();
+    const directChats = chats
+      .filter(
+        (c) =>
+          c.id &&
+          !c.id.endsWith("@g.us") &&
+          !c.id.endsWith("@newsletter") &&
+          !c.id.startsWith("status@"),
+      )
+      .slice(0, data.maxChats);
+    if (!directChats.length) return { chats: 0, inserted: 0, results: [] };
+
+    const health = await checkHealth();
+    const results: Array<{ chat: string; inserted: number; fetched: number; error?: string }> = [];
+    for (const chat of directChats) {
+      try {
+        let { data: conv } = await supabaseAdmin
+          .from("conversations")
+          .select("id, whapi_chat_id")
+          .eq("whapi_chat_id", chat.id)
+          .maybeSingle();
+        if (!conv) {
+          const { data: created, error: convErr } = await supabaseAdmin
+            .from("conversations")
+            .insert({ whapi_chat_id: chat.id, name: chat.name, is_group: false })
+            .select("id, whapi_chat_id")
+            .single();
+          if (convErr) throw new Error(convErr.message);
+          conv = created;
+        }
+        const live = await listMessagesByChatId(chat.id, data.perChat);
+        const inserted = live.length
+          ? await importWhapiHistory(supabaseAdmin, conv!, live, health, listContactLids)
+          : 0;
+        // A person row lets the Profiles page answer questions about them.
+        await loadOrCreatePerson(supabaseAdmin, chat.id, chat.name);
+        results.push({ chat: chat.name || chat.id, inserted, fetched: live.length });
+      } catch (e) {
+        results.push({
+          chat: chat.name || chat.id,
+          inserted: 0,
+          fetched: 0,
+          error: String((e as Error)?.message ?? e).slice(0, 200),
+        });
+      }
+    }
+    return {
+      chats: results.length,
+      inserted: results.reduce((s, r) => s + r.inserted, 0),
+      results,
     };
-
-    const { data: existingRows } = await supabaseAdmin
-      .from("messages")
-      .select("whapi_message_id")
-      .eq("conversation_id", conv.id)
-      .not("whapi_message_id", "is", null)
-      .limit(20000);
-    const existing = new Set((existingRows ?? []).map((r: any) => r.whapi_message_id).filter(Boolean));
-
-    const rows = live
-      .filter((m: any) => m.id && !existing.has(m.id))
-      .map((m: any) => {
-        const fromMe = !!m.from_me;
-        const senderId = fromMe
-          ? resolveKey(m.from ?? m.author ?? ownPhone) || ownPhone
-          : resolveKey(m.from ?? m.author ?? "") || m.from || m.author || conv.whapi_chat_id;
-        const senderName = fromMe
-          ? health.userName || "Me"
-          : m.from_name ?? m.author_name ?? m.pushname ?? "";
-        return {
-          conversation_id: conv.id,
-          whapi_message_id: m.id,
-          direction: fromMe ? "outbound" : "inbound",
-          sender_name: senderName || null,
-          sender_id: senderId,
-          body: getMessageBody(m),
-          raw: m,
-          created_at: normalizeWhapiTs(m.timestamp),
-        };
-      });
-
-    for (let i = 0; i < rows.length; i += 500) {
-      const batch = rows.slice(i, i + 500);
-      if (batch.length) await supabaseAdmin.from("messages").insert(batch);
-    }
-
-    const latest = rows.map((r) => r.created_at).sort().at(-1);
-    if (latest) {
-      await supabaseAdmin
-        .from("conversations")
-        .update({ last_message_at: latest })
-        .eq("id", conv.id);
-    }
-
-    return { inserted: rows.length, total: live.length };
   });

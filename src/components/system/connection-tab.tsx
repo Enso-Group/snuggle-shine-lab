@@ -9,13 +9,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { QrCode, Radio, RefreshCw, Wifi, WifiOff, Zap } from "lucide-react";
+import { History, QrCode, Radio, RefreshCw, Wifi, WifiOff, Zap } from "lucide-react";
 import { useWhatsAppConnection, WA_CONNECTION_QUERY_KEY } from "@/hooks/use-connection";
 import {
   enableHistorySync,
   fetchWhatsAppQr,
   resetWhatsAppPipeline,
   startWhatsAppReconnect,
+  syncDirectChatHistory,
 } from "@/lib/participants.functions";
 
 export function ConnectionTab() {
@@ -25,6 +26,7 @@ export function ConnectionTab() {
   const qrFn = useServerFn(fetchWhatsAppQr);
   const resetFn = useServerFn(resetWhatsAppPipeline);
   const historyFn = useServerFn(enableHistorySync);
+  const importDmsFn = useServerFn(syncDirectChatHistory);
 
   const [qrImage, setQrImage] = useState("");
   const [notice, setNotice] = useState("");
@@ -82,6 +84,28 @@ export function ConnectionTab() {
     mutationFn: () => historyFn(),
     onSuccess: () =>
       setNotice("Full history enabled. Reconnect WhatsApp so older history is pulled in."),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const importDms = useMutation({
+    mutationFn: () => importDmsFn({ data: {} }),
+    onSuccess: (r: {
+      chats: number;
+      inserted: number;
+      results: Array<{ chat: string; inserted: number; fetched: number; error?: string }>;
+    }) => {
+      const failed = r.results.filter((x) => x.error);
+      const lines = [
+        `Imported ${r.inserted} messages across ${r.chats} direct chats.`,
+        ...r.results
+          .filter((x) => x.inserted > 0)
+          .slice(0, 15)
+          .map((x) => `✓ ${x.chat}: +${x.inserted}`),
+        ...failed.map((x) => `✗ ${x.chat}: ${x.error}`),
+      ];
+      setNotice(lines.join("\n"));
+      toast.success(`Imported ${r.inserted} messages from ${r.chats} chats`);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -180,6 +204,15 @@ export function ConnectionTab() {
             >
               <RefreshCw className="size-4" />
               Enable full history
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => importDms.mutate()}
+              disabled={importDms.isPending}
+            >
+              <History className="size-4" />
+              {importDms.isPending ? "Importing…" : "Import 1:1 chat history"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">

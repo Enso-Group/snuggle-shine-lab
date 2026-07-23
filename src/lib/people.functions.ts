@@ -93,12 +93,17 @@ export const getPersonDetail = createServerFn({ method: "GET" })
       .single();
     if (error) throw new Error(error.message);
 
-    // Their 1:1 conversation (its whapi chat id equals their wa id).
-    const { data: conv } = await supabaseAdmin
+    // Their 1:1 conversation. Whapi sometimes reports the same contact as a
+    // bare phone number and sometimes with an @s.whatsapp.net/@c.us suffix —
+    // match on the phone part so the timeline is found either way.
+    const barePhone = person.wa_id.replace(/@.*$/, "");
+    const { data: convs } = await supabaseAdmin
       .from("conversations")
-      .select("id")
-      .eq("whapi_chat_id", person.wa_id)
-      .maybeSingle();
+      .select("id, whapi_chat_id")
+      .eq("is_group", false)
+      .or(`whapi_chat_id.eq.${person.wa_id},whapi_chat_id.like.${barePhone}@%`)
+      .limit(1);
+    const conv = convs?.[0] ?? null;
 
     const [timelineRes, intentsRes, memberRes] = await Promise.all([
       conv
