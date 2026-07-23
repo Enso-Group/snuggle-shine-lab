@@ -79,15 +79,22 @@ export const listActivity = createServerFn({ method: "GET" })
     z
       .object({
         range: z.enum(["day", "week", "month"]).default("day"),
+        // Must cover every ActivityKind the counts can produce — a chip whose
+        // value is missing here makes the parse throw and the page render
+        // "All quiet" while its count still shows a total.
         kind: z
           .enum([
             "all",
             "reply",
             "approval",
+            "handled",
             "gate",
             "post",
             "moderation",
+            "welcome",
             "follow_up",
+            "insight",
+            "config",
             "new_contact",
             "alert",
             "error",

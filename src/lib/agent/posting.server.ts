@@ -110,7 +110,7 @@ async function reconcileDecidedApprovals(deps: AgentDeps): Promise<void> {
       .filter((a) => a.status !== "pending" && approvalMatchesPost(a, post))
       .sort((a, b) => (b.decided_at ?? "").localeCompare(a.decided_at ?? ""))[0];
     if (!decided) continue;
-    await deps.supabase
+    const { error: healErr } = await deps.supabase
       .from("planned_posts")
       .update(
         decided.status === "approved"
@@ -123,6 +123,17 @@ async function reconcileDecidedApprovals(deps: AgentDeps): Promise<void> {
       )
       .eq("id", post.id)
       .eq("status", "queued_approval");
+    // Sent posts must always leave a 'post' decision — the Activity page's
+    // Posts count is built from these rows.
+    if (!healErr && decided.status === "approved") {
+      logDecision(deps.supabase, {
+        chat_id: post.group_chat_id,
+        trigger: "scheduled",
+        stage: "post",
+        summary: `Approved post published in ${decided.target_name ?? post.group_chat_id} (recovered by the sweeper)`,
+        data: { planned_post_id: post.id, post: (post.body ?? "").slice(0, 500) },
+      });
+    }
   }
 }
 
