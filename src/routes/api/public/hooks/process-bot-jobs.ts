@@ -36,11 +36,30 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           } catch {
             // follow_ups table not migrated yet — fine
           }
+          // Last self-cleanup run (counts only — no chat content, no secrets),
+          // so a deploy's data-fix can be confirmed from outside without auth.
+          let lastCleanup: { at: string; summary: string | null } | null = null;
+          try {
+            const { data: cleanupRow } = await supabase
+              .from("bot_decisions")
+              .select("created_at, summary")
+              .eq("stage", "config")
+              .like("summary", "Non-participated cleanup%")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (cleanupRow) {
+              lastCleanup = { at: cleanupRow.created_at, summary: cleanupRow.summary };
+            }
+          } catch {
+            // bot_decisions unavailable — health check stays best-effort
+          }
           return Response.json({
             ok: true,
             info: "Bot-jobs sweeper. POST with x-cron-secret to trigger a run.",
             queue: counts,
             follow_ups_pending: followUpsPending,
+            last_cleanup: lastCleanup,
           });
         } catch (e) {
           return Response.json(
@@ -121,6 +140,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           const groups = await runGroupEngine(deps);
           const { runAnalytics } = await import("@/lib/agent/analytics.server");
           const analytics = await runAnalytics(deps);
+          // Self-healing data pass (self-throttled to every few hours): remove
+          // chats/profiles the account never participated in.
+          const { cleanupNonParticipatedChats } = await import("@/lib/agent/cleanup.server");
+          const cleanup = await cleanupNonParticipatedChats(supabase);
 
           return Response.json({
             ok: true,
@@ -129,6 +152,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             follow_ups: followUps,
             groups,
             analytics,
+            cleanup,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {
