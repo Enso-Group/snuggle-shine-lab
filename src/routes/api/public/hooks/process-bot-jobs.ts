@@ -87,7 +87,6 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           }
 
           const { processQueuedJobs } = await import("@/lib/agent/worker.server");
-          const { processDueFollowUps } = await import("@/lib/agent/follow-ups.server");
           const { realWhapiPort } = await import("@/lib/agent/whapi-port.server");
           const deps = {
             supabase,
@@ -96,7 +95,27 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             workerId: `sweeper-${Math.random().toString(36).slice(2, 8)}`,
             humanPacing: true,
           };
+
+          // Fast tick: only drain due jobs (this is what delivers DM replies on
+          // time, since their run_after encodes the 15-120s human delay). The
+          // heavier per-minute work (follow-ups, group engine, analytics) is
+          // skipped so it can run at a lower frequency.
+          const jobsOnly =
+            url.searchParams.get("jobs_only") === "1" || request.headers.get("x-jobs-only") === "1";
+          // Cap at 3 per tick: each job may do a short (<=20s) top-up wait, and
+          // they run serially, so this bounds a single Worker invocation's time.
+          // Jobs beyond the cap are picked up on the next 20s tick.
           const run = await processQueuedJobs(deps, { max: 3 });
+          if (jobsOnly) {
+            return Response.json({
+              ok: true,
+              jobs_only: true,
+              claimed: run.claimed,
+              results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
+            });
+          }
+
+          const { processDueFollowUps } = await import("@/lib/agent/follow-ups.server");
           const followUps = await processDueFollowUps(deps, { max: 2 });
           const { runGroupEngine } = await import("@/lib/agent/posting.server");
           const groups = await runGroupEngine(deps);

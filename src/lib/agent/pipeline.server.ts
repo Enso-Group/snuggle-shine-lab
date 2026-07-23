@@ -1,7 +1,7 @@
 // Pipeline orchestrator — runs one inbound_reply job through every stage and
 // logs each decision. Called by the worker (never directly by routes).
 import type { Supa } from "./types";
-import type { InboundMessage } from "./inbound";
+import { stripStructuredOutput, type InboundMessage } from "./inbound";
 import { loadAgentSettings, gatherContext } from "./context.server";
 import { gapDescription, isSignificantGap } from "./conversation-gap";
 import { logDecision } from "./decisions.server";
@@ -11,6 +11,12 @@ import type { AgentDeps, BotJob, PipelineOutcome } from "./types";
 
 /** Thrown when retrying can only make things worse (e.g. WhatsApp restriction). */
 export class PermanentJobError extends Error {}
+
+// Upper bound on the inline "land exactly on target" top-up wait. The bulk of
+// the 15–120s DM delay is served durably by the job's run_after; this only
+// fine-tunes the landing, so it stays small enough to be safe inside a
+// Cloudflare Worker request (a long inline sleep gets the request killed).
+const MAX_TARGET_TOPUP_MS = 20_000;
 
 async function findApprovalOwner(supabase: Supa): Promise<string | null> {
   const { data: adminRole } = await supabase
@@ -156,7 +162,12 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // --- Stage: critique ---
   t = Date.now();
   const critique = await critiqueAndRevise(ctx, intent, draft);
-  const { parts, leaked } = sanitizeParts(critique.messages);
+  const { parts: personaSafe, leaked } = sanitizeParts(critique.messages);
+  // Final hard gate before anything can be sent: strip any part that still
+  // looks like the model's raw JSON envelope. Defense in depth — draftReply
+  // already refuses to return raw JSON, but a garbled/truncated draft must
+  // never reach a user as a `{"messages":...,"reasoning":...}` blob.
+  const { parts, leaked: jsonLeaked } = stripStructuredOutput(personaSafe);
   logDecision(supabase, {
     ...base,
     stage: "critique",
@@ -169,9 +180,25 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       issues: critique.issues,
       messages: parts,
       persona_leak_stripped: leaked,
+      json_envelope_stripped: jsonLeaked,
     },
     duration_ms: Date.now() - t,
   });
+
+  // Nothing safe left to send (e.g. the whole reply was a raw JSON blob that we
+  // just stripped) → send NOTHING rather than deliver garbage. The queue has
+  // already logged the leak; a silent skip is the correct fallback here.
+  if (!parts.length) {
+    logDecision(supabase, {
+      ...base,
+      stage: "error",
+      status: "error",
+      summary: jsonLeaked
+        ? "Reply was raw JSON only — stripped the envelope and sent nothing"
+        : "Reply was empty after safety filtering — sent nothing",
+    });
+    return { action: "skipped", reason: "empty after safety filter" };
+  }
 
   const joined = parts.join("\n\n");
 
@@ -215,14 +242,17 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     return { action: "queued_approval", draft: joined };
   }
 
-  // --- Human-timing wait: land the reply at the random target chosen at
-  // receipt (15-90s after the DM). The LLM stages above already consumed part
-  // of that window; sleep out only the remainder. On sweeper retries the
-  // target is in the past and this is a no-op.
+  // --- Human-timing top-up: land the reply at the random target chosen at
+  // receipt (15-120s after the DM). The bulk of that delay was already served
+  // durably by the job's run_after — the sweeper only claims the job near its
+  // target — so this is a SHORT, bounded wait to fine-tune the landing (and to
+  // enforce the 15s floor if the job ran a touch early), never the long inline
+  // sleep that used to exceed the Cloudflare Worker request limit and strand
+  // the job for minutes. On sweeper retries the target is in the past → no-op.
   const llmDoneAt = Date.now();
   let waitedForTargetMs = 0;
   if (deps.humanPacing && p.target_reply_at) {
-    waitedForTargetMs = Math.min(Math.max(p.target_reply_at - Date.now(), 0), 90_000);
+    waitedForTargetMs = Math.min(Math.max(p.target_reply_at - Date.now(), 0), MAX_TARGET_TOPUP_MS);
     if (waitedForTargetMs > 0) {
       await new Promise((r) => setTimeout(r, waitedForTargetMs));
       // The conversation may have moved on while we waited.

@@ -10,7 +10,14 @@ export async function enqueueInboundReply(
     chatId: string;
     conversationId: string;
     payload: InboundJobPayload;
-    delaySeconds: number;
+    /** Relative debounce (groups/simulation). Ignored when runAfterMs is set. */
+    delaySeconds?: number;
+    /**
+     * Absolute epoch-ms at which the job becomes runnable. This is how the DM
+     * human-timing delay is made DURABLE: the sweeper claims the job near its
+     * target instead of the webhook holding a Worker request open for it.
+     */
+    runAfterMs?: number;
   },
 ): Promise<string | null> {
   // A newer message supersedes any not-yet-started reply job for the chat:
@@ -23,6 +30,7 @@ export async function enqueueInboundReply(
     .eq("kind", "inbound_reply")
     .eq("status", "pending");
 
+  const runAfterMs = args.runAfterMs ?? Date.now() + (args.delaySeconds ?? 0) * 1000;
   const { data, error } = await supabase
     .from("bot_jobs")
     .insert({
@@ -30,7 +38,7 @@ export async function enqueueInboundReply(
       chat_id: args.chatId,
       conversation_id: args.conversationId,
       payload: args.payload,
-      run_after: new Date(Date.now() + args.delaySeconds * 1000).toISOString(),
+      run_after: new Date(runAfterMs).toISOString(),
     })
     .select("id")
     .single();

@@ -4,7 +4,7 @@
 import { callLLM, parseJsonLoose } from "@/lib/llm.server";
 import type { LLMModelOverrides } from "@/lib/llm.server";
 import { gapDescription, isSignificantGap } from "./conversation-gap";
-import { normalizeReplyParts } from "./inbound";
+import { looksLikeStructuredOutput, normalizeReplyParts } from "./inbound";
 import { buildGroundingRules } from "./kb.server";
 import { groupPromptBlock } from "./groups.server";
 import { personPromptBlock } from "./people.server";
@@ -171,15 +171,31 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
         )
       : [];
     if (parts.length) {
+      // Only the strings inside "messages" are ever returned as reply text; the
+      // "reasoning" field is kept for the decision log and never delivered.
       return { messages: parts, reasoning: String(parsed.reasoning ?? "") };
     }
+    // Parsed as JSON but without a usable "messages" array: this is the raw
+    // envelope, not a reply. Fall through to the leak guard below.
+    throw new Error("draft output had no usable messages array");
   } catch {
-    /* fall through to plain-text handling */
+    // The output could not be turned into a clean reply. NEVER fall back to
+    // sending the raw model output when it is (or resembles) a JSON envelope —
+    // that is exactly how the `{"messages":[...],"reasoning":"..."}` blob and
+    // the English reasoning field leaked to users. Fail the stage instead so
+    // the queue retries; if it never parses, the contact gets no reply (raised
+    // as an admin alert), which is the correct trade-off vs. leaking JSON.
+    if (looksLikeStructuredOutput(res.content)) {
+      throw new Error(
+        `Draft stage returned unparseable structured output — refusing to send raw JSON: ${res.content.slice(0, 120)}`,
+      );
+    }
+    // Genuinely plain prose (the model ignored the JSON format and just wrote a
+    // reply) is safe to send as-is.
+    const plain = normalizeReplyParts([res.content], maxParts);
+    if (!plain.length) throw new Error("Draft stage returned an empty reply");
+    return { messages: plain, reasoning: "Free-form output — sent as-is" };
   }
-  // Model ignored the JSON format — treat its whole output as one reply.
-  const plain = normalizeReplyParts([res.content], maxParts);
-  if (!plain.length) throw new Error("Draft stage returned an empty reply");
-  return { messages: plain, reasoning: "Free-form output — sent as-is" };
 }
 
 // ---------------------------------------------------------------------------

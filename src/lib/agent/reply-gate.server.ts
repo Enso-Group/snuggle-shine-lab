@@ -42,10 +42,12 @@ async function getOwnWaId(): Promise<string> {
 
 async function quotedIsBotMessage(
   supabase: Supa,
-  conversationId: string,
+  conversationId: string | null,
   quotedId: string | null,
 ): Promise<boolean> {
-  if (!quotedId) return false;
+  // No stored conversation yet ⇒ the bot has never sent anything here, so a
+  // quoted message can't be one of ours.
+  if (!conversationId || !quotedId) return false;
   const { data } = await supabase
     .from("messages")
     .select("id")
@@ -60,14 +62,18 @@ async function quotedIsBotMessage(
 async function ownedQuestionCheck(
   ctx: { supabase: Supa; settings: AgentSettings; profile: GroupProfile },
   m: InboundMessage,
-  conversationId: string,
+  conversationId: string | null,
 ): Promise<GateDecision> {
-  const { data: hist } = await ctx.supabase
-    .from("messages")
-    .select("direction, sender_name, body")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(8);
+  // Only chats we've participated in have stored history; for a group we're
+  // merely observing there is none yet, so decide on the current message alone.
+  const { data: hist } = conversationId
+    ? await ctx.supabase
+        .from("messages")
+        .select("direction, sender_name, body")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(8)
+    : { data: [] };
   const history = (hist ?? [])
     .reverse()
     .filter((h) => h.body)
@@ -127,7 +133,9 @@ export async function decideGroupReply(
   settings: AgentSettings,
   profile: GroupProfile | null,
   m: InboundMessage,
-  conversationId: string,
+  // May be null: a group we've only observed has no conversation row yet — the
+  // gate must still be able to decide (it just has no stored history to read).
+  conversationId: string | null,
 ): Promise<GateDecision> {
   const ownWaId = deps.trigger === "simulation" ? "" : await getOwnWaId();
   const quotedIsBot = await quotedIsBotMessage(deps.supabase, conversationId, m.quotedId);

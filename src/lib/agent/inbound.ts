@@ -93,13 +93,16 @@ export function interPartDelayMs(): number {
 }
 
 export const REPLY_TARGET_MIN_MS = 15_000;
-export const REPLY_TARGET_MAX_MS = 90_000;
+export const REPLY_TARGET_MAX_MS = 120_000;
 
 /**
  * How long after receiving a DM the reply should land, in milliseconds —
- * a fresh uniform draw per message so response timing looks human rather
- * than machine-constant. The pipeline's LLM time counts toward this target;
- * delivery waits out only the remainder.
+ * a fresh uniform draw in the 15s–2min window per message, so response timing
+ * looks human rather than machine-constant. This is the DURABLE delay: it is
+ * encoded in the job's run_after (see enqueueInboundReply), never slept out
+ * inside the webhook request — a Cloudflare Worker cannot hold a request open
+ * that long, and doing so used to strand the job under its claim lock and push
+ * the reply out to several minutes.
  */
 export function randomReplyDelayMs(): number {
   return (
@@ -138,6 +141,53 @@ export function normalizeReplyParts(parts: string[], maxParts = 3): string[] {
     }
   }
   return cleaned;
+}
+
+/**
+ * True when a string looks like the model's raw structured output — a JSON
+ * envelope (`{"messages": [...], "reasoning": "..."}`), a ```json fence, or a
+ * bare `{"key": ...}` object — rather than a natural reply. The reply pipeline
+ * uses this as a hard gate so the model's JSON envelope, and in particular its
+ * English "reasoning" field, can never be delivered to a user even if JSON
+ * parsing upstream failed or partially succeeded.
+ */
+export function looksLikeStructuredOutput(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // Fenced code block, e.g. ```json ... ```
+  if (t.startsWith("```")) return true;
+  // Carries our reply envelope keys.
+  if (/"(messages|reasoning)"\s*:/.test(t)) return true;
+  // Starts like a JSON object with a quoted key: {"foo": ...}
+  if (/^\{\s*"[^"]+"\s*:/.test(t)) return true;
+  // A whole-string JSON object or array.
+  if (/^[[{][\s\S]*[\]}]$/.test(t) && /^[[{]/.test(t)) {
+    try {
+      JSON.parse(t);
+      return true;
+    } catch {
+      /* not valid JSON — fall through */
+    }
+  }
+  return false;
+}
+
+/**
+ * Final safety net over the parts about to be sent: drop any part that still
+ * looks like raw structured output. Returns the safe parts and whether anything
+ * was stripped, so the caller can log the leak and decide to send nothing
+ * rather than deliver a JSON blob.
+ */
+export function stripStructuredOutput(parts: string[]): { parts: string[]; leaked: boolean } {
+  let leaked = false;
+  const safe = parts.filter((p) => {
+    if (looksLikeStructuredOutput(p)) {
+      leaked = true;
+      return false;
+    }
+    return true;
+  });
+  return { parts: safe, leaked };
 }
 
 /** Retry backoff for failed jobs: 30s, 2m, then 10m. */

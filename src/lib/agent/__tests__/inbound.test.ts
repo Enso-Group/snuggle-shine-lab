@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  looksLikeStructuredOutput,
   normalizeReplyParts,
   randomReplyDelayMs,
   REPLY_TARGET_MIN_MS,
@@ -8,6 +9,7 @@ import {
   parseWhapiMessage,
   retryBackoffMs,
   secretsEqual,
+  stripStructuredOutput,
   typingSecondsFor,
 } from "../inbound";
 
@@ -105,12 +107,64 @@ describe("secretsEqual", () => {
 });
 
 describe("randomReplyDelayMs", () => {
-  it("always lands in the 15s-90s window and varies between draws", () => {
-    const draws = Array.from({ length: 300 }, () => randomReplyDelayMs());
+  it("uses the required 15s-2min window", () => {
+    expect(REPLY_TARGET_MIN_MS).toBe(15_000);
+    expect(REPLY_TARGET_MAX_MS).toBe(120_000);
+  });
+
+  it("always lands in the 15s-120s window and varies between draws", () => {
+    const draws = Array.from({ length: 500 }, () => randomReplyDelayMs());
     for (const d of draws) {
-      expect(d).toBeGreaterThanOrEqual(REPLY_TARGET_MIN_MS);
-      expect(d).toBeLessThan(REPLY_TARGET_MAX_MS);
+      expect(d).toBeGreaterThanOrEqual(15_000);
+      expect(d).toBeLessThanOrEqual(120_000);
     }
+    // Varied draws, and the spread actually reaches the upper half of the range.
     expect(new Set(draws).size).toBeGreaterThan(10);
+    expect(Math.max(...draws)).toBeGreaterThan(90_000);
+  });
+});
+
+describe("looksLikeStructuredOutput", () => {
+  it("flags the raw JSON envelope the model returns", () => {
+    const leak =
+      '{ "messages": ["היי אלעד, הכל בסדר גמור, מה שלומך?"], "reasoning": "Responded naturally to the user\'s greeting." }';
+    expect(looksLikeStructuredOutput(leak)).toBe(true);
+  });
+
+  it("flags a truncated / unclosed envelope", () => {
+    expect(looksLikeStructuredOutput('{"messages": ["היי אלעד, הכל בסדר גמור')).toBe(true);
+  });
+
+  it("flags fenced json and bare json objects/arrays", () => {
+    expect(looksLikeStructuredOutput('```json\n{"messages":["hi"]}\n```')).toBe(true);
+    expect(looksLikeStructuredOutput('{"foo": "bar"}')).toBe(true);
+    expect(looksLikeStructuredOutput('["a","b"]')).toBe(true);
+  });
+
+  it("passes genuine natural-language replies", () => {
+    expect(looksLikeStructuredOutput("היי אלעד, הכל בסדר גמור, מה שלומך?")).toBe(false);
+    expect(looksLikeStructuredOutput("Sure, I can help with that.")).toBe(false);
+    expect(looksLikeStructuredOutput("שלחתי לך שתי הודעות אתמול")).toBe(false);
+    expect(looksLikeStructuredOutput("")).toBe(false);
+  });
+});
+
+describe("stripStructuredOutput", () => {
+  it("drops parts that look like raw JSON and flags the leak", () => {
+    const { parts, leaked } = stripStructuredOutput(["היי אלעד", '{"reasoning":"internal note"}']);
+    expect(parts).toEqual(["היי אלעד"]);
+    expect(leaked).toBe(true);
+  });
+
+  it("leaves clean parts untouched", () => {
+    const { parts, leaked } = stripStructuredOutput(["שלום", "מה שלומך?"]);
+    expect(parts).toEqual(["שלום", "מה שלומך?"]);
+    expect(leaked).toBe(false);
+  });
+
+  it("returns nothing when every part is a JSON blob (caller must send nothing)", () => {
+    const { parts, leaked } = stripStructuredOutput(['{"messages":["hi"],"reasoning":"y"}']);
+    expect(parts).toEqual([]);
+    expect(leaked).toBe(true);
   });
 });

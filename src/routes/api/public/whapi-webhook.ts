@@ -12,7 +12,11 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
       // rev: deploy beacon — bump when server behavior changes so a live
       // deploy can be confirmed from outside without auth.
       GET: async () =>
-        Response.json({ ok: true, info: "Whapi webhook endpoint", rev: "2026-07-23-relevant-chats" }),
+        Response.json({
+          ok: true,
+          info: "Whapi webhook endpoint",
+          rev: "2026-07-23-participation-latency-json",
+        }),
       POST: async ({ request }) => {
         const url = new URL(request.url);
         const secretParam =

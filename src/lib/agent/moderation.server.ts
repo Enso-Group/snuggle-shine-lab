@@ -171,21 +171,28 @@ export async function notifyOwner(
 }
 
 /**
- * Returns true when the message was handled by moderation (violation found)
- * and must not continue to the reply gates.
+ * Handles a group message through moderation.
+ * - `handled` is true when a violation was found (the message must not continue
+ *   to the reply gates).
+ * - `acted` is true when the bot actually posted a message into the group (a
+ *   public warning) — i.e. the account participated, so the chat is worth
+ *   persisting. Silent first-strike tracking sets handled=true, acted=false.
+ * `conversationId` may be null for a group we've only observed so far (no
+ * conversation row yet); it is used only for the decision-log link.
  */
 export async function moderateGroupMessage(
   deps: AgentDeps,
   settings: AgentSettings,
   profile: GroupProfile,
   m: InboundMessage,
-  conversationId: string,
-): Promise<boolean> {
-  if (!profile.moderation.enabled) return false;
+  conversationId: string | null,
+): Promise<{ handled: boolean; acted: boolean }> {
+  if (!profile.moderation.enabled) return { handled: false, acted: false };
   const verdict = await classifyViolation(profile, m, settings);
-  if (!verdict.violation) return false;
+  if (!verdict.violation) return { handled: false, acted: false };
 
   const { supabase } = deps;
+  let acted = false;
   const member = await bumpMemberViolations(supabase, profile.chat_id, m);
   const violations = member?.violations ?? 1;
   const warnLimit = profile.moderation.warn_limit ?? DEFAULT_WARN_LIMIT;
@@ -256,6 +263,7 @@ export async function moderateGroupMessage(
     }
     try {
       await deps.whapi.sendText(profile.chat_id, warning);
+      acted = true;
     } catch (e) {
       console.warn("[moderation] warn send failed:", e);
     }
@@ -296,5 +304,5 @@ export async function moderateGroupMessage(
     summary: `Rule violation "${verdict.rule ?? "group rules"}" by ${m.senderName || m.senderId} — violation #${violations}`,
     data: { verdict: verdict as unknown as Record<string, unknown>, violations },
   });
-  return true;
+  return { handled: true, acted };
 }
