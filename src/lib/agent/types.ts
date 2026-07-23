@@ -111,6 +111,14 @@ export type AgentContext = {
   kb?: { block: string; count: number };
   /** Management profile when the message is in a managed group. */
   groupProfile?: import("./groups.server").GroupProfile | null;
+  /** Ms since the previous message in this conversation (null = first message). */
+  gapSinceLastMs?: number | null;
+  /**
+   * Set by the pipeline when the model judged this DM a new topic after a
+   * gap — the draft/critique stages then start clean instead of dragging in
+   * the earlier thread.
+   */
+  freshStart?: { gap: string; reason: string } | null;
 };
 
 export type IntentAnalysis = {
@@ -121,6 +129,13 @@ export type IntentAnalysis = {
   goal: string;
   escalate: boolean;
   escalate_reason: string | null;
+  /**
+   * After a significant gap in a DM: does this message continue the earlier
+   * thread ("continuation") or open a new topic ("fresh")? Judged by the
+   * model from content + gap together; defaults to "continuation".
+   */
+  context_relation: "continuation" | "fresh";
+  context_reason: string | null;
 };
 
 export type DraftResult = {

@@ -3,6 +3,7 @@
 import type { Supa } from "./types";
 import type { InboundMessage } from "./inbound";
 import { loadAgentSettings, gatherContext } from "./context.server";
+import { gapDescription, isSignificantGap } from "./conversation-gap";
 import { logDecision } from "./decisions.server";
 import { deliverReply } from "./deliver.server";
 import { analyzeIntent, critiqueAndRevise, draftReply, sanitizeParts } from "./stages.server";
@@ -106,11 +107,33 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // --- Stage: intent ---
   t = Date.now();
   const intent = await analyzeIntent(ctx);
+
+  // Fresh topic after a gap: retire the old thread before drafting so the
+  // reply doesn't drag the earlier conversation in. Person memory and the
+  // knowledge base still apply — only the transcript is cleared.
+  if (intent.context_relation === "fresh" && !message.isGroup) {
+    ctx.freshStart = {
+      gap: gapDescription(ctx.gapSinceLastMs ?? 0),
+      reason: intent.context_reason ?? "new topic",
+    };
+    ctx.history = [];
+  }
+
   logDecision(supabase, {
     ...base,
     stage: "intent",
-    summary: `Intent: ${intent.intent} | Language: ${intent.language} | Urgency: ${intent.urgency}${intent.escalate ? " | needs escalation" : ""}`,
-    data: intent as unknown as Record<string, unknown>,
+    summary: `Intent: ${intent.intent} | Language: ${intent.language} | Urgency: ${intent.urgency}${intent.escalate ? " | needs escalation" : ""}${
+      ctx.freshStart
+        ? ` | New topic after ${Math.round((ctx.gapSinceLastMs ?? 0) / 60_000)}min gap — old thread retired (${ctx.freshStart.reason})`
+        : intent.context_relation === "continuation" && isSignificantGap(ctx.gapSinceLastMs)
+          ? ` | Continues the earlier thread despite a ${Math.round((ctx.gapSinceLastMs ?? 0) / 60_000)}min gap`
+          : ""
+    }`,
+    data: {
+      ...(intent as unknown as Record<string, unknown>),
+      gap_since_last_min:
+        ctx.gapSinceLastMs != null ? Math.round(ctx.gapSinceLastMs / 60_000) : null,
+    },
     duration_ms: Date.now() - t,
   });
 

@@ -49,14 +49,12 @@ export async function gatherContext(
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
 
-  const history = (hist ?? [])
-    .reverse()
-    .filter((h) => h.body)
-    .map((h) => ({
-      role: (h.direction === "outbound" ? "assistant" : "user") as "user" | "assistant",
-      content: h.body as string,
-      senderName: h.sender_name ?? undefined,
-    }));
+  const rows = (hist ?? []).reverse().filter((h) => h.body);
+  const history = rows.map((h) => ({
+    role: (h.direction === "outbound" ? "assistant" : "user") as "user" | "assistant",
+    content: h.body as string,
+    senderName: h.sender_name ?? undefined,
+  }));
   // The triggering message is passed separately — don't repeat it as history.
   if (
     history.length &&
@@ -64,7 +62,13 @@ export async function gatherContext(
     history[history.length - 1].content === message.body
   ) {
     history.pop();
+    rows.pop();
   }
 
-  return { settings, conversation: conv, history, message };
+  // Gap between this message and the previous one — feeds the intent stage's
+  // continuation-vs-fresh judgment for DMs.
+  const lastAt = rows.length ? new Date(rows[rows.length - 1].created_at).getTime() : null;
+  const gapSinceLastMs = lastAt === null ? null : Math.max(message.ts - lastAt, 0);
+
+  return { settings, conversation: conv, history, message, gapSinceLastMs };
 }

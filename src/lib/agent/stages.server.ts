@@ -3,6 +3,7 @@
 // the pipeline logs to bot_decisions.
 import { callLLM, parseJsonLoose } from "@/lib/llm.server";
 import type { LLMModelOverrides } from "@/lib/llm.server";
+import { gapDescription, isSignificantGap } from "./conversation-gap";
 import { normalizeReplyParts } from "./inbound";
 import { buildGroundingRules } from "./kb.server";
 import { groupPromptBlock } from "./groups.server";
@@ -44,16 +45,32 @@ export async function analyzeIntent(ctx: AgentContext): Promise<IntentAnalysis> 
     goal: "Reply helpfully and professionally",
     escalate: false,
     escalate_reason: null,
+    context_relation: "continuation",
+    context_reason: null,
   };
 
+  // DM after a real gap: same fast-model call also judges whether the message
+  // continues the earlier thread or opens a new topic (content + gap, never
+  // gap alone).
+  const judgeGap =
+    !ctx.message.isGroup && ctx.history.length > 0 && isSignificantGap(ctx.gapSinceLastMs);
+  const gapText = judgeGap ? gapDescription(ctx.gapSinceLastMs!) : "";
+
   const system = `אתה מנתח הודעות נכנסות בוואטסאפ עבור צוות עסקי. נתח את ההודעה האחרונה בהקשר השיחה והחזר JSON בלבד, בלי טקסט נוסף, במבנה:
-{"intent": "מה האדם באמת רוצה, במשפט קצר", "language": "קוד שפה של ההודעה האחרונה: he/en/ru/ar/...", "urgency": "low/normal/high", "sentiment": "מצב רגשי במילה-שתיים", "goal": "מה איש מקצוע מצטיין היה מנסה להשיג בתשובה הזו", "escalate": true/false, "escalate_reason": "אם escalate=true — סיבה קצרה, אחרת null"}
-escalate=true רק אם יש איום משפטי, דרישת החזר כספי, נושא רגיש/משברי, או בקשה מפורשת לדבר עם בן אדם.
-חשוב: כתוב את הערכים של intent / sentiment / goal / escalate_reason באנגלית (הם מוצגים בלוח בקרה באנגלית). שדה language נשאר קוד שפה.`;
+{"intent": "מה האדם באמת רוצה, במשפט קצר", "language": "קוד שפה של ההודעה האחרונה: he/en/ru/ar/...", "urgency": "low/normal/high", "sentiment": "מצב רגשי במילה-שתיים", "goal": "מה איש מקצוע מצטיין היה מנסה להשיג בתשובה הזו", "escalate": true/false, "escalate_reason": "אם escalate=true — סיבה קצרה, אחרת null"${judgeGap ? `, "context_relation": "continuation" או "fresh", "context_reason": "short English reason"` : ""}}
+escalate=true רק אם יש איום משפטי, דרישת החזר כספי, נושא רגיש/משברי, או בקשה מפורשת לדבר עם בן אדם.${
+    judgeGap
+      ? `
+context_relation — ההודעה החדשה הגיעה אחרי הפסקה של ${gapText}. שפוט לפי התוכן וההפסקה יחד:
+- "continuation": ההודעה מתייחסת לשיחה הקודמת — תשובה לשאלה ששאלנו, המשך עניין ("כן, תעשה את זה", "אז מה סגרנו?"), שאלת המשך על אותו נושא. הפסקה ארוכה לבדה אינה סיבה ל-fresh אם התוכן ממשיך את השיחה.
+- "fresh": נושא חדש שאינו קשור לשיחה הקודמת, או פתיחה כללית ("היי, מה שלומך?") שההקשר הישן רק יבלבל בה. במקרה כזה אל נגרור את הנושא הישן לתשובה.`
+      : ""
+  }
+חשוב: כתוב את הערכים של intent / sentiment / goal / escalate_reason${judgeGap ? " / context_reason" : ""} באנגלית (הם מוצגים בלוח בקרה באנגלית). שדה language נשאר קוד שפה.`;
 
   const user = `היסטוריה אחרונה:
 ${condensedHistory(ctx, 10) || "(שיחה חדשה)"}
-
+${judgeGap ? `\n(עברו ${gapText} מאז ההודעה האחרונה בשיחה)\n` : ""}
 ההודעה החדשה מאת ${ctx.message.senderName || "לא ידוע"}:
 """${ctx.message.body.slice(0, 1000)}"""`;
 
@@ -77,6 +94,10 @@ ${condensedHistory(ctx, 10) || "(שיחה חדשה)"}
       goal: String(parsed.goal ?? fallback.goal),
       escalate: !!parsed.escalate,
       escalate_reason: parsed.escalate ? String(parsed.escalate_reason ?? "") || null : null,
+      // Anything but an explicit "fresh" verdict keeps the thread — the safe
+      // default when the model omits the field or wasn't asked.
+      context_relation: judgeGap && parsed.context_relation === "fresh" ? "fresh" : "continuation",
+      context_reason: judgeGap && parsed.context_reason ? String(parsed.context_reason) : null,
     };
   } catch (e) {
     console.warn(
@@ -93,6 +114,20 @@ ${condensedHistory(ctx, 10) || "(שיחה חדשה)"}
 export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Promise<DraftResult> {
   const maxParts = ctx.settings.agent_config?.max_reply_parts ?? 3;
 
+  // Time-gap awareness: on a fresh start the old thread is gone from the
+  // history entirely (the pipeline cleared it); on a continuation after a
+  // long gap the model should answer knowing hours passed, not as if the
+  // last exchange was a minute ago.
+  const gapBlock = ctx.freshStart
+    ? `
+
+הקשר זמן: ההודעה הגיעה אחרי הפסקה של ${ctx.freshStart.gap} והיא פותחת נושא חדש. התייחס אליה כשיחה חדשה — אל תחזור מיוזמתך לנושא שנדון בעבר.`
+    : isSignificantGap(ctx.gapSinceLastMs)
+      ? `
+
+הקשר זמן: ההודעה ממשיכה את השיחה הקודמת אחרי הפסקה של ${gapDescription(ctx.gapSinceLastMs!)}. ענה בהמשכיות טבעית, בלי להעמיד פנים שהשיחה קרתה הרגע.`
+      : "";
+
   const system =
     ctx.settings.system_prompt +
     buildHumanizeRules() +
@@ -100,6 +135,7 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
     groupPromptBlock(ctx.groupProfile) +
     personPromptBlock(ctx.person) +
     buildGroundingRules(ctx.kb ?? { block: "", count: 0 }) +
+    gapBlock +
     `
 
 ניתוח ההודעה הנוכחית (שימוש פנימי — אל תצטט אותו):
