@@ -29,6 +29,7 @@ async function findApprovalOwner(supabase: Supa): Promise<string | null> {
 export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<PipelineOutcome> {
   const { supabase } = deps;
   const p = job.payload;
+  const processStartAt = Date.now();
   const base = {
     job_id: job.id,
     conversation_id: job.conversation_id,
@@ -218,6 +219,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // receipt (15-90s after the DM). The LLM stages above already consumed part
   // of that window; sleep out only the remainder. On sweeper retries the
   // target is in the past and this is a no-op.
+  const llmDoneAt = Date.now();
   let waitedForTargetMs = 0;
   if (deps.humanPacing && p.target_reply_at) {
     waitedForTargetMs = Math.min(Math.max(p.target_reply_at - Date.now(), 0), 90_000);
@@ -295,12 +297,18 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       data: {
         parts: delivery.parts,
         whapi_ids: delivery.sentMessageIds,
-        ...(p.target_reply_at
-          ? {
-              reply_latency_s: Math.round((Date.now() - p.ts) / 1000),
-              waited_for_target_ms: waitedForTargetMs,
-            }
-          : {}),
+        // Where the time went, message → reply. queue_wait covers debounce
+        // plus any sweeper/lock-recovery delay — the number that exposes a
+        // stuck job; llm covers the reasoning stages; waited_for_target is
+        // the intentional human-timing sleep.
+        latency_breakdown: {
+          total_from_message_s: Math.round((Date.now() - p.ts) / 1000),
+          webhook_delivery_s: p.received_at ? Math.round((p.received_at - p.ts) / 1000) : null,
+          queue_wait_s: p.received_at ? Math.round((processStartAt - p.received_at) / 1000) : null,
+          llm_s: Math.round((llmDoneAt - processStartAt) / 1000),
+          waited_for_target_s: Math.round(waitedForTargetMs / 1000),
+          attempt: job.attempts,
+        },
       },
       duration_ms: Date.now() - t,
     });

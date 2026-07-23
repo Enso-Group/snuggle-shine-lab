@@ -38,6 +38,19 @@ export async function processQueuedJobs(
         permanent ? { ...job, attempts: job.max_attempts } : job,
         String(err?.message ?? err),
       );
+      // Out of retries = the contact gets silence. That must never pass
+      // unnoticed — raise an admin alert (shows under Activity → Alerts).
+      if (permanent || job.attempts >= job.max_attempts) {
+        try {
+          const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
+          await raiseAdminAlert(
+            deps.supabase,
+            `Reply job gave up after ${job.attempts} attempts — ${job.chat_id} will get no answer. Last error: ${String(err?.message ?? err).slice(0, 300)}`,
+          );
+        } catch (alertErr) {
+          console.error("[worker] failed to raise permanent-failure alert", alertErr);
+        }
+      }
       results.push({
         jobId: job.id,
         outcome: { action: "failed", error: String(err?.message ?? err) },
