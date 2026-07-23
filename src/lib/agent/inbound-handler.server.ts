@@ -2,7 +2,7 @@
 // simulation mode: persist idempotently → gates → enqueue → (optionally) wait
 // out the debounce and process the queue for this chat.
 import { logDecision } from "./decisions.server";
-import type { InboundMessage } from "./inbound";
+import { randomReplyDelayMs, type InboundMessage } from "./inbound";
 import { enqueueInboundReply } from "./queue.server";
 import { processQueuedJobs, type WorkerRunResult } from "./worker.server";
 import type { Json } from "@/integrations/supabase/types";
@@ -11,6 +11,12 @@ import type { AgentDeps, AgentSettings } from "./types";
 const FRESHNESS_WINDOW_MS = 2 * 60 * 1000;
 const DEFAULT_REPLY_DELAY_S = 4;
 const MAX_INLINE_WAIT_MS = 8_000;
+// The debounce only consolidates message bursts. It must stay below the
+// inline wait, or the job's run_after lands beyond this request's claim
+// window and the reply silently degrades to the every-minute sweeper —
+// that's the difference between a ~30s reply and a 2-4 minute one. The
+// human-feel timing lives in target_reply_at, not here.
+const MAX_REPLY_DELAY_S = Math.floor(MAX_INLINE_WAIT_MS / 1000);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -150,7 +156,14 @@ export async function handleInboundMessage(
   const delaySeconds =
     deps.trigger === "simulation"
       ? 0
-      : (settings.agent_config?.reply_delay_seconds ?? DEFAULT_REPLY_DELAY_S);
+      : Math.min(
+          settings.agent_config?.reply_delay_seconds ?? DEFAULT_REPLY_DELAY_S,
+          MAX_REPLY_DELAY_S,
+        );
+  // DM replies land at a random human moment 15-90s after receipt; the
+  // pipeline sleeps out whatever the LLM stages didn't use.
+  const targetReplyAt =
+    !m.isGroup && deps.trigger !== "simulation" ? Date.now() + randomReplyDelayMs() : undefined;
   const jobId = await enqueueInboundReply(supabase, {
     chatId: m.chatId,
     conversationId: convId,
@@ -162,6 +175,7 @@ export async function handleInboundMessage(
       chat_name: m.chatName,
       is_group: m.isGroup,
       ts: m.ts,
+      target_reply_at: targetReplyAt,
     },
     delaySeconds,
   });
@@ -172,7 +186,13 @@ export async function handleInboundMessage(
     trigger: deps.trigger,
     stage: "received",
     summary: `Message from ${m.senderName || m.chatId} accepted for handling`,
-    data: { body_preview: m.body.slice(0, 120), reply_delay_s: delaySeconds },
+    data: {
+      body_preview: m.body.slice(0, 120),
+      reply_delay_s: delaySeconds,
+      ...(targetReplyAt
+        ? { reply_target_in_s: Math.round((targetReplyAt - Date.now()) / 1000) }
+        : {}),
+    },
   });
 
   // Wait out the debounce, then drain this chat's queue. If a newer message

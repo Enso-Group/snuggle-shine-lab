@@ -92,6 +92,21 @@ export function interPartDelayMs(): number {
   return 900 + Math.floor(Math.random() * 800);
 }
 
+export const REPLY_TARGET_MIN_MS = 15_000;
+export const REPLY_TARGET_MAX_MS = 90_000;
+
+/**
+ * How long after receiving a DM the reply should land, in milliseconds —
+ * a fresh uniform draw per message so response timing looks human rather
+ * than machine-constant. The pipeline's LLM time counts toward this target;
+ * delivery waits out only the remainder.
+ */
+export function randomReplyDelayMs(): number {
+  return (
+    REPLY_TARGET_MIN_MS + Math.floor(Math.random() * (REPLY_TARGET_MAX_MS - REPLY_TARGET_MIN_MS))
+  );
+}
+
 /**
  * Normalize a drafted reply into WhatsApp-natural parts: at most `maxParts`
  * non-empty messages. If the model returned one long wall of text, split it on

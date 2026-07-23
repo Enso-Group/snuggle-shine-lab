@@ -9,7 +9,10 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/public/whapi-webhook")({
   server: {
     handlers: {
-      GET: async () => Response.json({ ok: true, info: "Whapi webhook endpoint" }),
+      // rev: deploy beacon — bump when server behavior changes so a live
+      // deploy can be confirmed from outside without auth.
+      GET: async () =>
+        Response.json({ ok: true, info: "Whapi webhook endpoint", rev: "2026-07-23-dm-latency" }),
       POST: async ({ request }) => {
         const url = new URL(request.url);
         const secretParam =

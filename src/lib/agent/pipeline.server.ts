@@ -191,6 +191,35 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     return { action: "queued_approval", draft: joined };
   }
 
+  // --- Human-timing wait: land the reply at the random target chosen at
+  // receipt (15-90s after the DM). The LLM stages above already consumed part
+  // of that window; sleep out only the remainder. On sweeper retries the
+  // target is in the past and this is a no-op.
+  let waitedForTargetMs = 0;
+  if (deps.humanPacing && p.target_reply_at) {
+    waitedForTargetMs = Math.min(Math.max(p.target_reply_at - Date.now(), 0), 90_000);
+    if (waitedForTargetMs > 0) {
+      await new Promise((r) => setTimeout(r, waitedForTargetMs));
+      // The conversation may have moved on while we waited.
+      const { data: newerNow } = await supabase
+        .from("messages")
+        .select("id")
+        .eq("conversation_id", job.conversation_id)
+        .eq("direction", "inbound")
+        .gt("created_at", new Date(p.ts).toISOString())
+        .limit(1);
+      if (newerNow?.length) {
+        logDecision(supabase, {
+          ...base,
+          stage: "skipped",
+          status: "skip",
+          summary: "A newer message arrived during the reply-timing wait — its job owns the reply",
+        });
+        return { action: "skipped", reason: "superseded during delay" };
+      }
+    }
+  }
+
   // --- Anti-ban + duplicate-reply guards, immediately before sending ---
   const {
     checkOutboundAllowed,
@@ -240,7 +269,16 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       ...base,
       stage: "deliver",
       summary: `Sent ${delivery.parts.length} message(s)`,
-      data: { parts: delivery.parts, whapi_ids: delivery.sentMessageIds },
+      data: {
+        parts: delivery.parts,
+        whapi_ids: delivery.sentMessageIds,
+        ...(p.target_reply_at
+          ? {
+              reply_latency_s: Math.round((Date.now() - p.ts) / 1000),
+              waited_for_target_ms: waitedForTargetMs,
+            }
+          : {}),
+      },
       duration_ms: Date.now() - t,
     });
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeReplyParts,
+  randomReplyDelayMs,
+  REPLY_TARGET_MIN_MS,
+  REPLY_TARGET_MAX_MS,
   normalizeTimestampMs,
   parseWhapiMessage,
   retryBackoffMs,
@@ -98,5 +101,16 @@ describe("secretsEqual", () => {
     expect(secretsEqual("", "")).toBe(true);
     expect(secretsEqual(null, "x")).toBe(false);
     expect(secretsEqual("x", undefined)).toBe(false);
+  });
+});
+
+describe("randomReplyDelayMs", () => {
+  it("always lands in the 15s-90s window and varies between draws", () => {
+    const draws = Array.from({ length: 300 }, () => randomReplyDelayMs());
+    for (const d of draws) {
+      expect(d).toBeGreaterThanOrEqual(REPLY_TARGET_MIN_MS);
+      expect(d).toBeLessThan(REPLY_TARGET_MAX_MS);
+    }
+    expect(new Set(draws).size).toBeGreaterThan(10);
   });
 });

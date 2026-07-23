@@ -69,6 +69,8 @@ export type InboundJobPayload = {
   chat_name: string;
   is_group: boolean;
   ts: number;
+  /** Epoch ms when the reply should land (DMs only) — chosen at receipt. */
+  target_reply_at?: number;
 };
 
 export type BotJob = {
