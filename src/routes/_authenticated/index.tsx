@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Newspaper,
   RefreshCw,
+  Search,
   Send,
   Shield,
   Sparkles,
@@ -70,6 +71,7 @@ function CommandCenter() {
   const [selected, setSelected] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const { data: groups = [], isLoading } = useQuery({
@@ -81,6 +83,18 @@ function CommandCenter() {
   });
 
   const current: ManagedGroup | undefined = groups.find((g) => g.chat_id === selected);
+
+  // Client-side filter — the group list is already in memory, no server round-trip needed.
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter(
+      (g) =>
+        g.whatsapp_name.toLowerCase().includes(q) ||
+        (g.profile?.name ?? "").toLowerCase().includes(q) ||
+        g.chat_id.toLowerCase().includes(q),
+    );
+  }, [groups, groupSearch]);
 
   const { data: activity } = useQuery({
     queryKey: ["group-activity", selected],
@@ -131,10 +145,13 @@ function CommandCenter() {
   const upcomingPosts = (activity?.posts ?? []).filter(
     (p) => p.status === "planned" || p.status === "queued_approval",
   );
-  const recentPosts = (activity?.posts ?? []).filter((p) => p.status === "sent").slice(0, 4);
+  const sentPosts = (activity?.posts ?? []).filter((p) => p.status === "sent");
   const notSentPosts: NotSentPost[] = (activity?.posts ?? []).filter(
     (p) => p.status === "failed" || p.status === "cancelled",
   );
+  // The server returns one 30-row window across all statuses — when it's
+  // full, per-column counts are lower bounds, not totals.
+  const postsWindowFull = (activity?.posts ?? []).length >= 30;
 
   return (
     <div className="min-h-full">
@@ -156,6 +173,19 @@ function CommandCenter() {
           {/* Group list */}
           <Card className="h-fit lg:sticky lg:top-4">
             <CardContent className="divide-y p-0">
+              <div className="p-2">
+                <div className="relative">
+                  <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  {/* dir="auto" — group names are typed in Hebrew */}
+                  <Input
+                    placeholder="Search groups…"
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    className="h-8 ps-8 text-sm"
+                    dir="auto"
+                  />
+                </div>
+              </div>
               {isLoading && groups.length === 0 && (
                 <div className="space-y-2 p-3">
                   {[1, 2, 3].map((i) => (
@@ -170,7 +200,10 @@ function CommandCenter() {
                   description="Connect WhatsApp and join groups first."
                 />
               )}
-              {groups.map((g) => (
+              {!isLoading && groups.length > 0 && filteredGroups.length === 0 && (
+                <p className="p-3 text-xs text-muted-foreground">No groups match</p>
+              )}
+              {filteredGroups.map((g) => (
                 <button
                   key={g.chat_id}
                   onClick={() => selectGroup(g.chat_id)}
@@ -430,117 +463,144 @@ function CommandCenter() {
                   </Card>
                 )}
 
-                {/* Failed/cancelled posts stay visible with their reason — never silently dropped */}
-                {notSentPosts.length > 0 && (
-                  <Card>
-                    <CardContent className="space-y-2 p-4">
-                      <h3 className="flex items-center gap-2 text-sm font-semibold">
-                        <AlertTriangle className="size-4 text-destructive" /> Not sent
-                      </h3>
-                      {notSentPosts.map((p) => (
-                        <div key={p.id} className="rounded-md border p-2 text-xs">
-                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                            {p.status === "failed" ? (
-                              <Badge
-                                variant="secondary"
-                                className="bg-destructive/15 text-[10px] text-destructive"
-                              >
-                                failed
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="secondary"
-                                className="bg-muted text-[10px] text-muted-foreground"
-                              >
-                                cancelled
-                              </Badge>
-                            )}
-                            <Badge variant="outline" className="text-[10px]">
-                              {p.source}
-                              {p.pillar ? ` · ${p.pillar}` : ""}
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground" dir="ltr">
-                              {new Date(p.created_at).toLocaleString("en-GB")}
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="ms-auto h-6 gap-1 px-2 text-[10px]"
-                              disabled={retryPost.isPending}
-                              onClick={() => retryPost.mutate(p.id)}
-                            >
-                              <RefreshCw
-                                className={`size-3 ${retryPost.isPending && retryPost.variables === p.id ? "animate-spin" : ""}`}
-                              />
-                              Retry
-                            </Button>
-                          </div>
-                          <p className="line-clamp-2" dir="auto">
-                            {p.prompt ?? p.body ?? ""}
-                          </p>
-                          {p.reasoning && (
-                            <p
-                              className={`mt-1 text-[11px] ${p.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
-                              dir="auto"
-                            >
-                              {p.reasoning}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Upcoming + recent posts */}
-                {(upcomingPosts.length > 0 || recentPosts.length > 0) && (
-                  <div className="grid gap-4 xl:grid-cols-2">
+                {/* Posts pipeline: three columns side by side (problems first) so unsent,
+                    in-preparation and sent posts can be compared without scrolling the page —
+                    long lists scroll inside their own column instead. */}
+                {(notSentPosts.length > 0 ||
+                  upcomingPosts.length > 0 ||
+                  sentPosts.length > 0) && (
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    {/* Failed/cancelled posts stay visible with their reason — never silently dropped */}
                     <Card>
                       <CardContent className="space-y-2 p-4">
                         <h3 className="flex items-center gap-2 text-sm font-semibold">
-                          <Newspaper className="size-4 text-primary" /> Upcoming posts
+                          <AlertTriangle className="size-4 shrink-0 text-destructive" /> Not sent
+                          <Badge variant="secondary" className="ms-auto text-[10px]">
+                            {notSentPosts.length}
+                            {postsWindowFull ? "+" : ""}
+                          </Badge>
+                        </h3>
+                        {notSentPosts.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            No failed or cancelled posts.
+                          </p>
+                        ) : (
+                          <div className="max-h-[22rem] space-y-2 overflow-y-auto">
+                            {notSentPosts.map((p) => (
+                              <div key={p.id} className="rounded-md border p-2 text-xs">
+                                <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                                  {p.status === "failed" ? (
+                                    <Badge
+                                      variant="secondary"
+                                      className="bg-destructive/15 text-[10px] text-destructive"
+                                    >
+                                      failed
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="secondary"
+                                      className="bg-muted text-[10px] text-muted-foreground"
+                                    >
+                                      cancelled
+                                    </Badge>
+                                  )}
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {p.source}
+                                    {p.pillar ? ` · ${p.pillar}` : ""}
+                                  </Badge>
+                                  <span className="text-[10px] text-muted-foreground" dir="ltr">
+                                    {new Date(p.created_at).toLocaleString("en-GB")}
+                                  </span>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="ms-auto h-6 gap-1 px-2 text-[10px]"
+                                    disabled={retryPost.isPending}
+                                    onClick={() => retryPost.mutate(p.id)}
+                                  >
+                                    <RefreshCw
+                                      className={`size-3 ${retryPost.isPending && retryPost.variables === p.id ? "animate-spin" : ""}`}
+                                    />
+                                    Retry
+                                  </Button>
+                                </div>
+                                <p className="line-clamp-2" dir="auto">
+                                  {p.prompt ?? p.body ?? ""}
+                                </p>
+                                {p.reasoning && (
+                                  <p
+                                    className={`mt-1 text-[11px] ${p.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+                                    dir="auto"
+                                  >
+                                    {p.reasoning}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 p-4">
+                        <h3 className="flex items-center gap-2 text-sm font-semibold">
+                          <Newspaper className="size-4 shrink-0 text-primary" /> In progress
+                          <Badge variant="secondary" className="ms-auto text-[10px]">
+                            {upcomingPosts.length}
+                            {postsWindowFull ? "+" : ""}
+                          </Badge>
                         </h3>
                         {upcomingPosts.length === 0 ? (
                           <p className="text-xs text-muted-foreground">
                             Nothing queued — schedule slots or ask the bot to plan a post.
                           </p>
                         ) : (
-                          upcomingPosts.map((p) => (
-                            <div key={p.id} className="rounded-md border p-2 text-xs" dir="auto">
-                              <Badge variant="outline" className="mb-1 text-[10px]">
-                                {p.status === "queued_approval"
-                                  ? "awaiting approval"
-                                  : "generating"}
-                                {p.pillar ? ` · ${p.pillar}` : ""}
-                              </Badge>
-                              <p className="line-clamp-2">
-                                {p.body ?? p.prompt ?? "(engine will draft this)"}
-                              </p>
-                            </div>
-                          ))
+                          <div className="max-h-[22rem] space-y-2 overflow-y-auto">
+                            {upcomingPosts.map((p) => (
+                              <div key={p.id} className="rounded-md border p-2 text-xs" dir="auto">
+                                <Badge variant="outline" className="mb-1 text-[10px]">
+                                  {p.status === "queued_approval"
+                                    ? "awaiting approval"
+                                    : "generating"}
+                                  {p.pillar ? ` · ${p.pillar}` : ""}
+                                </Badge>
+                                <p className="line-clamp-2">
+                                  {p.body ?? p.prompt ?? "(engine will draft this)"}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </CardContent>
                     </Card>
+
                     <Card>
                       <CardContent className="space-y-2 p-4">
                         <h3 className="flex items-center gap-2 text-sm font-semibold">
-                          <ActivityIcon className="size-4 text-primary" /> Recent posts & engagement
+                          <ActivityIcon className="size-4 shrink-0 text-primary" /> Sent
+                          <Badge variant="secondary" className="ms-auto text-[10px]">
+                            {sentPosts.length}
+                            {postsWindowFull ? "+" : ""}
+                          </Badge>
                         </h3>
-                        {recentPosts.length === 0 ? (
+                        {sentPosts.length === 0 ? (
                           <p className="text-xs text-muted-foreground">No posts sent yet.</p>
                         ) : (
-                          recentPosts.map((p) => (
-                            <div key={p.id} className="rounded-md border p-2 text-xs" dir="auto">
-                              <p className="mb-1 text-[10px] text-muted-foreground" dir="ltr">
-                                {p.sent_at ? new Date(p.sent_at).toLocaleString("en-GB") : ""}
-                                {(p.engagement as { replies_24h?: number })?.replies_24h !==
-                                undefined
-                                  ? ` · ${(p.engagement as { replies_24h?: number }).replies_24h} replies in 24h`
-                                  : ""}
-                              </p>
-                              <p className="line-clamp-2 whitespace-pre-wrap">{p.body}</p>
-                            </div>
-                          ))
+                          <div className="max-h-[22rem] space-y-2 overflow-y-auto">
+                            {sentPosts.map((p) => (
+                              <div key={p.id} className="rounded-md border p-2 text-xs" dir="auto">
+                                <p className="mb-1 text-[10px] text-muted-foreground" dir="ltr">
+                                  {p.sent_at ? new Date(p.sent_at).toLocaleString("en-GB") : ""}
+                                  {(p.engagement as { replies_24h?: number })?.replies_24h !==
+                                  undefined
+                                    ? ` · ${(p.engagement as { replies_24h?: number }).replies_24h} replies in 24h`
+                                    : ""}
+                                </p>
+                                <p className="line-clamp-2 whitespace-pre-wrap">{p.body}</p>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </CardContent>
                     </Card>

@@ -193,16 +193,28 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
               .limit(10);
             debug.planned_posts = {
               counts: postCounts,
-              stuck: (stuckPosts ?? []).map((p) => ({
-                chat: maskChat(p.group_chat_id),
-                status: p.status,
-                source: p.source,
-                reasoning: p.reasoning ? String(p.reasoning).slice(0, 200) : null,
-                gen_attempts:
-                  (p.engagement as { gen_attempts?: number } | null)?.gen_attempts ?? null,
-                created_at: p.created_at,
-                updated_at: p.updated_at,
-              })),
+              stuck: (stuckPosts ?? []).map((p) => {
+                // Generation-lease bookkeeping lives in the engagement jsonb;
+                // exposing model + lease horizon alongside attempts is what
+                // lets a killed attempt's story be read from outside (which
+                // model died, when the lease frees the post for retry).
+                const gen = (p.engagement ?? null) as {
+                  gen_attempts?: number;
+                  gen_last_model?: string;
+                  gen_lease_until?: string;
+                } | null;
+                return {
+                  chat: maskChat(p.group_chat_id),
+                  status: p.status,
+                  source: p.source,
+                  reasoning: p.reasoning ? String(p.reasoning).slice(0, 200) : null,
+                  gen_attempts: gen?.gen_attempts ?? null,
+                  gen_last_model: gen?.gen_last_model ?? null,
+                  gen_lease_until: gen?.gen_lease_until ?? null,
+                  created_at: p.created_at,
+                  updated_at: p.updated_at,
+                };
+              }),
             };
           } catch (e) {
             debug.planned_posts = String((e as Error)?.message ?? e);
@@ -318,6 +330,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
         }
       },
       POST: async ({ request }) => {
+        const requestStartedAt = Date.now();
         try {
           const supabase = createClient(
             process.env.SUPABASE_URL!,
@@ -375,11 +388,35 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           // Jobs beyond the cap are picked up on the next 20s tick.
           const run = await processQueuedJobs(deps, { max: 3 });
           if (jobsOnly) {
+            // The fast tick also drains planned posts so planning→sent stays
+            // inside ~a minute instead of waiting for the full per-minute
+            // sweep. Safe to run from every tick: generation is protected by
+            // a per-post lease+CAS claim inside the engine, so a concurrent
+            // tick just reports 'leased'/'lost_claim' without doing work.
+            // max: 1 keeps this request to at most one LLM generation — the
+            // runtime kills us after ~a minute of wall clock. And if the job
+            // drain already ate the wall (up to 3 jobs × 20s top-up waits),
+            // starting a generation would claim a lease we can't honor — skip,
+            // the next 20s tick will pick the post up with a fresh budget.
+            let posts: Array<{ group: string; status: string }> = [];
+            if (Date.now() - requestStartedAt > 15_000) {
+              posts = [{ group: "*", status: "drain_skipped_wall_budget" }];
+            } else {
+              try {
+                const { drainPlannedPosts } = await import("@/lib/agent/posting.server");
+                posts = await drainPlannedPosts(deps, { max: 1 });
+              } catch (e) {
+                // A post-drain failure must never break the job drain — DM
+                // replies are the fast tick's primary duty.
+                console.error("[jobs] planned-post drain failed", e);
+              }
+            }
             return Response.json({
               ok: true,
               jobs_only: true,
               claimed: run.claimed,
               results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
+              posts,
             });
           }
 

@@ -70,9 +70,10 @@ describe("callLLM budgetMs", () => {
   });
 
   it("stops the retry ladder once the budget is spent, rethrowing the last error", async () => {
-    // Attempt checks land at 0ms, 800ms, 3300ms — a 3000ms budget affords
-    // exactly two attempts and must never reach the second candidate model.
-    const err = await runToError(input({ budgetMs: 3000 }));
+    // Attempt checks land at 0ms, 800ms, 3300ms with 4000ms, 3200ms, 700ms
+    // left — the 3s per-attempt floor affords exactly two attempts and must
+    // never reach the second candidate model.
+    const err = await runToError(input({ budgetMs: 4000 }));
     expect(err.message).toBe("connection refused");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(modelOfCall(0)).toBe("google/gemini-3-flash-preview");
@@ -83,5 +84,35 @@ describe("callLLM budgetMs", () => {
     const err = await runToError(input({ budgetMs: 0 }));
     expect(err).toBeInstanceOf(Error);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to start an attempt with under 3s of budget (the floor)", async () => {
+    // A sub-floor budget can't fit any real completion — throw the last
+    // error without ever issuing a request.
+    const err = await runToError(input({ budgetMs: 2_999 }));
+    expect(err).toBeInstanceOf(Error);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("clamps a hanging attempt to the remaining budget, not its own timeoutMs", async () => {
+    // The live failure mode: a 40s-timeout attempt started with ~3-5s of
+    // budget left ran its FULL 40s past the deadline, outliving the ~60s
+    // request wall so no catch or log ever ran. The clamp must abort the
+    // attempt when the BUDGET runs out (~3s) instead.
+    fetchMock.mockReset().mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          );
+        }),
+    );
+    const t0 = Date.now();
+    const err = await runToError(input({ timeoutMs: 40_000, budgetMs: 3_000 }));
+    expect(err.message).toBe("LLM request timed out");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Aborted at 3000ms (the clamped timeout) + the 800ms retry sleep before
+    // the floor check throws — nowhere near the 40s attempt timeout.
+    expect(Date.now() - t0).toBe(3_800);
   });
 });

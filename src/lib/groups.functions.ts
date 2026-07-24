@@ -169,7 +169,9 @@ export const getGroupActivity = createServerFn({ method: "GET" })
         .select("id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, created_at")
         .eq("group_chat_id", data.chat_id)
         .order("created_at", { ascending: false })
-        .limit(10),
+        // 30, not 10 — the Command Center splits posts into three columns
+        // (not sent / in progress / sent) and each needs enough rows to be useful.
+        .limit(30),
       supabaseAdmin
         .from("moderation_actions")
         .select("id, action, target_name, rule_violated, reasoning, status, created_at")
@@ -229,12 +231,15 @@ export const retryPlannedPost = createServerFn({ method: "POST" })
       throw new Error(`Only failed or cancelled posts can be retried (status is '${post.status}')`);
     }
 
-    // Drop the stored draft and the spent attempt counter: the retry must
-    // regenerate with a fresh MAX_GEN_ATTEMPTS budget, not resend whatever
-    // stale draft the failed run left behind.
+    // Drop the stored draft, the spent attempt counter, AND the generation
+    // lease: the retry must regenerate with a fresh MAX_GEN_ATTEMPTS budget,
+    // not resend a stale draft — and a dead worker's leftover lease must not
+    // make the freshly-planned row untouchable until it expires.
     const {
       draft: _staleDraft,
       gen_attempts: _spentAttempts,
+      gen_lease_until: _staleLease,
+      gen_started_at: _staleStart,
       ...engagement
     } = (post.engagement ?? {}) as Record<string, unknown>;
 

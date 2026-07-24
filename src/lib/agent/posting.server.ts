@@ -5,7 +5,10 @@
 //    slot_key claims each occurrence exactly once across isolates),
 //  * planned posts are generated (draft → self-review) with the group's
 //    profile, recent activity, persisted insights and the knowledge base,
-//    then sent — or queued for approval when the global gate is on,
+//    then sent — or queued for approval when the global gate is on
+//    (drainPlannedPosts exposes just this stage for faster drain-only ticks;
+//    a per-post lease in engagement jsonb keeps concurrent ticks off the
+//    same post),
 //  * every ~6h per group the research loop refreshes insights: activity
 //    stats, engagement of recent posts, and a topics read that can trigger
 //    a reactive post when the profile allows it.
@@ -25,27 +28,45 @@ import { loadAgentSettings } from "./context.server";
 const INSIGHTS_EVERY_MS = 6 * 60 * 60 * 1000;
 const MAX_POSTS_PER_TICK = 2;
 const REACTIVE_MIN_GAP_MS = 12 * 60 * 60 * 1000;
-export const MAX_GEN_ATTEMPTS = 4;
+// Two attempts, not four: the target is planned → terminal within about a
+// minute, and at the new ~20s drain cadence two attempts land there while
+// still giving a second model a turn (the final attempt jumps straight to
+// the known-good tail of the chain — see draftModelForAttempt).
+export const MAX_GEN_ATTEMPTS = 2;
 // One post's generation must finish well inside a single Worker invocation:
-// if the runtime kills the request mid-LLM-retry, the catch below never runs
-// and the post sits 'planned' forever. Live evidence (2026-07-24): the sweep
-// request survives roughly a minute of wall clock, so each tick gets ONE
-// short LLM attempt — retries happen across ticks (gen_attempts), each tick
-// rotating to a different candidate model, and a drafted post is persisted
-// the moment it exists so a killed request never loses the work.
-const DRAFT_TIMEOUT_MS = 40_000;
-const DRAFT_BUDGET_MS = 45_000;
-const REVIEW_TIMEOUT_MS = 25_000;
-const REVIEW_BUDGET_MS = 30_000;
+// the runtime kills a request after roughly a minute of wall clock, and a
+// kill mid-LLM-call skips the catch below so the post sits 'planned' with no
+// trace (live 2026-07-24). Budgets are sized so claim + draft (40s budget,
+// clamped per-attempt by llm.server) + review (15s, skipped entirely when
+// drafting ate the margin — see REVIEW_SKIP_AFTER_MS) + send fit inside the
+// wall, and a drafted post is persisted the moment it exists so a killed
+// request never loses the work.
+const DRAFT_TIMEOUT_MS = 30_000;
+const DRAFT_BUDGET_MS = 40_000;
+const REVIEW_TIMEOUT_MS = 15_000;
+const REVIEW_BUDGET_MS = 15_000;
+// Generation lease: while a claim is younger than this, other ticks leave
+// the post alone (overlapping drains used to double-send). Longer than the
+// worst-case claim→send (~55s) so a live worker is never raced, short enough
+// that a killed isolate delays the retry by only ~one extra tick cycle.
+export const GEN_LEASE_MS = 90_000;
+// Self-review is skipped when drafting already burned this much of the wall
+// budget — a second LLM roundtrip would outlive the request, and an
+// unreviewed post beats a dead isolate (the sanitize gate still runs).
+const REVIEW_SKIP_AFTER_MS = 20_000;
 
 /**
  * Which model should lead this generation attempt. Attempt 1 keeps the
- * configured chain order; later attempts start at a different candidate so a
- * degraded first model (e.g. a preview model timing out on long prompts)
- * cannot consume every attempt of every post.
+ * configured chain order; the FINAL allowed attempt jumps straight to the
+ * LAST element of the chain — the known-good fast fallback — so the cap can
+ * never expire without the reliable model getting a turn (live 2026-07-24: a
+ * post only drafted once rotation finally reached flash, the tail candidate,
+ * on its 4th attempt). Any attempts in between rotate through the remaining
+ * candidates so a degraded first model cannot consume the whole cap.
  */
 export function draftModelForAttempt(attempts: number, chain: string[]): string | null {
   if (attempts <= 1 || chain.length < 2) return null;
+  if (attempts >= MAX_GEN_ATTEMPTS) return chain[chain.length - 1];
   return chain[(attempts - 1) % chain.length];
 }
 
@@ -73,6 +94,8 @@ export function nextGenAttempt(
 ): {
   exceeded: boolean;
   attempts: number;
+  /** Normalized engagement as read, un-bumped — the cap-bypass claim writes this. */
+  prior: Record<string, unknown>;
   engagement: Record<string, unknown>;
   failReasoning: string;
 } {
@@ -81,12 +104,48 @@ export function nextGenAttempt(
       ? (engagement as Record<string, unknown>)
       : {};
   const attempts = Number(prior.gen_attempts ?? 0) + 1;
+  // "unknown error" told the operator nothing. When the last attempt died
+  // without persisting reasoning (the runtime killed the request mid-call),
+  // the claim's lease fields still say what ran and when — surface those.
+  const lastModel = typeof prior.gen_last_model === "string" ? prior.gen_last_model : null;
+  const lastStart = typeof prior.gen_started_at === "string" ? prior.gen_started_at : null;
+  const lastTrace =
+    lastModel || lastStart
+      ? `attempt ${attempts - 1} (model ${lastModel ?? "unknown"}) started at ${lastStart ?? "unknown"} and never completed — the request was likely killed`
+      : "unknown error";
   return {
     exceeded: attempts > MAX_GEN_ATTEMPTS,
     attempts,
+    prior,
     engagement: { ...prior, gen_attempts: attempts },
-    failReasoning: `Generation failed after ${MAX_GEN_ATTEMPTS} attempts: ${lastReasoning || "unknown error"}`,
+    failReasoning: `Generation failed after ${MAX_GEN_ATTEMPTS} attempts: ${lastReasoning || lastTrace}`,
   };
+}
+
+/**
+ * True while a worker's generation lease on this post is still live. The
+ * lease lives in the engagement jsonb (gen_lease_until, ISO instant) because
+ * planned_posts has no lock columns — it rides the same conditional claim
+ * write as the attempt counter, so claim + lease are a single atomic update.
+ */
+export function leaseActive(engagement: unknown, now: number): boolean {
+  if (!engagement || typeof engagement !== "object" || Array.isArray(engagement)) return false;
+  const until = (engagement as Record<string, unknown>).gen_lease_until;
+  if (typeof until !== "string") return false;
+  const t = Date.parse(until);
+  return Number.isFinite(t) && t > now;
+}
+
+/**
+ * Engagement with the generation lease stripped (gen_attempts and
+ * gen_last_model stay for the record). EVERY write that ends this worker's
+ * ownership — sent, failed, queued_approval, and the caught-failure persist —
+ * goes through this, so a finished or crashed attempt never leaves a live
+ * lease that would stall the next tick's retry.
+ */
+export function releaseLease(engagement: Record<string, unknown>): Record<string, unknown> {
+  const { gen_lease_until: _lease, gen_started_at: _started, ...rest } = engagement;
+  return rest;
 }
 
 /**
@@ -136,19 +195,60 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
     }
   }
 
-  // 2) Generate + send planned posts (oldest first, capped per tick).
+  // 2) Generate + send planned posts (shared with faster drain-only ticks;
+  // it reloads settings/profiles itself — the price of one code path).
+  result.posted = await drainPlannedPosts(deps);
+
+  // 3) Research loop.
+  for (const profile of profiles) {
+    const refreshed = await maybeRefreshInsights(deps, settings, profile);
+    if (refreshed) result.insightsRefreshed.push(profile.name ?? profile.chat_id);
+  }
+  return result;
+}
+
+/**
+ * Generate + send planned posts (oldest first, capped per call) — ONLY the
+ * supersede-cancel pass and the generate/send loop, no slot claiming, no
+ * approval reconcile, no insights. Safe to call from any tick, however
+ * frequent: per-post ownership is enforced by the generation lease and the
+ * conditional claim write inside generateAndSendPost, so overlapping drains
+ * cannot double-generate or double-send the same post.
+ */
+export async function drainPlannedPosts(
+  deps: AgentDeps,
+  opts?: { max?: number },
+): Promise<Array<{ group: string; status: string }>> {
+  const settings = await loadAgentSettings(deps.supabase);
+  if (!settings?.enabled) return [];
+  const profiles = await listEnabledGroupProfiles(deps.supabase);
+  // No enabled profiles must mean "do nothing", not "fail every planned
+  // post through the missing-profile path below".
+  if (!profiles.length) return [];
+  const posted: Array<{ group: string; status: string }> = [];
+
   // A backlog can pile up while generation is broken (schedule slots keep
   // claiming). Sending several catch-up posts back-to-back would read as spam
   // in a real group — so, mirroring the DM queue's supersede rule, the NEWEST
   // planned slot per group owns the catch-up and older unsent ones cancel.
+  // Groups with a LIVE generation lease are left entirely alone this tick:
+  // cancelling a row another worker is mid-way through sending would let the
+  // send land on a 'cancelled' row (and a second post could start for the
+  // same group while the first is still in flight).
   const { data: allPlanned } = await deps.supabase
     .from("planned_posts")
-    .select("id, group_chat_id, created_at")
+    .select("id, group_chat_id, created_at, engagement")
     .eq("status", "planned")
     .order("created_at", { ascending: false });
+  const nowMs = Date.now();
+  const leasedGroups = new Set<string>();
+  for (const p of allPlanned ?? []) {
+    if (leaseActive(p.engagement, nowMs)) leasedGroups.add(p.group_chat_id);
+  }
   const newestPerGroup = new Set<string>();
   const staleIds: string[] = [];
   for (const p of allPlanned ?? []) {
+    if (leasedGroups.has(p.group_chat_id)) continue;
     if (newestPerGroup.has(p.group_chat_id)) staleIds.push(p.id);
     else newestPerGroup.add(p.group_chat_id);
   }
@@ -173,13 +273,21 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
     }
   }
 
+  // updated_at is the claim's compare-and-swap token: generateAndSendPost
+  // only takes ownership if the row is exactly as read here.
   const { data: pending } = await deps.supabase
     .from("planned_posts")
-    .select("id, group_chat_id, source, pillar, prompt, engagement, reasoning")
+    .select("id, group_chat_id, source, pillar, prompt, engagement, reasoning, updated_at")
     .eq("status", "planned")
     .order("created_at", { ascending: true })
-    .limit(MAX_POSTS_PER_TICK);
+    .limit(opts?.max ?? MAX_POSTS_PER_TICK);
   for (const post of pending ?? []) {
+    // One in-flight generation per group: while any of the group's posts is
+    // leased, its other posts wait for the next tick.
+    if (leasedGroups.has(post.group_chat_id)) {
+      posted.push({ group: post.group_chat_id, status: "leased" });
+      continue;
+    }
     const profile = profiles.find((p) => p.chat_id === post.group_chat_id);
     if (!profile) {
       // The group was disabled or its profile deleted after the post was
@@ -202,19 +310,13 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
         summary: `Planned post failed: group profile for ${post.group_chat_id} is disabled or missing`,
         data: { planned_post_id: post.id },
       });
-      result.posted.push({ group: post.group_chat_id, status: "failed" });
+      posted.push({ group: post.group_chat_id, status: "failed" });
       continue;
     }
     const status = await generateAndSendPost(deps, settings, profile, post);
-    result.posted.push({ group: profile.name ?? profile.chat_id, status });
+    posted.push({ group: profile.name ?? profile.chat_id, status });
   }
-
-  // 3) Research loop.
-  for (const profile of profiles) {
-    const refreshed = await maybeRefreshInsights(deps, settings, profile);
-    if (refreshed) result.insightsRefreshed.push(profile.name ?? profile.chat_id);
-  }
-  return result;
+  return posted;
 }
 
 /**
@@ -328,20 +430,32 @@ async function generateAndSendPost(
     prompt: string | null;
     engagement?: Json | null;
     reasoning?: string | null;
+    updated_at: string;
   },
 ): Promise<string> {
   const { supabase } = deps;
   const overrides = { model_strong: settings.model_strong, model_fast: settings.model_fast };
 
+  // Another worker owns this post: two drains overlapping around a tick
+  // boundary used to both pick up the same 'planned' row and double-send.
+  if (leaseActive(post.engagement, Date.now())) return "leased";
+
   // Count this attempt before any LLM work — a generation killed mid-flight
   // must still leave a trace so the cap can converge to a visible 'failed'.
   const attempt = nextGenAttempt(post.engagement, post.reasoning);
-  if (attempt.exceeded) {
+  // A draft from an earlier attempt whose request died before sending.
+  const storedDraft = readStoredDraft(attempt.prior);
+  // The cap budgets LLM WORK; sending an already-finished draft costs none —
+  // so a stored draft always proceeds to the send path, even over the cap
+  // (live 2026-07-24: a persisted draft was failed at the cap unsent).
+  if (attempt.exceeded && !storedDraft) {
     await supabase
       .from("planned_posts")
       .update({
         status: "failed",
         reasoning: attempt.failReasoning,
+        // Terminal writes never leave lease fields behind.
+        engagement: releaseLease(attempt.prior) as Json,
         updated_at: new Date().toISOString(),
       })
       .eq("id", post.id);
@@ -355,13 +469,32 @@ async function generateAndSendPost(
     });
     return "failed";
   }
-  await supabase
+
+  // Later attempts lead with a different candidate model — a degraded first
+  // model must not consume the whole attempt cap.
+  const chain = modelCandidates("strong", overrides);
+  const rotated = draftModelForAttempt(attempt.attempts, chain);
+
+  // CLAIM: persist the attempt count + lease, conditional on the row being
+  // exactly as the drain read it. Errors or 0 rows mean another worker
+  // claimed first (or the row moved on) — walk away before any LLM work or
+  // send. On the cap-bypass path gen_attempts stays unchanged: no LLM runs,
+  // but the lease must still stop a second tick from re-sending the draft.
+  const claimedAtMs = Date.now();
+  let owned: Record<string, unknown> = {
+    ...(attempt.exceeded ? attempt.prior : attempt.engagement),
+    gen_lease_until: new Date(claimedAtMs + GEN_LEASE_MS).toISOString(),
+    gen_last_model: rotated ?? chain[0],
+    gen_started_at: new Date(claimedAtMs).toISOString(),
+  };
+  const { data: claimed, error: claimErr } = await supabase
     .from("planned_posts")
-    .update({
-      engagement: attempt.engagement as Json,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", post.id);
+    .update({ engagement: owned as Json, updated_at: new Date().toISOString() })
+    .eq("id", post.id)
+    .eq("status", "planned")
+    .eq("updated_at", post.updated_at)
+    .select("id");
+  if (claimErr || !claimed?.length) return "lost_claim";
 
   try {
     const { normalizePoll, pollCount, pollAsHistoryText } = await import("./poll");
@@ -369,11 +502,8 @@ async function generateAndSendPost(
     let poll: import("./poll").PollSpec | null = null;
     let reviewNote = "";
 
-    // An earlier attempt drafted this post but its request was killed before
-    // the send — reuse the stored draft and skip the LLM work (an unreviewed
-    // draft beats another roundtrip on a wall budget that already ran out
-    // once).
-    const storedDraft = readStoredDraft(attempt.engagement);
+    // Reuse the stored draft and skip the LLM work (an unreviewed draft
+    // beats another roundtrip on a wall budget that already ran out once).
     if (storedDraft) {
       final = storedDraft.post;
       poll = normalizePoll(storedDraft.poll);
@@ -423,9 +553,6 @@ ${insights || "(אין עדיין)"}
 פוסטים אחרונים שכבר פורסמו (אל תחזור עליהם):
 ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אין)"}`;
 
-    // Later attempts lead with a different candidate model — a degraded
-    // first model must not consume the whole attempt cap.
-    const rotated = draftModelForAttempt(attempt.attempts, modelCandidates("strong", overrides));
     const draft = storedDraft
       ? null
       : await callLLM({
@@ -451,17 +578,23 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       }
       // Persist the draft the moment it exists — if this request dies in the
       // review or send below, the next tick sends it instead of re-drafting.
+      // Built on `owned` so the live lease rides along: dropping it here
+      // would hand the post back to a concurrent drain mid-generation.
+      owned = { ...owned, draft: { post: final, poll } };
       await supabase
         .from("planned_posts")
         .update({
-          engagement: { ...attempt.engagement, draft: { post: final, poll } } as Json,
+          engagement: owned as Json,
           updated_at: new Date().toISOString(),
         })
         .eq("id", post.id);
     }
 
-    // Self-review (skipped when sending a recovered draft).
-    if (!storedDraft)
+    // Self-review — skipped for recovered drafts, and skipped when drafting
+    // already ate the review's share of the wall budget: a slow draft leaves
+    // no time for a second roundtrip before the runtime kills the request,
+    // and an unreviewed post beats a dead isolate. Sanitize still runs below.
+    if (!storedDraft && Date.now() - claimedAtMs < REVIEW_SKIP_AFTER_MS)
     try {
       const review = await callLLM({
         role: "strong",
@@ -545,10 +678,34 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
           body: bodyForRecord,
           reasoning: reviewNote,
           status: "queued_approval",
+          // Release the lease — the approve flow owns the post from here.
+          engagement: releaseLease(owned) as Json,
           updated_at: new Date().toISOString(),
         })
         .eq("id", post.id);
       return "queued_approval";
+    }
+
+    // Last ownership check before anything reaches WhatsApp: the supersede
+    // pass skips leased groups, but if this row was cancelled anyway (manual
+    // action, or a pass that ran before our claim landed), the message must
+    // not go out and the terminal status must not be clobbered to 'sent'.
+    const { data: stillPlanned } = await supabase
+      .from("planned_posts")
+      .select("id")
+      .eq("id", post.id)
+      .eq("status", "planned")
+      .maybeSingle();
+    if (!stillPlanned) {
+      logDecision(supabase, {
+        chat_id: profile.chat_id,
+        trigger: "scheduled",
+        stage: "skipped",
+        status: "skip",
+        summary: "Post was cancelled while its reply was being generated — nothing sent",
+        data: { planned_post_id: post.id },
+      });
+      return "cancelled_midflight";
     }
 
     // Send: text first (when present), then the native tappable poll.
@@ -585,10 +742,14 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     const sentBody = [final, poll && pollSent ? pollAsHistoryText(poll) : ""]
       .filter(Boolean)
       .join("\n\n");
-    // The stored draft has served its purpose — drop it so the engagement
-    // jsonb goes back to holding only stats (gen_attempts kept for the record).
-    const { draft: _sentDraft, ...doneEngagement } = attempt.engagement;
-    await supabase
+    // The stored draft has served its purpose — drop it, and release the
+    // lease, so the engagement jsonb goes back to holding only stats
+    // (gen_attempts and gen_last_model kept for the record).
+    const { draft: _sentDraft, ...doneEngagement } = releaseLease(owned);
+    // Conditional on 'planned': a cancel that slipped between the ownership
+    // check and the send must keep its terminal status — the delivery is then
+    // recorded via the conversation mirror + an error decision only.
+    const { data: sentRows } = await supabase
       .from("planned_posts")
       .update({
         body: sentBody,
@@ -601,7 +762,20 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         engagement: doneEngagement as Json,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", post.id);
+      .eq("id", post.id)
+      .eq("status", "planned")
+      .select("id");
+    if (!sentRows?.length) {
+      logDecision(supabase, {
+        chat_id: profile.chat_id,
+        trigger: "scheduled",
+        stage: "error",
+        status: "error",
+        summary:
+          "Post was delivered but its row had been cancelled concurrently — delivery recorded in the conversation only",
+        data: { planned_post_id: post.id, whapi_message_id: textSendId ?? pollSendId },
+      });
+    }
 
     // Mirror into the conversation so the chat view shows it.
     const { data: conv } = await supabase
@@ -658,6 +832,10 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       .update({
         ...(retryable ? {} : { status: "failed" }),
         reasoning: msg.slice(0, 300),
+        // Release the lease on the way out: a CAUGHT failure should retry on
+        // the very next tick, not wait out GEN_LEASE_MS. A draft persisted
+        // before the error survives inside `owned` for that retry to send.
+        engagement: releaseLease(owned) as Json,
         updated_at: new Date().toISOString(),
       })
       .eq("id", post.id);

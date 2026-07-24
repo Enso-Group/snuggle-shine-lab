@@ -13,6 +13,9 @@
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const REQUEST_TIMEOUT_MS = 25_000;
 const RETRY_DELAYS_MS = [800, 2_500];
+// An attempt with less budget than this left can't realistically complete —
+// throwing the last error immediately beats starting a doomed request.
+const MIN_ATTEMPT_BUDGET_MS = 3_000;
 
 export type LLMRole = "strong" | "fast";
 
@@ -67,8 +70,11 @@ export type LLMCallInput = {
    * Wall-clock budget for the WHOLE call, across every retry and candidate
    * model. Without it, the retry ladder (timeout x attempts x candidates) can
    * run for minutes — longer than the Worker invocation lives, so the caller's
-   * error handling never runs. Checked before each attempt: an attempt that
-   * can't be afforded is never started and the last error is thrown instead.
+   * error handling never runs. Every attempt's timeout is clamped to the
+   * remaining budget (and never started with under 3s left — the last error
+   * is thrown instead), so callLLM NEVER outlives budgetMs: before the clamp,
+   * an attempt started with seconds left could run a full timeoutMs past the
+   * deadline and outlive the runtime's ~60s request wall (live 2026-07-24).
    */
   budgetMs?: number;
   /** Per-tenant overrides loaded from bot_settings. */
@@ -111,15 +117,21 @@ function isTransientError(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+// Reads the WHOLE body under the abort timer — clearing the timer at
+// headers-arrival would let a slow body stream run unbounded, and the
+// posting engine's wall-budget math depends on callLLM never outliving its
+// budget by more than one retry sleep.
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number,
-): Promise<Response> {
+): Promise<{ res: Response; bodyText: string }> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    const bodyText = await res.text();
+    return { res, bodyText };
   } finally {
     clearTimeout(t);
   }
@@ -171,11 +183,20 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
     let useResponseFormat = !!input.json;
 
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-      if (deadlineAt !== null && Date.now() >= deadlineAt) throw lastError;
+      // Clamp the attempt to what's left of the budget: an unclamped attempt
+      // started near the deadline runs a full timeoutMs PAST it, outliving
+      // the caller's whole request so no error handling ever runs.
+      let attemptTimeoutMs = timeoutMs;
+      if (deadlineAt !== null) {
+        const remainingMs = deadlineAt - Date.now();
+        if (remainingMs < MIN_ATTEMPT_BUDGET_MS) throw lastError;
+        attemptTimeoutMs = Math.min(timeoutMs, remainingMs);
+      }
       const start = Date.now();
       let res: Response;
+      let bodyText: string;
       try {
-        res = await fetchWithTimeout(
+        ({ res, bodyText } = await fetchWithTimeout(
           GATEWAY_URL,
           {
             method: "POST",
@@ -187,8 +208,8 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
               ...(useResponseFormat ? { response_format: { type: "json_object" } } : {}),
             }),
           },
-          timeoutMs,
-        );
+          attemptTimeoutMs,
+        ));
       } catch (e: unknown) {
         const err = e as Error;
         lastError = err?.name === "AbortError" ? new Error("LLM request timed out") : err;
@@ -207,7 +228,6 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
       }
 
       if (!res.ok) {
-        const bodyText = await res.text();
         logUsage({
           kind: "llm",
           provider: providerFromModel(model),
@@ -237,7 +257,19 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
         throw lastError;
       }
 
-      const data = await res.json();
+      // Same effective typing res.json() had — the shape is validated by use.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any;
+      try {
+        data = JSON.parse(bodyText);
+      } catch {
+        lastError = new Error(`AI returned unparseable JSON body: ${bodyText.slice(0, 120)}`);
+        if (attempt < RETRY_DELAYS_MS.length) {
+          await sleep(RETRY_DELAYS_MS[attempt]);
+          continue;
+        }
+        throw lastError;
+      }
       const usage = data.usage ?? {};
       const inTok = Number(usage.prompt_tokens ?? 0);
       const outTok = Number(usage.completion_tokens ?? 0);
