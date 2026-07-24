@@ -137,6 +137,42 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
   }
 
   // 2) Generate + send planned posts (oldest first, capped per tick).
+  // A backlog can pile up while generation is broken (schedule slots keep
+  // claiming). Sending several catch-up posts back-to-back would read as spam
+  // in a real group — so, mirroring the DM queue's supersede rule, the NEWEST
+  // planned slot per group owns the catch-up and older unsent ones cancel.
+  const { data: allPlanned } = await deps.supabase
+    .from("planned_posts")
+    .select("id, group_chat_id, created_at")
+    .eq("status", "planned")
+    .order("created_at", { ascending: false });
+  const newestPerGroup = new Set<string>();
+  const staleIds: string[] = [];
+  for (const p of allPlanned ?? []) {
+    if (newestPerGroup.has(p.group_chat_id)) staleIds.push(p.id);
+    else newestPerGroup.add(p.group_chat_id);
+  }
+  if (staleIds.length) {
+    const { error: staleErr } = await deps.supabase
+      .from("planned_posts")
+      .update({
+        status: "cancelled",
+        reasoning: "Superseded — a newer scheduled slot was planned before this one could send",
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", staleIds)
+      .eq("status", "planned");
+    if (!staleErr) {
+      logDecision(deps.supabase, {
+        trigger: "scheduled",
+        stage: "config",
+        status: "ok",
+        summary: `Cancelled ${staleIds.length} stale planned post(s) superseded by newer slots`,
+        data: { cancelled_planned_posts: staleIds.length },
+      });
+    }
+  }
+
   const { data: pending } = await deps.supabase
     .from("planned_posts")
     .select("id, group_chat_id, source, pillar, prompt, engagement, reasoning")
