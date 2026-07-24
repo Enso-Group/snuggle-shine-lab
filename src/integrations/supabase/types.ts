@@ -325,6 +325,7 @@ export type Database = {
           blocked: boolean
           blocked_at: string | null
           blocked_reason: string | null
+          channel_phone: string | null
           consecutive_outbound: number
           created_at: string
           first_inbound_at: string | null
@@ -342,6 +343,7 @@ export type Database = {
           blocked?: boolean
           blocked_at?: string | null
           blocked_reason?: string | null
+          channel_phone?: string | null
           consecutive_outbound?: number
           created_at?: string
           first_inbound_at?: string | null
@@ -359,6 +361,7 @@ export type Database = {
           blocked?: boolean
           blocked_at?: string | null
           blocked_reason?: string | null
+          channel_phone?: string | null
           consecutive_outbound?: number
           created_at?: string
           first_inbound_at?: string | null
@@ -545,6 +548,7 @@ export type Database = {
         Row: {
           allow_reactive_posts: boolean
           audience: string | null
+          channel_phone: string | null
           chat_id: string
           content_pillars: Json
           created_at: string
@@ -570,6 +574,7 @@ export type Database = {
         Insert: {
           allow_reactive_posts?: boolean
           audience?: string | null
+          channel_phone?: string | null
           chat_id: string
           content_pillars?: Json
           created_at?: string
@@ -595,6 +600,7 @@ export type Database = {
         Update: {
           allow_reactive_posts?: boolean
           audience?: string | null
+          channel_phone?: string | null
           chat_id?: string
           content_pillars?: Json
           created_at?: string
@@ -758,6 +764,7 @@ export type Database = {
       }
       people: {
         Row: {
+          channel_phone: string | null
           created_at: string
           display_name: string | null
           facts: Json
@@ -772,6 +779,7 @@ export type Database = {
           wa_id: string
         }
         Insert: {
+          channel_phone?: string | null
           created_at?: string
           display_name?: string | null
           facts?: Json
@@ -786,6 +794,7 @@ export type Database = {
           wa_id: string
         }
         Update: {
+          channel_phone?: string | null
           created_at?: string
           display_name?: string | null
           facts?: Json
