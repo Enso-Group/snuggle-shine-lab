@@ -93,6 +93,114 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             // best-effort — never fail the health check over observability
           }
 
+          // Send-pipeline failure evidence: truncated error strings, masked
+          // chat ids, counts — never message content. This is what lets a
+          // stuck "generating" post or a dead LLM gateway be diagnosed from
+          // outside without auth.
+          const debug: Record<string, unknown> = {};
+          const maskChat = (id: string | null | undefined) => {
+            const s = String(id ?? "");
+            const [user, domain] = s.split("@");
+            return user.length > 4 ? `…${user.slice(-4)}${domain ? "@" + domain : ""}` : s;
+          };
+          try {
+            const { data: jobs } = await supabase
+              .from("bot_jobs")
+              .select("kind, chat_id, status, attempts, max_attempts, last_error, run_after, updated_at")
+              .order("updated_at", { ascending: false })
+              .limit(10);
+            debug.recent_jobs = (jobs ?? []).map((j) => ({
+              kind: j.kind,
+              status: j.status,
+              attempts: `${j.attempts}/${j.max_attempts}`,
+              chat: maskChat(j.chat_id),
+              run_after: j.run_after,
+              updated_at: j.updated_at,
+              last_error: j.last_error ? String(j.last_error).slice(0, 300) : null,
+            }));
+          } catch (e) {
+            debug.recent_jobs = String((e as Error)?.message ?? e);
+          }
+          try {
+            const { data: aiErr } = await supabase
+              .from("ai_usage_log")
+              .select("created_at, model, source, status, http_status, error_message")
+              .eq("status", "error")
+              .order("created_at", { ascending: false })
+              .limit(8);
+            debug.ai_errors = (aiErr ?? []).map((r) => ({
+              at: r.created_at,
+              model: r.model,
+              source: r.source,
+              http: r.http_status,
+              error: r.error_message ? String(r.error_message).slice(0, 200) : null,
+            }));
+            const { data: aiOk } = await supabase
+              .from("ai_usage_log")
+              .select("created_at, model, source")
+              .eq("status", "success")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            debug.last_ai_success = aiOk ?? null;
+          } catch (e) {
+            debug.ai_errors = String((e as Error)?.message ?? e);
+          }
+          try {
+            const postCounts: Record<string, number> = {};
+            for (const st of ["planned", "queued_approval", "sent", "cancelled"]) {
+              const { count } = await supabase
+                .from("planned_posts")
+                .select("id", { count: "exact", head: true })
+                .eq("status", st);
+              postCounts[st] = count ?? 0;
+            }
+            const { data: oldestPlanned } = await supabase
+              .from("planned_posts")
+              .select("created_at, updated_at, source")
+              .eq("status", "planned")
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            debug.planned_posts = { counts: postCounts, oldest_planned: oldestPlanned ?? null };
+          } catch (e) {
+            debug.planned_posts = String((e as Error)?.message ?? e);
+          }
+          try {
+            const { data: errs } = await supabase
+              .from("bot_decisions")
+              .select("created_at, stage, chat_id, summary")
+              .eq("status", "error")
+              .order("created_at", { ascending: false })
+              .limit(8);
+            debug.error_decisions = (errs ?? []).map((r) => ({
+              at: r.created_at,
+              stage: r.stage,
+              chat: maskChat(r.chat_id),
+              summary: String(r.summary ?? "").slice(0, 220),
+            }));
+          } catch (e) {
+            debug.error_decisions = String((e as Error)?.message ?? e);
+          }
+          try {
+            const { count: totalPeople } = await supabase
+              .from("people")
+              .select("id", { count: "exact", head: true });
+            const { data: peopleRows } = await supabase.from("people").select("wa_id").limit(2000);
+            const byPhone = new Map<string, number>();
+            for (const r of peopleRows ?? []) {
+              const phone = String(r.wa_id ?? "").split("@")[0].replace(/\D/g, "");
+              if (!phone) continue;
+              byPhone.set(phone, (byPhone.get(phone) ?? 0) + 1);
+            }
+            debug.people = {
+              total: totalPeople ?? 0,
+              duplicate_phone_groups: [...byPhone.values()].filter((n) => n > 1).length,
+            };
+          } catch (e) {
+            debug.people = String((e as Error)?.message ?? e);
+          }
+
           return Response.json({
             ok: true,
             info: "Bot-jobs sweeper. POST with x-cron-secret to trigger a run.",
@@ -101,6 +209,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             last_cleanup: lastCleanup,
             recent_dm_replies: recentDmReplies,
             leak_scan: leakScan,
+            debug,
           });
         } catch (e) {
           return Response.json(
