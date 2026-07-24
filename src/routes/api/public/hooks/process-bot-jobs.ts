@@ -104,6 +104,23 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return user.length > 4 ? `…${user.slice(-4)}${domain ? "@" + domain : ""}` : s;
           };
           try {
+            const { data: bs } = await supabase
+              .from("bot_settings")
+              .select("enabled, require_approval_all, updated_at")
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            debug.bot = bs
+              ? {
+                  enabled: bs.enabled,
+                  require_approval_all: bs.require_approval_all,
+                  updated_at: bs.updated_at,
+                }
+              : null;
+          } catch (e) {
+            debug.bot = String((e as Error)?.message ?? e);
+          }
+          try {
             const { data: jobs } = await supabase
               .from("bot_jobs")
               .select("kind, chat_id, status, attempts, max_attempts, last_error, run_after, updated_at")
