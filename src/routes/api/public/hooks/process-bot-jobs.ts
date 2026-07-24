@@ -104,6 +104,19 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return user.length > 4 ? `…${user.slice(-4)}${domain ? "@" + domain : ""}` : s;
           };
           try {
+            // Whether WhatsApp will accept sends at all — a de-authorized
+            // channel (Whapi 401) fails every delivery while the rest of the
+            // pipeline looks healthy.
+            const { getConnectedChannel } = await import("@/lib/agent/channel.server");
+            const ch = await getConnectedChannel();
+            debug.channel = {
+              connected: ch.connected,
+              phone: ch.phone ? `…${ch.phone.slice(-4)}` : null,
+            };
+          } catch (e) {
+            debug.channel = String((e as Error)?.message ?? e);
+          }
+          try {
             const { data: bs } = await supabase
               .from("bot_settings")
               .select("enabled, require_approval_all, updated_at")
