@@ -195,6 +195,47 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             debug.planned_posts = String((e as Error)?.message ?? e);
           }
           try {
+            // Proof of the last actual delivery: has_whapi_id means WhatsApp
+            // ACCEPTED the send, not just that we flipped the status to sent.
+            const { data: lastSent } = await supabase
+              .from("planned_posts")
+              .select("group_chat_id, source, sent_at, whapi_message_id")
+              .eq("status", "sent")
+              .order("sent_at", { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle();
+            debug.last_sent_post = lastSent
+              ? {
+                  chat: maskChat(lastSent.group_chat_id),
+                  source: lastSent.source,
+                  sent_at: lastSent.sent_at,
+                  has_whapi_id: !!lastSent.whapi_message_id,
+                }
+              : null;
+          } catch (e) {
+            debug.last_sent_post = String((e as Error)?.message ?? e);
+          }
+          try {
+            // The post pipeline's decision trace (planned → attempts/errors →
+            // sent/cancelled/retry), so a post that "vanished" can be
+            // reconstructed from outside without auth.
+            const { data: postDecisions } = await supabase
+              .from("bot_decisions")
+              .select("created_at, stage, status, chat_id, summary")
+              .in("stage", ["post", "config", "error"])
+              .order("created_at", { ascending: false })
+              .limit(10);
+            debug.recent_post_decisions = (postDecisions ?? []).map((r) => ({
+              at: r.created_at,
+              stage: r.stage,
+              status: r.status,
+              chat: maskChat(r.chat_id),
+              summary: String(r.summary ?? "").slice(0, 200),
+            }));
+          } catch (e) {
+            debug.recent_post_decisions = String((e as Error)?.message ?? e);
+          }
+          try {
             // Whether the posting engine can act at all: a planned post whose
             // group has no ENABLED profile can never be generated.
             const { data: gps } = await supabase

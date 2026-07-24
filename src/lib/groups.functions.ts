@@ -1,6 +1,7 @@
 // Group Management Profiles — dashboard CRUD. Admin-only.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
+import type { Json } from "@/integrations/supabase/types";
 import { z } from "zod";
 
 export type GroupProfileRow = {
@@ -165,7 +166,7 @@ export const getGroupActivity = createServerFn({ method: "GET" })
     const [posts, actions, insights, stats, memo] = await Promise.all([
       supabaseAdmin
         .from("planned_posts")
-        .select("id, source, pillar, prompt, body, status, sent_at, engagement, created_at")
+        .select("id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, created_at")
         .eq("group_chat_id", data.chat_id)
         .order("created_at", { ascending: false })
         .limit(10),
@@ -204,4 +205,68 @@ export const getGroupActivity = createServerFn({ method: "GET" })
       stats: (stats.data ?? []).slice().reverse(),
       memo: memo.data ?? null,
     };
+  });
+
+/** Re-queue a failed/cancelled post so the engine regenerates it from scratch. */
+export const retryPlannedPost = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAdmin])
+  .inputValidator((d: unknown) => z.object({ post_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { logDecision } = await import("@/lib/agent/decisions.server");
+
+    const { data: post, error } = await supabaseAdmin
+      .from("planned_posts")
+      .select("id, group_chat_id, status, engagement, prompt, pillar, source")
+      .eq("id", data.post_id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!post) throw new Error("Planned post not found");
+    // Only terminal posts are retryable: re-planning a planned post would
+    // double its attempt budget mid-run, and retrying a sent post would
+    // post to the group twice.
+    if (post.status !== "failed" && post.status !== "cancelled") {
+      throw new Error(`Only failed or cancelled posts can be retried (status is '${post.status}')`);
+    }
+
+    // Drop the stored draft and the spent attempt counter: the retry must
+    // regenerate with a fresh MAX_GEN_ATTEMPTS budget, not resend whatever
+    // stale draft the failed run left behind.
+    const {
+      draft: _staleDraft,
+      gen_attempts: _spentAttempts,
+      ...engagement
+    } = (post.engagement ?? {}) as Record<string, unknown>;
+
+    // created_at/scheduled_for are bumped to NOW: the engine's supersede
+    // sweep keeps only the NEWEST planned post per group (by created_at), so
+    // a retry that kept its old timestamp would be re-cancelled on the next
+    // tick. A manual retry is a fresh statement of intent — it should win.
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabaseAdmin
+      .from("planned_posts")
+      .update({
+        status: "planned",
+        reasoning: null,
+        engagement: engagement as Json,
+        created_at: now,
+        scheduled_for: now,
+        updated_at: now,
+      })
+      .eq("id", post.id)
+      // Re-check the status inside the update itself — a concurrent sweep
+      // (or double-click) must not reset a row that already moved on.
+      .in("status", ["failed", "cancelled"]);
+    if (updateError) throw new Error(updateError.message);
+
+    // The retry itself shows in the Activity trail alongside the failure.
+    logDecision(supabaseAdmin, {
+      chat_id: post.group_chat_id,
+      trigger: "scheduled",
+      stage: "config",
+      status: "ok",
+      summary: `Manager requested a retry of a ${post.status} post`,
+      data: { planned_post_id: post.id },
+    });
+    return { ok: true };
   });

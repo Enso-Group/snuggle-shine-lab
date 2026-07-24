@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,10 +10,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   Activity as ActivityIcon,
+  AlertTriangle,
   Bot,
   GraduationCap,
   LayoutDashboard,
   Newspaper,
+  RefreshCw,
   Send,
   Shield,
   Sparkles,
@@ -31,7 +33,12 @@ import {
 } from "recharts";
 import { GroupProfileEditor } from "@/components/group-profile-editor";
 import { commandChat, type CommandAction } from "@/lib/command.functions";
-import { getGroupActivity, listManagedGroups, type ManagedGroup } from "@/lib/groups.functions";
+import {
+  getGroupActivity,
+  listManagedGroups,
+  retryPlannedPost,
+  type ManagedGroup,
+} from "@/lib/groups.functions";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "Command Center — WhatsApp Bot" }] }),
@@ -40,10 +47,25 @@ export const Route = createFileRoute("/_authenticated/")({
 
 type ChatMsg = { role: "user" | "assistant"; content: string; actions?: CommandAction[] };
 
+// Failed/cancelled posts must always surface with their 'reasoning' (error or
+// supersede reason) — a post may never vanish from the page without explanation.
+type NotSentPost = {
+  id: string;
+  source: string;
+  pillar: string | null;
+  prompt: string | null;
+  body: string | null;
+  status: string;
+  created_at: string;
+  reasoning: string | null;
+};
+
 function CommandCenter() {
   const listFn = useServerFn(listManagedGroups);
   const activityFn = useServerFn(getGroupActivity);
   const chatFn = useServerFn(commandChat);
+  const retryFn = useServerFn(retryPlannedPost);
+  const qc = useQueryClient();
 
   const [selected, setSelected] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
@@ -91,6 +113,15 @@ function CommandCenter() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const retryPost = useMutation({
+    mutationFn: (postId: string) => retryFn({ data: { post_id: postId } }),
+    onSuccess: () => {
+      toast.success("Post re-queued — the engine will generate it within a minute");
+      qc.invalidateQueries({ queryKey: ["group-activity", selected] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   function selectGroup(chatId: string) {
     setSelected(chatId);
     setChat([]);
@@ -101,6 +132,9 @@ function CommandCenter() {
     (p) => p.status === "planned" || p.status === "queued_approval",
   );
   const recentPosts = (activity?.posts ?? []).filter((p) => p.status === "sent").slice(0, 4);
+  const notSentPosts: NotSentPost[] = (activity?.posts ?? []).filter(
+    (p) => p.status === "failed" || p.status === "cancelled",
+  );
 
   return (
     <div className="min-h-full">
@@ -392,6 +426,68 @@ function CommandCenter() {
                           ))}
                         </tbody>
                       </table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Failed/cancelled posts stay visible with their reason — never silently dropped */}
+                {notSentPosts.length > 0 && (
+                  <Card>
+                    <CardContent className="space-y-2 p-4">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold">
+                        <AlertTriangle className="size-4 text-destructive" /> Not sent
+                      </h3>
+                      {notSentPosts.map((p) => (
+                        <div key={p.id} className="rounded-md border p-2 text-xs">
+                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                            {p.status === "failed" ? (
+                              <Badge
+                                variant="secondary"
+                                className="bg-destructive/15 text-[10px] text-destructive"
+                              >
+                                failed
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="bg-muted text-[10px] text-muted-foreground"
+                              >
+                                cancelled
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-[10px]">
+                              {p.source}
+                              {p.pillar ? ` · ${p.pillar}` : ""}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground" dir="ltr">
+                              {new Date(p.created_at).toLocaleString("en-GB")}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="ms-auto h-6 gap-1 px-2 text-[10px]"
+                              disabled={retryPost.isPending}
+                              onClick={() => retryPost.mutate(p.id)}
+                            >
+                              <RefreshCw
+                                className={`size-3 ${retryPost.isPending && retryPost.variables === p.id ? "animate-spin" : ""}`}
+                              />
+                              Retry
+                            </Button>
+                          </div>
+                          <p className="line-clamp-2" dir="auto">
+                            {p.prompt ?? p.body ?? ""}
+                          </p>
+                          {p.reasoning && (
+                            <p
+                              className={`mt-1 text-[11px] ${p.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+                              dir="auto"
+                            >
+                              {p.reasoning}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </CardContent>
                   </Card>
                 )}
