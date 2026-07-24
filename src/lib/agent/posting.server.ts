@@ -9,7 +9,7 @@
 //  * every ~6h per group the research loop refreshes insights: activity
 //    stats, engagement of recent posts, and a topics read that can trigger
 //    a reactive post when the profile allows it.
-import { callLLM } from "@/lib/llm.server";
+import { callLLM, modelCandidates } from "@/lib/llm.server";
 import type { Json } from "@/integrations/supabase/types";
 import { logDecision } from "./decisions.server";
 import { loadKnowledge } from "./kb.server";
@@ -28,12 +28,38 @@ const REACTIVE_MIN_GAP_MS = 12 * 60 * 60 * 1000;
 export const MAX_GEN_ATTEMPTS = 4;
 // One post's generation must finish well inside a single Worker invocation:
 // if the runtime kills the request mid-LLM-retry, the catch below never runs
-// and the post sits 'planned' forever. Draft + review worst case here is
-// ~200s + budget-check slack, vs. minutes for the unbounded retry ladder.
-const DRAFT_TIMEOUT_MS = 50_000;
-const DRAFT_BUDGET_MS = 120_000;
-const REVIEW_TIMEOUT_MS = 35_000;
-const REVIEW_BUDGET_MS = 80_000;
+// and the post sits 'planned' forever. Live evidence (2026-07-24): the sweep
+// request survives roughly a minute of wall clock, so each tick gets ONE
+// short LLM attempt — retries happen across ticks (gen_attempts), each tick
+// rotating to a different candidate model, and a drafted post is persisted
+// the moment it exists so a killed request never loses the work.
+const DRAFT_TIMEOUT_MS = 40_000;
+const DRAFT_BUDGET_MS = 45_000;
+const REVIEW_TIMEOUT_MS = 25_000;
+const REVIEW_BUDGET_MS = 30_000;
+
+/**
+ * Which model should lead this generation attempt. Attempt 1 keeps the
+ * configured chain order; later attempts start at a different candidate so a
+ * degraded first model (e.g. a preview model timing out on long prompts)
+ * cannot consume every attempt of every post.
+ */
+export function draftModelForAttempt(attempts: number, chain: string[]): string | null {
+  if (attempts <= 1 || chain.length < 2) return null;
+  return chain[(attempts - 1) % chain.length];
+}
+
+/** Draft persisted by an earlier attempt whose request died before sending. */
+export function readStoredDraft(
+  engagement: Record<string, unknown>,
+): { post: string; poll: unknown } | null {
+  const d = engagement.draft;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const post = String((d as Record<string, unknown>).post ?? "").trim();
+  const poll = (d as Record<string, unknown>).poll ?? null;
+  if (!post && !poll) return null;
+  return { post, poll };
+}
 
 /**
  * Attempt accounting for post generation. The counter lives in the post's
@@ -302,6 +328,22 @@ async function generateAndSendPost(
     .eq("id", post.id);
 
   try {
+    const { normalizePoll, pollCount, pollAsHistoryText } = await import("./poll");
+    let final = "";
+    let poll: import("./poll").PollSpec | null = null;
+    let reviewNote = "";
+
+    // An earlier attempt drafted this post but its request was killed before
+    // the send — reuse the stored draft and skip the LLM work (an unreviewed
+    // draft beats another roundtrip on a wall budget that already ran out
+    // once).
+    const storedDraft = readStoredDraft(attempt.engagement);
+    if (storedDraft) {
+      final = storedDraft.post;
+      poll = normalizePoll(storedDraft.poll);
+      reviewNote = "recovered draft from an interrupted attempt";
+    }
+
     const { latestRecommendationsBlock } = await import("./analytics.server");
     const [activity, insights, pastPosts, kb, memoBlock] = await Promise.all([
       recentGroupActivity(deps, profile.chat_id),
@@ -345,32 +387,45 @@ ${insights || "(אין עדיין)"}
 פוסטים אחרונים שכבר פורסמו (אל תחזור עליהם):
 ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אין)"}`;
 
-    const draft = await callLLM({
-      role: "strong",
-      source: "agent_post_draft",
-      overrides,
-      timeoutMs: DRAFT_TIMEOUT_MS,
-      budgetMs: DRAFT_BUDGET_MS,
-      messages: [
-        { role: "system", content: draftSystem },
-        { role: "user", content: draftUser },
-      ],
-    });
+    // Later attempts lead with a different candidate model — a degraded
+    // first model must not consume the whole attempt cap.
+    const rotated = draftModelForAttempt(attempt.attempts, modelCandidates("strong", overrides));
+    const draft = storedDraft
+      ? null
+      : await callLLM({
+          role: "strong",
+          source: "agent_post_draft",
+          overrides: rotated ? { ...overrides, model_strong: rotated } : overrides,
+          timeoutMs: DRAFT_TIMEOUT_MS,
+          budgetMs: DRAFT_BUDGET_MS,
+          messages: [
+            { role: "system", content: draftSystem },
+            { role: "user", content: draftUser },
+          ],
+        });
 
-    // Parse the structured draft ({post, poll}); tolerate plain-text output.
-    const { normalizePoll, pollCount, pollAsHistoryText } = await import("./poll");
-    let final = "";
-    let poll: import("./poll").PollSpec | null = null;
-    try {
-      const parsedDraft = parseJsonLoose<{ post?: unknown; poll?: unknown }>(draft.content);
-      final = String(parsedDraft.post ?? "").trim();
-      poll = normalizePoll(parsedDraft.poll);
-    } catch {
-      final = draft.content.trim();
+    if (draft) {
+      // Parse the structured draft ({post, poll}); tolerate plain-text output.
+      try {
+        const parsedDraft = parseJsonLoose<{ post?: unknown; poll?: unknown }>(draft.content);
+        final = String(parsedDraft.post ?? "").trim();
+        poll = normalizePoll(parsedDraft.poll);
+      } catch {
+        final = draft.content.trim();
+      }
+      // Persist the draft the moment it exists — if this request dies in the
+      // review or send below, the next tick sends it instead of re-drafting.
+      await supabase
+        .from("planned_posts")
+        .update({
+          engagement: { ...attempt.engagement, draft: { post: final, poll } } as Json,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", post.id);
     }
 
-    // Self-review.
-    let reviewNote = "";
+    // Self-review (skipped when sending a recovered draft).
+    if (!storedDraft)
     try {
       const review = await callLLM({
         role: "strong",
@@ -494,6 +549,9 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     const sentBody = [final, poll && pollSent ? pollAsHistoryText(poll) : ""]
       .filter(Boolean)
       .join("\n\n");
+    // The stored draft has served its purpose — drop it so the engagement
+    // jsonb goes back to holding only stats (gen_attempts kept for the record).
+    const { draft: _sentDraft, ...doneEngagement } = attempt.engagement;
     await supabase
       .from("planned_posts")
       .update({
@@ -504,6 +562,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         status: "sent",
         sent_at: new Date().toISOString(),
         whapi_message_id: textSendId ?? pollSendId,
+        engagement: doneEngagement as Json,
         updated_at: new Date().toISOString(),
       })
       .eq("id", post.id);

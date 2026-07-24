@@ -93,6 +93,15 @@ function candidatesFor(role: LLMRole, overrides?: LLMModelOverrides): string[] {
   return [...new Set(chain)];
 }
 
+/**
+ * The resolved candidate chain, for callers that spread ONE call's budget
+ * across ticks instead of models (the posting engine rotates its starting
+ * model per attempt so a degraded pinned model can't consume every attempt).
+ */
+export function modelCandidates(role: LLMRole, overrides?: LLMModelOverrides): string[] {
+  return candidatesFor(role, overrides);
+}
+
 function isUnknownModelError(status: number, bodyText: string): boolean {
   if (status !== 400 && status !== 404 && status !== 422) return false;
   return /model|not found|unknown|unsupported|invalid/i.test(bodyText);

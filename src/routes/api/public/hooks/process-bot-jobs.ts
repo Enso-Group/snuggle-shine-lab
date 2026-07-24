@@ -387,7 +387,15 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return { ran: true as const };
           });
 
-          // Data passes first (never blocked by the heavier stages below).
+          // The group engine runs FIRST after the job drain: the sweep request
+          // only survives ~a minute of wall clock (2026-07-24 evidence:
+          // LLM-drafting posts died mid-fetch with their failure handlers
+          // never running), so the stage that makes LLM calls gets the budget
+          // and the cheap, marker-throttled data passes run on what's left.
+          const groups = await guarded("group-engine", async () => {
+            const { runGroupEngine } = await import("@/lib/agent/posting.server");
+            return runGroupEngine(deps);
+          });
           // Channel backfill before cleanup so scope tags exist for both.
           const channel = await guarded("channel-backfill", async () => {
             const { backfillChannelPhone } = await import("@/lib/agent/channel-backfill.server");
@@ -407,10 +415,6 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           const followUps = await guarded("follow-ups", async () => {
             const { processDueFollowUps } = await import("@/lib/agent/follow-ups.server");
             return processDueFollowUps(deps, { max: 2 });
-          });
-          const groups = await guarded("group-engine", async () => {
-            const { runGroupEngine } = await import("@/lib/agent/posting.server");
-            return runGroupEngine(deps);
           });
           const analytics = await guarded("analytics", async () => {
             const { runAnalytics } = await import("@/lib/agent/analytics.server");

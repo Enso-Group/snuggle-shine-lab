@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAX_GEN_ATTEMPTS, isTransientGenError, nextGenAttempt } from "../posting.server";
+import {
+  MAX_GEN_ATTEMPTS,
+  draftModelForAttempt,
+  isTransientGenError,
+  nextGenAttempt,
+  readStoredDraft,
+} from "../posting.server";
 
 describe("nextGenAttempt", () => {
   it("counts the first attempt from an empty engagement", () => {
@@ -52,5 +58,49 @@ describe("isTransientGenError", () => {
     expect(isTransientGenError("post generation returned neither text nor poll")).toBe(false);
     expect(isTransientGenError("no approval owner")).toBe(false);
     expect(isTransientGenError("Model x not available: unknown model")).toBe(false);
+  });
+});
+
+describe("draftModelForAttempt", () => {
+  const chain = ["pinned", "b", "c", "d"];
+
+  it("keeps the configured order on the first attempt", () => {
+    expect(draftModelForAttempt(1, chain)).toBeNull();
+  });
+
+  it("rotates to a different candidate on each retry", () => {
+    expect(draftModelForAttempt(2, chain)).toBe("b");
+    expect(draftModelForAttempt(3, chain)).toBe("c");
+    expect(draftModelForAttempt(4, chain)).toBe("d");
+    expect(draftModelForAttempt(5, chain)).toBe("pinned");
+  });
+
+  it("cannot rotate a single-candidate chain", () => {
+    expect(draftModelForAttempt(3, ["only"])).toBeNull();
+    expect(draftModelForAttempt(2, [])).toBeNull();
+  });
+});
+
+describe("readStoredDraft", () => {
+  it("returns a persisted draft with its poll", () => {
+    const d = readStoredDraft({
+      gen_attempts: 2,
+      draft: { post: "שלום", poll: { question: "q", options: ["a", "b"] } },
+    });
+    expect(d).toEqual({ post: "שלום", poll: { question: "q", options: ["a", "b"] } });
+  });
+
+  it("ignores missing, malformed, and empty drafts", () => {
+    expect(readStoredDraft({})).toBeNull();
+    expect(readStoredDraft({ draft: "text" })).toBeNull();
+    expect(readStoredDraft({ draft: [1] })).toBeNull();
+    expect(readStoredDraft({ draft: { post: "  ", poll: null } })).toBeNull();
+  });
+
+  it("keeps a poll-only draft", () => {
+    expect(readStoredDraft({ draft: { post: "", poll: { question: "q" } } })).toEqual({
+      post: "",
+      poll: { question: "q" },
+    });
   });
 });
