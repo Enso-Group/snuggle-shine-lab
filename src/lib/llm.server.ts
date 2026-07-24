@@ -63,6 +63,14 @@ export type LLMCallInput = {
   json?: boolean;
   tools?: LLMToolDef[];
   timeoutMs?: number;
+  /**
+   * Wall-clock budget for the WHOLE call, across every retry and candidate
+   * model. Without it, the retry ladder (timeout x attempts x candidates) can
+   * run for minutes — longer than the Worker invocation lives, so the caller's
+   * error handling never runs. Checked before each attempt: an attempt that
+   * can't be afforded is never started and the last error is thrown instead.
+   */
+  budgetMs?: number;
   /** Per-tenant overrides loaded from bot_settings. */
   overrides?: LLMModelOverrides;
 };
@@ -146,6 +154,7 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
 
   const models = candidatesFor(input.role, input.overrides);
   const timeoutMs = input.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const deadlineAt = input.budgetMs != null ? Date.now() + input.budgetMs : null;
   let lastError: Error = new Error("no model candidates");
 
   for (const model of models) {
@@ -153,6 +162,7 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
     let useResponseFormat = !!input.json;
 
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      if (deadlineAt !== null && Date.now() >= deadlineAt) throw lastError;
       const start = Date.now();
       let res: Response;
       try {

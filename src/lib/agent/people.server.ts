@@ -4,6 +4,7 @@
 // stop a reply.
 import type { Json } from "@/integrations/supabase/types";
 import type { Supa } from "./types";
+import { normalizeWaId } from "./wa-id";
 
 export type PersonFact = { text: string; at: string };
 
@@ -65,19 +66,27 @@ export async function loadOrCreatePerson(
   waId: string,
   displayName?: string,
 ): Promise<PersonRow | null> {
-  if (!waId || waId === "bot") return null;
+  // Canonical key: one human = one row, however Whapi spelled the id today.
+  const canon = normalizeWaId(waId);
+  if (!canon) return null;
   try {
-    const { data, error } = await supabase
+    // Legacy-tolerant lookup until stored rows converge on the canonical key:
+    // pre-dedupe rows may still carry an '@s.whatsapp.net'/'@c.us' suffix, and
+    // several variants can coexist — take the earliest (the dedupe survivor),
+    // never maybeSingle.
+    const { data: matches, error } = await supabase
       .from("people")
       .select(
         "id, wa_id, display_name, language, sentiment, funnel_stage, facts, tags, last_seen_at",
       )
-      .eq("wa_id", waId)
-      .maybeSingle();
+      .or(`wa_id.eq.${canon},wa_id.like.${canon}@%`)
+      .order("created_at", { ascending: true })
+      .limit(1);
     if (error) {
       console.warn("[people] load failed (continuing without memory):", error.message);
       return null;
     }
+    const data = matches?.[0];
     if (data) {
       // Keep freshness + name current; never block the reply on it.
       void supabase
@@ -95,22 +104,24 @@ export async function loadOrCreatePerson(
     }
     const { data: ins, error: insErr } = await supabase
       .from("people")
-      .insert({ wa_id: waId, display_name: displayName || null })
+      .insert({ wa_id: canon, display_name: displayName || null })
       .select(
         "id, wa_id, display_name, language, sentiment, funnel_stage, facts, tags, last_seen_at",
       )
       .single();
     if (insErr) {
-      // Unique-violation race with a parallel isolate: read the winner's row.
+      // Unique-violation race with a parallel isolate: read the winner's row
+      // (same tolerant lookup — the winner may be a legacy spelling).
       if (insErr.code === "23505") {
         const { data: again } = await supabase
           .from("people")
           .select(
             "id, wa_id, display_name, language, sentiment, funnel_stage, facts, tags, last_seen_at",
           )
-          .eq("wa_id", waId)
-          .maybeSingle();
-        return again ? rowToPerson(again) : null;
+          .or(`wa_id.eq.${canon},wa_id.like.${canon}@%`)
+          .order("created_at", { ascending: true })
+          .limit(1);
+        return again?.[0] ? rowToPerson(again[0]) : null;
       }
       console.warn("[people] create failed (continuing without memory):", insErr.message);
       return null;

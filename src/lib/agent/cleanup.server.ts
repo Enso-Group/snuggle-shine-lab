@@ -12,9 +12,10 @@
 //   from_me raw — imported own history counts) or participation is imminent
 //   (pending/processing job, pending approval). Deleting a conversation
 //   cascades to its messages, jobs, decisions, approvals and follow-ups.
-// * person profiles: kept iff the BOT/dashboard engaged them — a
-//   sender_id 'bot'/'manual' message in their 1:1 chat, bot-learned analysis
-//   (facts / funnel stage / sentiment), or an imminent engagement.
+// * person profiles: kept iff the BOT/dashboard actually wrote in their 1:1
+//   chat (sender_id 'bot'/'manual') or is about to (pending job / approval).
+//   Bot-learned analysis alone no longer keeps a profile, and '@simulation'
+//   leftovers are always deleted.
 import { planCleanup } from "./cleanup";
 import type { Supa } from "./types";
 
@@ -23,7 +24,7 @@ import type { Supa } from "./types";
 const MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Version marker in the summary: bump when the rules change so the throttle
 // doesn't suppress the first run of a newer rule set.
-const CLEANUP_SUMMARY_PREFIX = "Non-participated cleanup v2";
+const CLEANUP_SUMMARY_PREFIX = "Non-participated cleanup v3";
 const CHUNK = 100;
 
 export type CleanupResult =
@@ -84,7 +85,7 @@ export async function cleanupNonParticipatedChats(
           .select("conversation_id")
           .eq("status", "pending")
           .limit(2000),
-        supabase.from("people").select("id, wa_id, facts, funnel_stage, sentiment").limit(5000),
+        supabase.from("people").select("id, wa_id").limit(5000),
       ]);
     const conversations = convsRes.data ?? [];
     if (convsRes.error || !conversations.length) {
@@ -113,13 +114,7 @@ export async function cleanupNonParticipatedChats(
       participatedConvIds,
       protectedConvIds,
       botConvIds,
-      people: (peopleRes.data ?? []).map((p) => ({
-        id: p.id,
-        wa_id: p.wa_id,
-        factsCount: Array.isArray(p.facts) ? p.facts.length : 0,
-        funnelStage: (p.funnel_stage as string | null) ?? null,
-        sentiment: (p.sentiment as string | null) ?? null,
-      })),
+      people: (peopleRes.data ?? []).map((p) => ({ id: p.id, wa_id: p.wa_id })),
     });
 
     let removedConversations = 0;

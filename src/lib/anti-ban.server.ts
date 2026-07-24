@@ -184,12 +184,12 @@ export async function recordInbound(
 
 export function isWhapiRestrictionError(err: unknown): boolean {
   const msg = String((err as any)?.message ?? err ?? "").toLowerCase();
-  return (
-    msg.includes("banned") ||
-    msg.includes("restricted") ||
-    msg.includes("blocked by whatsapp") ||
-    msg.includes("forbidden") && msg.includes("whapi")
-  );
+  // A match here auto-disables the whole bot, so it must only fire on an
+  // actual WhatsApp-side account restriction. Require WhatsApp/Whapi context
+  // AND a restriction word: a bare 403/"forbidden" (bad Whapi token) or a
+  // "restricted" from an unrelated API must never kill sending.
+  if (!msg.includes("whatsapp") && !msg.includes("whapi")) return false;
+  return msg.includes("banned") || msg.includes("restricted") || msg.includes("blocked");
 }
 
 export async function raiseAdminAlert(

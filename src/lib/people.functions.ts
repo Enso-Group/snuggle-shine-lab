@@ -102,10 +102,16 @@ export const getPersonDetail = createServerFn({ method: "GET" })
       .single();
     if (error) throw new Error(error.message);
 
-    // Their 1:1 conversation. Whapi sometimes reports the same contact as a
-    // bare phone number and sometimes with an @s.whatsapp.net/@c.us suffix —
-    // match on the phone part so the timeline is found either way.
+    // Their 1:1 conversation. people.wa_id converges on the canonical digits
+    // (see agent/wa-id.ts) while conversations/bot_decisions/group_members
+    // still hold whatever spelling Whapi used ('@s.whatsapp.net', '@c.us',
+    // ':<device>') — match on the phone part so the data is found either way.
+    const { normalizeWaId } = await import("@/lib/agent/wa-id");
     const barePhone = person.wa_id.replace(/@.*$/, "");
+    const personCanon = normalizeWaId(person.wa_id);
+    // Digits usable in a `<digits>@%` pattern — null for '@lid'/'@simulation'
+    // identities, which only ever match their exact raw spelling.
+    const phoneDigits = personCanon && !personCanon.includes("@") ? personCanon : null;
     const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
     const { channelOrFilter } = await import("@/lib/agent/channel");
     const { phone: channelPhone } = await getConnectedChannel();
@@ -133,18 +139,27 @@ export const getPersonDetail = createServerFn({ method: "GET" })
       supabaseAdmin
         .from("bot_decisions")
         .select("data, created_at")
-        .eq("chat_id", person.wa_id)
+        .or(
+          phoneDigits
+            ? `chat_id.eq.${person.wa_id},chat_id.like.${phoneDigits}@%`
+            : `chat_id.eq.${person.wa_id}`,
+        )
         .eq("stage", "intent")
         .order("created_at", { ascending: false })
         .limit(15),
+      // group_members.wa_id keeps Whapi's raw spelling — fetch active
+      // memberships and compare canonically client-side (a like-pattern would
+      // miss ':<device>' variants).
       supabaseAdmin
         .from("group_members")
-        .select("group_chat_id")
-        .eq("wa_id", person.wa_id)
-        .is("left_at", null),
+        .select("group_chat_id, wa_id")
+        .is("left_at", null)
+        .limit(5000),
     ]);
 
-    const groupIds = (memberRes.data ?? []).map((m) => m.group_chat_id);
+    const groupIds = (memberRes.data ?? [])
+      .filter((m) => normalizeWaId(m.wa_id) === personCanon)
+      .map((m) => m.group_chat_id);
     let groups: string[] = [];
     if (groupIds.length) {
       const { data: convs } = await supabaseAdmin

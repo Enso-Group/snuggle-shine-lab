@@ -8,24 +8,19 @@
 //   in by the 1:1 history import. That history was imported deliberately and
 //   must survive.
 // * PERSON PROFILES are kept only when the BOT (or the manager via the
-//   dashboard) actually engaged the contact: a platform-sent message in their
-//   1:1 chat, bot-learned analysis on the profile (facts / funnel stage /
-//   sentiment), or an imminent engagement (pending reply job or approval
-//   draft). A profile whose only claim is "the owner once texted them" or
-//   "they spoke in a group we watch" is noise on the Profiles page.
-
-/** The part of a WhatsApp id before the @suffix ("9725...@s.whatsapp.net" → "9725..."). */
-export function phonePart(id: string | null | undefined): string {
-  if (!id) return "";
-  return id.split("@")[0];
-}
+//   dashboard) actually wrote in their 1:1 chat — sender_id 'bot'/'manual',
+//   which imported from_me history does not set — or is about to (pending
+//   reply job or approval draft). v2 also kept any profile carrying
+//   bot-learned analysis (facts / funnel stage / sentiment), but the analyzer
+//   runs on merely-observed contacts too, so that rule kept never-talked-to
+//   noise on the Profiles page. '@simulation' profiles are simulator
+//   leftovers and are always deleted (cleanupSimulations never touches
+//   people).
+import { normalizeWaId } from "./wa-id";
 
 export type CleanupPerson = {
   id: string;
   wa_id: string;
-  factsCount: number;
-  funnelStage: string | null;
-  sentiment: string | null;
 };
 
 export type CleanupInput = {
@@ -50,14 +45,6 @@ export type CleanupPlan = {
   keptConvIds: string[];
 };
 
-/** True when the bot's pipeline has learned anything about this person. */
-function hasBotAnalysis(p: CleanupPerson): boolean {
-  if (p.factsCount > 0) return true;
-  if (p.funnelStage && p.funnelStage !== "unknown") return true;
-  if (p.sentiment) return true;
-  return false;
-}
-
 export function planCleanup(input: CleanupInput): CleanupPlan {
   const keep = new Set<string>();
   for (const c of input.conversations) {
@@ -67,17 +54,26 @@ export function planCleanup(input: CleanupInput): CleanupPlan {
   }
   const convIdsToDelete = input.conversations.filter((c) => !keep.has(c.id)).map((c) => c.id);
 
-  // Phones whose 1:1 chat the platform wrote in, or is about to write in.
-  const engagedPhones = new Set<string>();
+  // Canonical ids of 1:1 chats the platform wrote in, or is about to write
+  // in. Canonical (normalizeWaId) rather than raw phone-part comparison, so
+  // ':<device>' spellings and '@c.us'/'@s.whatsapp.net' variants all line up.
+  const engagedIds = new Set<string>();
   for (const c of input.conversations) {
     if (c.is_group || !keep.has(c.id)) continue;
     if (input.botConvIds.has(c.id) || input.protectedConvIds.has(c.id)) {
-      engagedPhones.add(phonePart(c.whapi_chat_id));
+      const canon = normalizeWaId(c.whapi_chat_id);
+      if (canon) engagedIds.add(canon);
     }
   }
 
   const personIdsToDelete = input.people
-    .filter((p) => !hasBotAnalysis(p) && !engagedPhones.has(phonePart(p.wa_id)))
+    .filter((p) => {
+      if (p.wa_id.endsWith("@simulation")) return true;
+      const canon = normalizeWaId(p.wa_id);
+      // Not a person id at all (group id / junk) → never a real profile.
+      if (!canon) return true;
+      return !engagedIds.has(canon);
+    })
     .map((p) => p.id);
 
   return { convIdsToDelete, personIdsToDelete, keptConvIds: [...keep] };

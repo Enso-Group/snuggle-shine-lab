@@ -10,20 +10,26 @@ import { requireSupabaseAdmin } from "@/integrations/supabase/admin-middleware";
 import type { Json } from "@/integrations/supabase/types";
 import { z } from "zod";
 
-export type ActivityKind =
-  | "reply"
-  | "approval"
-  | "handled"
-  | "gate"
-  | "post"
-  | "moderation"
-  | "welcome"
-  | "follow_up"
-  | "insight"
-  | "config"
-  | "new_contact"
-  | "alert"
-  | "error";
+// Single source of truth for every kind an entry can carry. The zod filter
+// enum below and the Activity page's chips are both derived from this list, so
+// adding a kind here automatically makes it filterable end-to-end.
+export const ACTIVITY_KINDS = [
+  "reply",
+  "approval",
+  "handled",
+  "gate",
+  "post",
+  "moderation",
+  "welcome",
+  "follow_up",
+  "insight",
+  "config",
+  "new_contact",
+  "alert",
+  "error",
+] as const;
+
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export type ActivityStage = {
   stage: string;
@@ -79,27 +85,10 @@ export const listActivity = createServerFn({ method: "GET" })
     z
       .object({
         range: z.enum(["day", "week", "month"]).default("day"),
-        // Must cover every ActivityKind the counts can produce — a chip whose
-        // value is missing here makes the parse throw and the page render
-        // "All quiet" while its count still shows a total.
-        kind: z
-          .enum([
-            "all",
-            "reply",
-            "approval",
-            "handled",
-            "gate",
-            "post",
-            "moderation",
-            "welcome",
-            "follow_up",
-            "insight",
-            "config",
-            "new_contact",
-            "alert",
-            "error",
-          ])
-          .default("all"),
+        // Derived from ACTIVITY_KINDS so the filter enum can never drift from
+        // the kinds the counts produce (a missing value used to make the parse
+        // throw and the page render "All quiet" under a non-zero count).
+        kind: z.enum(["all", ...ACTIVITY_KINDS] as const).default("all"),
       })
       .parse(d ?? {}),
   )

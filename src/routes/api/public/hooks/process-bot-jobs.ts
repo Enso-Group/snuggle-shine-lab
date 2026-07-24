@@ -165,23 +165,51 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           }
           try {
             const postCounts: Record<string, number> = {};
-            for (const st of ["planned", "queued_approval", "sent", "cancelled"]) {
+            for (const st of ["planned", "queued_approval", "sent", "failed", "cancelled"]) {
               const { count } = await supabase
                 .from("planned_posts")
                 .select("id", { count: "exact", head: true })
                 .eq("status", st);
               postCounts[st] = count ?? 0;
             }
-            const { data: oldestPlanned } = await supabase
+            const { data: stuckPosts } = await supabase
               .from("planned_posts")
-              .select("created_at, updated_at, source")
-              .eq("status", "planned")
+              .select("group_chat_id, status, source, reasoning, engagement, created_at, updated_at")
+              .in("status", ["planned", "failed"])
               .order("created_at", { ascending: true })
-              .limit(1)
-              .maybeSingle();
-            debug.planned_posts = { counts: postCounts, oldest_planned: oldestPlanned ?? null };
+              .limit(10);
+            debug.planned_posts = {
+              counts: postCounts,
+              stuck: (stuckPosts ?? []).map((p) => ({
+                chat: maskChat(p.group_chat_id),
+                status: p.status,
+                source: p.source,
+                reasoning: p.reasoning ? String(p.reasoning).slice(0, 200) : null,
+                gen_attempts:
+                  (p.engagement as { gen_attempts?: number } | null)?.gen_attempts ?? null,
+                created_at: p.created_at,
+                updated_at: p.updated_at,
+              })),
+            };
           } catch (e) {
             debug.planned_posts = String((e as Error)?.message ?? e);
+          }
+          try {
+            // Whether the posting engine can act at all: a planned post whose
+            // group has no ENABLED profile can never be generated.
+            const { data: gps } = await supabase
+              .from("group_profiles")
+              .select("chat_id, name, enabled, updated_at")
+              .order("updated_at", { ascending: false })
+              .limit(20);
+            debug.group_profiles = (gps ?? []).map((g) => ({
+              chat: maskChat(g.chat_id),
+              name: g.name,
+              enabled: g.enabled,
+              updated_at: g.updated_at,
+            }));
+          } catch (e) {
+            debug.group_profiles = String((e as Error)?.message ?? e);
           }
           try {
             const { data: errs } = await supabase
@@ -316,11 +344,61 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             }
           };
 
+          // One-shot heal: require_approval_all was flipped on during the
+          // 2026-07-23 incident (raw-JSON leak, before the leak guard
+          // deployed), which parks every reply/post in Approvals and reads as
+          // "the bot stopped sending". Restore auto-send exactly once — the
+          // marker row makes this permanent, so a later DELIBERATE re-enable
+          // of approval mode in the dashboard is never fought. Marker is
+          // written BEFORE the flip: if the flip fails we retry via a manual
+          // toggle, but a lost marker must never cause repeated flips.
+          const approvalRestore = await guarded("approval-restore", async () => {
+            const MARKER = "Restored auto-send after the 2026-07-23 incident";
+            const { data: done } = await supabase
+              .from("bot_decisions")
+              .select("id")
+              .eq("stage", "config")
+              .like("summary", `${MARKER}%`)
+              .limit(1)
+              .maybeSingle();
+            if (done) return { ran: false as const, reason: "already restored" };
+            const { data: settings } = await supabase
+              .from("bot_settings")
+              .select("id, require_approval_all")
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (!settings?.require_approval_all) {
+              return { ran: false as const, reason: "auto-send already on" };
+            }
+            const { error: markerErr } = await supabase.from("bot_decisions").insert({
+              trigger: "scheduled",
+              stage: "config",
+              status: "ok",
+              summary: `${MARKER} — require_approval_all set back to false`,
+              data: { flipped_at: new Date().toISOString() },
+            });
+            if (markerErr) throw new Error(`marker insert failed: ${markerErr.message}`);
+            const { error: flipErr } = await supabase
+              .from("bot_settings")
+              .update({ require_approval_all: false, updated_at: new Date().toISOString() })
+              .eq("id", settings.id);
+            if (flipErr) throw new Error(`flip failed: ${flipErr.message}`);
+            return { ran: true as const };
+          });
+
           // Data passes first (never blocked by the heavier stages below).
           // Channel backfill before cleanup so scope tags exist for both.
           const channel = await guarded("channel-backfill", async () => {
             const { backfillChannelPhone } = await import("@/lib/agent/channel-backfill.server");
             return backfillChannelPhone(supabase);
+          });
+          // Dedupe before cleanup: cleanup matches people to conversations by
+          // canonical digits, so collapsing wa_id spellings first keeps its
+          // keep/delete decisions accurate.
+          const dedupe = await guarded("people-dedupe", async () => {
+            const { dedupePeople } = await import("@/lib/agent/people-dedupe.server");
+            return dedupePeople(supabase);
           });
           const cleanup = await guarded("cleanup", async () => {
             const { cleanupNonParticipatedChats } = await import("@/lib/agent/cleanup.server");
@@ -348,6 +426,8 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             analytics,
             cleanup,
             channel,
+            dedupe,
+            approval_restore: approvalRestore,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {

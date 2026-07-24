@@ -25,6 +25,57 @@ import { loadAgentSettings } from "./context.server";
 const INSIGHTS_EVERY_MS = 6 * 60 * 60 * 1000;
 const MAX_POSTS_PER_TICK = 2;
 const REACTIVE_MIN_GAP_MS = 12 * 60 * 60 * 1000;
+export const MAX_GEN_ATTEMPTS = 4;
+// One post's generation must finish well inside a single Worker invocation:
+// if the runtime kills the request mid-LLM-retry, the catch below never runs
+// and the post sits 'planned' forever. Draft + review worst case here is
+// ~200s + budget-check slack, vs. minutes for the unbounded retry ladder.
+const DRAFT_TIMEOUT_MS = 50_000;
+const DRAFT_BUDGET_MS = 120_000;
+const REVIEW_TIMEOUT_MS = 35_000;
+const REVIEW_BUDGET_MS = 80_000;
+
+/**
+ * Attempt accounting for post generation. The counter lives in the post's
+ * engagement jsonb (reused post-send for reply stats) and is persisted BEFORE
+ * drafting, so a request that dies mid-flight still counts toward the cap and
+ * repeated failures converge to a visible 'failed' instead of retrying forever.
+ */
+export function nextGenAttempt(
+  engagement: unknown,
+  lastReasoning: string | null | undefined,
+): {
+  exceeded: boolean;
+  attempts: number;
+  engagement: Record<string, unknown>;
+  failReasoning: string;
+} {
+  const prior =
+    engagement && typeof engagement === "object" && !Array.isArray(engagement)
+      ? (engagement as Record<string, unknown>)
+      : {};
+  const attempts = Number(prior.gen_attempts ?? 0) + 1;
+  return {
+    exceeded: attempts > MAX_GEN_ATTEMPTS,
+    attempts,
+    engagement: { ...prior, gen_attempts: attempts },
+    failReasoning: `Generation failed after ${MAX_GEN_ATTEMPTS} attempts: ${lastReasoning || "unknown error"}`,
+  };
+}
+
+/**
+ * Errors the next sweeper tick can plausibly succeed on — LLM timeouts and
+ * gateway 429/5xx (error shapes from llm.server). Anything else (bad prompt
+ * output, missing approval owner, out of credits) won't fix itself, so the
+ * post is failed immediately rather than burning the remaining attempts.
+ * Deliberately NOT matched: Whapi send failures ("The connection to WhatsApp
+ * took too long…") — a send timeout doesn't prove the message wasn't
+ * delivered, and a retry would regenerate AND resend, risking a double post
+ * in the group. Those fail visibly and a human re-plans.
+ */
+export function isTransientGenError(message: string): boolean {
+  return /timed out/i.test(message) || /\bAI error (?:429|5\d\d)\b/i.test(message);
+}
 
 export type PostingRunResult = {
   planned: number;
@@ -62,13 +113,36 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
   // 2) Generate + send planned posts (oldest first, capped per tick).
   const { data: pending } = await deps.supabase
     .from("planned_posts")
-    .select("id, group_chat_id, source, pillar, prompt")
+    .select("id, group_chat_id, source, pillar, prompt, engagement, reasoning")
     .eq("status", "planned")
     .order("created_at", { ascending: true })
     .limit(MAX_POSTS_PER_TICK);
   for (const post of pending ?? []) {
     const profile = profiles.find((p) => p.chat_id === post.group_chat_id);
-    if (!profile) continue;
+    if (!profile) {
+      // The group was disabled or its profile deleted after the post was
+      // planned. Skipping silently would leave the row 'planned' forever
+      // (shown as "generating" on the dashboard) — fail it visibly instead.
+      await deps.supabase
+        .from("planned_posts")
+        .update({
+          status: "failed",
+          reasoning:
+            "Group profile disabled or missing — enable the group in Command Center and re-plan the post",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", post.id);
+      logDecision(deps.supabase, {
+        chat_id: post.group_chat_id,
+        trigger: "scheduled",
+        stage: "error",
+        status: "error",
+        summary: `Planned post failed: group profile for ${post.group_chat_id} is disabled or missing`,
+        data: { planned_post_id: post.id },
+      });
+      result.posted.push({ group: post.group_chat_id, status: "failed" });
+      continue;
+    }
     const status = await generateAndSendPost(deps, settings, profile, post);
     result.posted.push({ group: profile.name ?? profile.chat_id, status });
   }
@@ -185,10 +259,47 @@ async function generateAndSendPost(
   deps: AgentDeps,
   settings: AgentSettings,
   profile: GroupProfile,
-  post: { id: string; source: string; pillar: string | null; prompt: string | null },
+  post: {
+    id: string;
+    source: string;
+    pillar: string | null;
+    prompt: string | null;
+    engagement?: Json | null;
+    reasoning?: string | null;
+  },
 ): Promise<string> {
   const { supabase } = deps;
   const overrides = { model_strong: settings.model_strong, model_fast: settings.model_fast };
+
+  // Count this attempt before any LLM work — a generation killed mid-flight
+  // must still leave a trace so the cap can converge to a visible 'failed'.
+  const attempt = nextGenAttempt(post.engagement, post.reasoning);
+  if (attempt.exceeded) {
+    await supabase
+      .from("planned_posts")
+      .update({
+        status: "failed",
+        reasoning: attempt.failReasoning,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", post.id);
+    logDecision(supabase, {
+      chat_id: profile.chat_id,
+      trigger: "scheduled",
+      stage: "error",
+      status: "error",
+      summary: `Post generation for ${profile.name ?? profile.chat_id} gave up after ${MAX_GEN_ATTEMPTS} attempts`,
+      data: { planned_post_id: post.id },
+    });
+    return "failed";
+  }
+  await supabase
+    .from("planned_posts")
+    .update({
+      engagement: attempt.engagement as Json,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", post.id);
 
   try {
     const { latestRecommendationsBlock } = await import("./analytics.server");
@@ -238,6 +349,8 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       role: "strong",
       source: "agent_post_draft",
       overrides,
+      timeoutMs: DRAFT_TIMEOUT_MS,
+      budgetMs: DRAFT_BUDGET_MS,
       messages: [
         { role: "system", content: draftSystem },
         { role: "user", content: draftUser },
@@ -264,6 +377,8 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         source: "agent_post_review",
         json: true,
         overrides,
+        timeoutMs: REVIEW_TIMEOUT_MS,
+        budgetMs: REVIEW_BUDGET_MS,
         messages: [
           {
             role: "system",
@@ -440,10 +555,13 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     return pollError ? "sent_poll_failed" : "sent";
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
+    // Transient errors below the attempt cap keep status 'planned' so the
+    // next tick retries; gen_attempts (already bumped) bounds the retries.
+    const retryable = isTransientGenError(msg) && attempt.attempts < MAX_GEN_ATTEMPTS;
     await supabase
       .from("planned_posts")
       .update({
-        status: "failed",
+        ...(retryable ? {} : { status: "failed" }),
         reasoning: msg.slice(0, 300),
         updated_at: new Date().toISOString(),
       })
@@ -453,9 +571,10 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       trigger: "scheduled",
       stage: "error",
       status: "error",
-      summary: `Post publishing failed: ${msg.slice(0, 150)}`,
+      summary: `Post publishing failed (attempt ${attempt.attempts}/${MAX_GEN_ATTEMPTS}${retryable ? ", will retry" : ""}): ${msg.slice(0, 150)}`,
+      data: { planned_post_id: post.id },
     });
-    return "failed";
+    return retryable ? "retrying" : "failed";
   }
 }
 

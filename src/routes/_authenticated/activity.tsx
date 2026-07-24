@@ -1,18 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import { StageBadge } from "@/components/stage-badge";
-import { listActivity, type ActivityEntry, type ActivityKind } from "@/lib/activity.functions";
+import {
+  listActivity,
+  ACTIVITY_KINDS,
+  type ActivityEntry,
+  type ActivityKind,
+} from "@/lib/activity.functions";
 import {
   Activity as ActivityIcon,
   AlertTriangle,
   Bell,
   CheckCheck,
+  ChevronDown,
   Inbox,
   MessageCircle,
   Newspaper,
@@ -28,6 +35,9 @@ export const Route = createFileRoute("/_authenticated/activity")({
   component: ActivityPage,
 });
 
+// Keyed by ActivityKind so a kind added on the server fails compilation here
+// instead of silently missing its chip/icon (the drift that once made the page
+// show "All quiet" under a non-zero count).
 const KIND_META: Record<ActivityKind, { label: string; icon: typeof MessageCircle; cls: string }> =
   {
     reply: { label: "Replies", icon: MessageCircle, cls: "text-emerald-600 dark:text-emerald-400" },
@@ -49,20 +59,6 @@ const KIND_META: Record<ActivityKind, { label: string; icon: typeof MessageCircl
     error: { label: "Errors", icon: AlertTriangle, cls: "text-rose-600 dark:text-rose-400" },
   };
 
-const FILTERS: Array<{ value: string; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "reply", label: "Replies" },
-  { value: "approval", label: "Approvals" },
-  { value: "post", label: "Posts" },
-  { value: "moderation", label: "Moderation" },
-  { value: "follow_up", label: "Follow-ups" },
-  { value: "new_contact", label: "New contacts" },
-  { value: "gate", label: "Reply gate" },
-  { value: "config", label: "Config changes" },
-  { value: "alert", label: "Alerts" },
-  { value: "error", label: "Errors" },
-];
-
 function dayLabel(ts: string): string {
   const d = new Date(ts);
   const today = new Date();
@@ -73,77 +69,130 @@ function dayLabel(ts: string): string {
   return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
+function KindChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  // Zero-count chips stay in the row (disabled) so the layout never reflows
+  // when the 8s poll shifts counts around.
+  const disabled = count === 0 && !active;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : disabled
+            ? "border-border/60 text-muted-foreground/50"
+            : "border-border bg-background hover:bg-muted"
+      }`}
+    >
+      {label}
+      <span className="ms-1.5 opacity-70" dir="ltr">
+        {count}
+      </span>
+    </button>
+  );
+}
+
 function EntryRow({ entry }: { entry: ActivityEntry }) {
   const meta = KIND_META[entry.kind];
   const Icon = meta.icon;
   const expandable = entry.stages.length > 0;
+
+  const row = (
+    <>
+      <div
+        className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted ${meta.cls}`}
+      >
+        <Icon className="size-3.5" />
+      </div>
+      <div className="min-w-0 flex-1 text-start">
+        <p className="text-sm leading-snug" dir="auto">
+          {entry.title}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground" dir="auto">
+          {entry.chat_name ?? entry.chat_id ?? ""}
+        </p>
+      </div>
+      <span className="shrink-0 pt-0.5 text-xs text-muted-foreground" dir="ltr">
+        {new Date(entry.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+      </span>
+    </>
+  );
+
+  if (!expandable) {
+    return (
+      <div className="flex items-start gap-3 py-2.5">
+        {row}
+        {/* Chevron-sized spacer keeps timestamps column-aligned with expandable rows. */}
+        <span className="mt-1 size-4 shrink-0" aria-hidden />
+      </div>
+    );
+  }
+
   return (
-    <div className="py-2.5">
-      <details className="group">
-        <summary
-          className={`flex items-start gap-3 ${expandable ? "cursor-pointer" : "cursor-default [&::-webkit-details-marker]:hidden"} list-none`}
-        >
-          <div
-            className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted ${meta.cls}`}
-          >
-            <Icon className="size-3.5" />
-          </div>
-          <div className="min-w-0 flex-1" dir="auto">
-            <p className="text-sm leading-snug">{entry.title}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              <span dir="auto">{entry.chat_name ?? entry.chat_id ?? ""}</span>
-              {expandable && (
-                <span className="ms-2 text-primary/70 group-open:hidden">· details ▾</span>
-              )}
-            </p>
-          </div>
-          <span className="shrink-0 pt-0.5 text-xs text-muted-foreground" dir="ltr">
-            {new Date(entry.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-          </span>
-        </summary>
-        {expandable && (
-          <div className="ms-10 mt-2 space-y-1.5 border-s-2 border-primary/20 ps-3">
-            {entry.stages.map((s, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs" dir="auto">
-                <StageBadge stage={s.stage} />
-                <span className={`flex-1 ${s.status === "error" ? "text-rose-500" : ""}`}>
-                  {s.summary}
+    <Collapsible className="group py-2.5">
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-start gap-3 text-start">
+        {row}
+        <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="ms-10 mt-2 space-y-1.5 border-s-2 border-primary/20 ps-3">
+          {entry.stages.map((s, i) => (
+            <div key={i} className="flex items-start gap-2 text-xs" dir="auto">
+              <StageBadge stage={s.stage} />
+              <span className={`flex-1 ${s.status === "error" ? "text-rose-500" : ""}`}>
+                {s.summary}
+              </span>
+              {s.duration_ms != null && (
+                <span className="shrink-0 text-muted-foreground" dir="ltr">
+                  {s.duration_ms}ms
                 </span>
-                {s.duration_ms != null && (
-                  <span className="shrink-0 text-muted-foreground">{s.duration_ms}ms</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </details>
-    </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
 function ActivityPage() {
   const listFn = useServerFn(listActivity);
   const [range, setRange] = useState<"day" | "week" | "month">("day");
-  const [kind, setKind] = useState<string>("all");
+  const [kind, setKind] = useState<ActivityKind | "all">("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["activity", range, kind],
-    queryFn: () => listFn({ data: { range, kind: kind as "all" } }),
+    queryFn: () => listFn({ data: { range, kind } }),
     refetchInterval: 8000,
   });
 
-  const entries = data?.entries ?? [];
+  const entries = data?.entries;
   const counts = data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   // Group entries by day for scannable headers.
-  const byDay: Array<{ day: string; items: ActivityEntry[] }> = [];
-  for (const e of entries) {
-    const day = dayLabel(e.ts);
-    const bucket = byDay[byDay.length - 1];
-    if (bucket && bucket.day === day) bucket.items.push(e);
-    else byDay.push({ day, items: [e] });
-  }
+  const byDay = useMemo(() => {
+    const groups: Array<{ day: string; items: ActivityEntry[] }> = [];
+    for (const e of entries ?? []) {
+      const day = dayLabel(e.ts);
+      const bucket = groups[groups.length - 1];
+      if (bucket && bucket.day === day) bucket.items.push(e);
+      else groups.push({ day, items: [e] });
+    }
+    return groups;
+  }, [entries]);
 
   return (
     <div className="min-h-full">
@@ -171,24 +220,21 @@ function ActivityPage() {
 
       <PageContent maxWidthClass="max-w-4xl">
         <div className="flex flex-wrap gap-1.5">
-          {FILTERS.map((f) => {
-            const count = f.value === "all" ? total : (counts[f.value] ?? 0);
-            if (f.value !== "all" && count === 0 && kind !== f.value) return null;
-            return (
-              <button
-                key={f.value}
-                onClick={() => setKind(f.value)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  kind === f.value
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background hover:bg-muted"
-                }`}
-              >
-                {f.label}
-                <span className="ms-1.5 opacity-70">{count}</span>
-              </button>
-            );
-          })}
+          <KindChip
+            label="All"
+            count={total}
+            active={kind === "all"}
+            onClick={() => setKind("all")}
+          />
+          {ACTIVITY_KINDS.map((k) => (
+            <KindChip
+              key={k}
+              label={KIND_META[k].label}
+              count={counts[k] ?? 0}
+              active={kind === k}
+              onClick={() => setKind(k)}
+            />
+          ))}
         </div>
 
         {isLoading && !data ? (
@@ -202,7 +248,7 @@ function ActivityPage() {
               ))}
             </CardContent>
           </Card>
-        ) : entries.length === 0 ? (
+        ) : !entries || entries.length === 0 ? (
           <Card>
             <CardContent>
               <EmptyState
@@ -215,11 +261,11 @@ function ActivityPage() {
         ) : (
           byDay.map((bucket) => (
             <div key={bucket.day}>
-              <div className="mb-1 mt-2 flex items-center gap-2">
+              <div className="sticky top-0 z-10 mb-1 flex items-center gap-2 bg-background/95 py-2 backdrop-blur">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {bucket.day}
                 </h2>
-                <Badge variant="outline" className="text-[10px]">
+                <Badge variant="outline" className="text-[10px]" dir="ltr">
                   {bucket.items.length}
                 </Badge>
               </div>

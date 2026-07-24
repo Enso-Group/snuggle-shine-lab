@@ -1,24 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { phonePart, planCleanup, type CleanupPerson } from "../cleanup";
+import { planCleanup } from "../cleanup";
 
-describe("phonePart", () => {
-  it("strips any @suffix and tolerates bare/empty ids", () => {
-    expect(phonePart("972501234567@s.whatsapp.net")).toBe("972501234567");
-    expect(phonePart("18803584966843@lid")).toBe("18803584966843");
-    expect(phonePart("972501234567")).toBe("972501234567");
-    expect(phonePart("")).toBe("");
-    expect(phonePart(null)).toBe("");
-  });
-});
-
-const person = (id: string, wa_id: string, over: Partial<CleanupPerson> = {}): CleanupPerson => ({
-  id,
-  wa_id,
-  factsCount: 0,
-  funnelStage: "unknown",
-  sentiment: null,
-  ...over,
-});
+const person = (id: string, wa_id: string) => ({ id, wa_id });
 
 describe("planCleanup", () => {
   const conversations = [
@@ -47,29 +30,46 @@ describe("planCleanup", () => {
     expect(plan.keptConvIds.sort()).toEqual(["c-bot", "c-group", "c-imported", "c-pending"]);
   });
 
-  it("keeps profiles only when the bot engaged them", () => {
+  it("keeps profiles only when the bot/dashboard wrote (or is about to write) in their 1:1 chat", () => {
     const plan = planCleanup({
       ...base,
       people: [
-        // Bot replied in their 1:1 → kept.
+        // Bot replied in their 1:1 → kept, in every spelling of the same phone.
         person("p-bot", "972501111111@s.whatsapp.net"),
-        // Same phone, bare spelling → kept.
         person("p-bot-bare", "972501111111"),
-        // Imported-only chat, no bot engagement, no analysis → DELETED.
+        person("p-bot-device", "972501111111:5@s.whatsapp.net"),
+        // Imported-only chat: owner's from_me history, bot never wrote → DELETED.
         person("p-imported", "972502222222@s.whatsapp.net"),
-        // Reply in flight → kept.
+        // Reply in flight (pending job / approval) protects the profile.
         person("p-pending", "972503333333@s.whatsapp.net"),
-        // Bot-learned analysis keeps a profile even without 1:1 bot messages.
-        person("p-lead", "972505555555@s.whatsapp.net", { funnelStage: "lead" }),
-        person("p-facts", "972506666666@s.whatsapp.net", { factsCount: 3 }),
-        person("p-sentiment", "972507777777@s.whatsapp.net", { sentiment: "positive" }),
-        // Group chatter / lid sender with nothing learned → DELETED.
-        person("p-lid", "18803584966843@lid"),
         // Connected to nothing → DELETED.
         person("p-orphan", "972508888888@s.whatsapp.net"),
       ],
     });
-    expect(plan.personIdsToDelete.sort()).toEqual(["p-imported", "p-lid", "p-orphan"]);
+    expect(plan.personIdsToDelete.sort()).toEqual(["p-imported", "p-orphan"]);
+  });
+
+  it("bot-learned analysis no longer keeps a profile by itself", () => {
+    // v2 kept profiles with facts/funnel/sentiment; the analyzer also runs on
+    // merely-observed contacts, so v3 keys keep/delete on engagement only
+    // (the CleanupPerson shape no longer carries analysis fields at all).
+    const plan = planCleanup({
+      ...base,
+      people: [person("p-analyzed", "972505555555@s.whatsapp.net")],
+    });
+    expect(plan.personIdsToDelete).toEqual(["p-analyzed"]);
+  });
+
+  it("always deletes @simulation profiles and non-person ids", () => {
+    const plan = planCleanup({
+      ...base,
+      people: [
+        person("p-sim", "sim-abc123@simulation"),
+        person("p-group-id", "120363000000000001@g.us"),
+        person("p-junk", "123"),
+      ],
+    });
+    expect(plan.personIdsToDelete.sort()).toEqual(["p-group-id", "p-junk", "p-sim"]);
   });
 
   it("a group conversation the bot writes in does not keep member profiles by itself", () => {
@@ -80,12 +80,24 @@ describe("planCleanup", () => {
     expect(plan.personIdsToDelete).toEqual(["p-member"]);
   });
 
-  it("null funnel stage counts as no analysis", () => {
-    const plan = planCleanup({
+  it("@lid identities are kept only via their own engaged 1:1 chat", () => {
+    const withLidConv = {
       ...base,
-      people: [person("p-null-stage", "972508888877@s.whatsapp.net", { funnelStage: null })],
+      conversations: [
+        ...conversations,
+        { id: "c-lid", whapi_chat_id: "18803584966843@lid", is_group: false },
+      ],
+      participatedConvIds: new Set([...base.participatedConvIds, "c-lid"]),
+      botConvIds: new Set([...base.botConvIds, "c-lid"]),
+    };
+    const plan = planCleanup({
+      ...withLidConv,
+      people: [
+        person("p-lid-engaged", "18803584966843@lid"),
+        person("p-lid-orphan", "18803584966899@lid"),
+      ],
     });
-    expect(plan.personIdsToDelete).toEqual(["p-null-stage"]);
+    expect(plan.personIdsToDelete).toEqual(["p-lid-orphan"]);
   });
 
   it("deletes nothing when every profile is engaged", () => {
@@ -93,7 +105,7 @@ describe("planCleanup", () => {
       ...base,
       people: [
         person("p-bot", "972501111111@s.whatsapp.net"),
-        person("p-lead", "972505555555@s.whatsapp.net", { funnelStage: "customer" }),
+        person("p-pending", "972503333333"),
       ],
     });
     expect(plan.personIdsToDelete).toEqual([]);
