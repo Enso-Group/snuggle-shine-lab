@@ -93,6 +93,41 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             // best-effort — never fail the health check over observability
           }
 
+          // Research-promise SLA observability: recent research_answer jobs
+          // with their deadline math (numbers and status only, no content) —
+          // the external proof that "I'll check and get back" answers land
+          // inside 10 minutes.
+          let research: Record<string, unknown> | string = {};
+          try {
+            const { parseResearchPayload } = await import("@/lib/agent/research");
+            const { data: rjobs } = await supabase
+              .from("bot_jobs")
+              .select("status, attempts, payload, created_at, updated_at")
+              .eq("kind", "research_answer")
+              .order("created_at", { ascending: false })
+              .limit(10);
+            const nowMs = Date.now();
+            research = {
+              recent: (rjobs ?? []).map((j) => {
+                const p = parseResearchPayload(j.payload);
+                return {
+                  status: j.status,
+                  attempts: j.attempts,
+                  created_at: j.created_at,
+                  minutes_since_promise: p ? Math.round((nowMs - p.promised_at) / 60_000) : null,
+                  interim_sent: p?.interim_sent ?? null,
+                  answer_ready: !!p?.answer_parts?.length,
+                  overdue:
+                    !!p && j.status !== "done" && j.status !== "superseded"
+                      ? nowMs > p.deadline_at
+                      : false,
+                };
+              }),
+            };
+          } catch (e) {
+            research = String((e as Error)?.message ?? e);
+          }
+
           // Send-pipeline failure evidence: truncated error strings, masked
           // chat ids, counts — never message content. This is what lets a
           // stuck "generating" post or a dead LLM gateway be diagnosed from
@@ -136,7 +171,9 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           try {
             const { data: jobs } = await supabase
               .from("bot_jobs")
-              .select("kind, chat_id, status, attempts, max_attempts, last_error, run_after, updated_at")
+              .select(
+                "kind, chat_id, status, attempts, max_attempts, last_error, run_after, updated_at",
+              )
               .order("updated_at", { ascending: false })
               .limit(10);
             debug.recent_jobs = (jobs ?? []).map((j) => ({
@@ -187,7 +224,9 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             }
             const { data: stuckPosts } = await supabase
               .from("planned_posts")
-              .select("group_chat_id, status, source, reasoning, engagement, created_at, updated_at")
+              .select(
+                "group_chat_id, status, source, reasoning, engagement, created_at, updated_at",
+              )
               .in("status", ["planned", "failed"])
               .order("created_at", { ascending: true })
               .limit(10);
@@ -332,12 +371,16 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             const byPhone = new Map<string, number>();
             const byName = new Map<string, number>();
             for (const r of peopleRows ?? []) {
-              const phone = String(r.wa_id ?? "").split("@")[0].replace(/\D/g, "");
+              const phone = String(r.wa_id ?? "")
+                .split("@")[0]
+                .replace(/\D/g, "");
               if (phone) byPhone.set(phone, (byPhone.get(phone) ?? 0) + 1);
               // Names under 5 chars are ignored — same threshold as the v2
               // dedupe's cross-format match, so this counter mirrors what the
               // dedupe is allowed to fix.
-              const name = String(r.display_name ?? "").trim().toLowerCase();
+              const name = String(r.display_name ?? "")
+                .trim()
+                .toLowerCase();
               if (name.length >= 5) byName.set(name, (byName.get(name) ?? 0) + 1);
             }
             debug.people = {
@@ -362,6 +405,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             info: "Bot-jobs sweeper. POST with x-cron-secret to trigger a run.",
             queue: counts,
             follow_ups_pending: followUpsPending,
+            research,
             last_cleanup: lastCleanup,
             recent_dm_replies: recentDmReplies,
             leak_scan: leakScan,
@@ -428,6 +472,21 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           // skipped so it can run at a lower frequency.
           const jobsOnly =
             url.searchParams.get("jobs_only") === "1" || request.headers.get("x-jobs-only") === "1";
+
+          // Research-promise deadline watchdog runs FIRST, before the job
+          // drain, in BOTH tick shapes: it is the only actor that guarantees
+          // the 10-minute interim, it costs one cheap indexed select when
+          // nothing is overdue, and a single legitimate ~45s research job in
+          // the drain would otherwise push it past the ~60s request wall.
+          let researchInterims: unknown = null;
+          try {
+            const { sendOverdueResearchInterims } = await import("@/lib/agent/research.server");
+            researchInterims = await sendOverdueResearchInterims(deps, { max: jobsOnly ? 2 : 4 });
+          } catch (e) {
+            console.error("[jobs] research-interims failed", e);
+            researchInterims = { error: String((e as Error)?.message ?? e).slice(0, 300) };
+          }
+
           // Cap at 3 per tick: each job may do a short (<=20s) top-up wait, and
           // they run serially, so this bounds a single Worker invocation's time.
           // Jobs beyond the cap are picked up on the next 20s tick.
@@ -461,6 +520,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
               jobs_only: true,
               claimed: run.claimed,
               results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
+              research_interims: researchInterims,
               posts,
             });
           }
@@ -562,6 +622,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             claimed: run.claimed,
             results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
             follow_ups: followUps,
+            research_interims: researchInterims,
             groups,
             analytics,
             cleanup,

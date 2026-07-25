@@ -196,6 +196,9 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // Mutable: the consolidation stage below may replace the parts when newer
   // messages arrived mid-draft.
   let parts = safeParts;
+  // The final envelope's "I promised to check" flag — replaced along with the
+  // parts when consolidation rewrites the reply.
+  let openQuestion = draft.openQuestion;
   logDecision(supabase, {
     ...base,
     stage: "draft",
@@ -236,12 +239,16 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       // the message = a previous attempt died after its send) and the
       // anti-ban/blocked guard (a fallback to a blocked contact is exactly
       // the traffic the guard exists to stop).
-      if (job.attempts > 1) {
+      if (job.attempts > 1 && p.deliver_started) {
+        // Correlated dedup: only THIS job's own previously-attempted text
+        // counts as "already replied" — research interims/answers landing in
+        // the same conversation must not suppress the fallback.
         const { data: fallbackAlreadyReplied } = await supabase
           .from("messages")
           .select("id")
           .eq("conversation_id", job.conversation_id)
           .eq("direction", "outbound")
+          .eq("body", p.deliver_started.first_part)
           .gt("created_at", new Date(p.ts).toISOString())
           .limit(1);
         if (fallbackAlreadyReplied?.length) {
@@ -254,9 +261,8 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
           return { action: "skipped", reason: "already replied" };
         }
       }
-      const { checkOutboundAllowed, loadConversationByChatId } = await import(
-        "@/lib/anti-ban.server"
-      );
+      const { checkOutboundAllowed, loadConversationByChatId } =
+        await import("@/lib/anti-ban.server");
       const fallbackConv = await loadConversationByChatId(supabase, job.chat_id);
       if (fallbackConv) {
         // The final line isn't drafted yet — the canned line stands in for the
@@ -281,6 +287,13 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       try {
         const line = await draftCantHelpLine(ctx, intent.language);
         const llmDone = Date.now();
+        // Deliver marker: lets a crash-retry prove THIS send happened
+        // (correlated dedup above), instead of matching any newer outbound.
+        p.deliver_started = { at: Date.now(), first_part: line };
+        await supabase
+          .from("bot_jobs")
+          .update({ payload: p, updated_at: new Date().toISOString() })
+          .eq("id", job.id);
         const delivery = await deliverReply(supabase, deps.whapi, ctx, [line], {
           humanPacing: deps.humanPacing,
           botName: settings.bot_name,
@@ -413,7 +426,8 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
         ...base,
         stage: "skipped",
         status: "skip",
-        summary: "A newer message arrived mid-draft — its job owns the reply (consolidation is DM-only)",
+        summary:
+          "A newer message arrived mid-draft — its job owns the reply (consolidation is DM-only)",
       });
       return { action: "skipped", reason: "superseded" };
     }
@@ -481,6 +495,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       }
 
       parts = cParts;
+      openQuestion = consolidated.openQuestion;
       joined = parts.join("\n\n");
       llmMs += Date.now() - t;
       // The consolidated reply covers the snapshot jobs' messages — they must
@@ -541,6 +556,34 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   if (conv) {
     const guard = await checkOutboundAllowed(supabase, conv, joined);
     if (!guard.ok) {
+      // min_gap is TEMPORARY: it only fires when another outbound (e.g. a
+      // research answer or follow-up) landed moments before this reply, and
+      // dropping the reply for that would silently break never-silent.
+      // Defer the job past the gap instead — the retry re-runs the full
+      // pipeline with fresh history. Other codes stay hard skips: guards
+      // outrank never-silent for blocked/limit/duplicate conditions.
+      if (
+        guard.code === "min_gap" &&
+        !message.isGroup &&
+        deps.trigger !== "simulation" &&
+        !job.chat_id.endsWith("@simulation")
+      ) {
+        const lastOut = conv.last_outbound_at
+          ? new Date(conv.last_outbound_at).getTime()
+          : Date.now();
+        logDecision(supabase, {
+          ...base,
+          stage: "skipped",
+          status: "skip",
+          summary: `Anti-ban min-gap holds the reply — rescheduled instead of dropped (${guard.reason})`,
+          data: { code: guard.code },
+        });
+        return {
+          action: "deferred",
+          reason: "min_gap",
+          runAfterMs: Math.max(Date.now() + 10_000, lastOut + 3 * 60_000 + 10_000),
+        };
+      }
       logDecision(supabase, {
         ...base,
         stage: "skipped",
@@ -551,18 +594,20 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       return { action: "skipped", reason: guard.code };
     }
   }
-  // Crash-retry dedup ONLY (attempts > 1): an outbound newer than the message
-  // on a retry means a previous attempt died AFTER its send — answering again
-  // would be a duplicate. On attempt 1 a matching outbound is a crossing race
-  // (the owner typed a reply mid-cycle, or an outbound to a different message
-  // landed) — reply anyway: the hard product rule is EVERY message gets a
-  // reply, and a rare redundant-looking reply beats a silent drop.
-  if (job.attempts > 1) {
+  // Crash-retry dedup ONLY (attempts > 1), CORRELATED to this job: a previous
+  // attempt persisted its deliver marker right before sending, so a matching
+  // outbound row proves that attempt died AFTER its send — answering again
+  // would be a duplicate. Matching ANY newer outbound (the old rule) is no
+  // longer safe: research interims/answers legitimately land in the same
+  // conversation and must not swallow this reply. No marker = no previous
+  // attempt ever reached the send — reply.
+  if (job.attempts > 1 && p.deliver_started) {
     const { data: alreadyReplied } = await supabase
       .from("messages")
       .select("id")
       .eq("conversation_id", job.conversation_id)
       .eq("direction", "outbound")
+      .eq("body", p.deliver_started.first_part)
       .gt("created_at", new Date(p.ts).toISOString())
       .limit(1);
     if (alreadyReplied?.length) {
@@ -579,6 +624,13 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // --- Stage: deliver ---
   t = Date.now();
   try {
+    // Deliver marker first: the correlated crash-retry dedup above needs
+    // proof of exactly what this attempt was about to send.
+    p.deliver_started = { at: Date.now(), first_part: parts[0] };
+    await supabase
+      .from("bot_jobs")
+      .update({ payload: p, updated_at: new Date().toISOString() })
+      .eq("id", job.id);
     const delivery = await deliverReply(supabase, deps.whapi, ctx, parts, {
       humanPacing: deps.humanPacing,
       botName: settings.bot_name,
@@ -605,6 +657,64 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       },
       duration_ms: Date.now() - t,
     });
+
+    // --- Stage: research promise (after the send — failures here never cost
+    // a reply). A delivered "I'll check and get back to you" gets a tracked
+    // job with a hard 10-minute deadline: research runs immediately, the
+    // answer follows in minutes, and the watchdog sends an interim update if
+    // it can't. Model flag first (open_question), deterministic text scan as
+    // the safety net. DMs only, like follow-ups; research answers must never
+    // recurse (the research job itself never enqueues another).
+    const researchEligible =
+      !message.isGroup &&
+      deps.trigger !== "simulation" &&
+      !job.chat_id.endsWith("@g.us") &&
+      !job.chat_id.endsWith("@simulation") &&
+      settings.agent_config?.research_enabled !== false;
+    if (researchEligible) {
+      try {
+        const { detectsCheckBackPromise } = await import("./research");
+        const sentText = delivery.parts.join("\n");
+        const question = openQuestion ?? (detectsCheckBackPromise(sentText) ? message.body : null);
+        if (question) {
+          const { enqueueResearchJob } = await import("./research.server");
+          const researchJobId = await enqueueResearchJob(supabase, {
+            chatId: job.chat_id,
+            conversationId: job.conversation_id,
+            personWaId: ctx.person?.wa_id ?? null,
+            question,
+            language: intent.language,
+            sourceBody: message.body,
+            promiseText: sentText,
+            promisedAtMs: Date.now(),
+          });
+          if (!researchJobId) {
+            // The promise went out but nothing tracks it — the one state this
+            // feature exists to prevent. A human must own it.
+            const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
+            await raiseAdminAlert(
+              supabase,
+              `Reply promised to check and get back, but the research job could not be enqueued (chat ${job.chat_id}) — answer it manually. Question: ${question.slice(0, 200)}`,
+            );
+          }
+          logDecision(supabase, {
+            ...base,
+            stage: "research",
+            status: researchJobId ? "ok" : "error",
+            summary: researchJobId
+              ? "Reply promised to check and get back — tracked research job enqueued, answer due within 10 minutes"
+              : "Reply promised to check and get back but the research job enqueue FAILED — admin alerted",
+            data: {
+              question: question.slice(0, 300),
+              research_job_id: researchJobId,
+              detected_by: openQuestion ? "model" : "text_scan",
+            },
+          });
+        }
+      } catch (e) {
+        console.warn("[pipeline] research enqueue failed (reply already sent):", e);
+      }
+    }
 
     // --- Stage: memory (after the send — failures here never cost a reply) ---
     if (ctx.person) {

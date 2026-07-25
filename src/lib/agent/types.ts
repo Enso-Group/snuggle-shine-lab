@@ -34,6 +34,8 @@ export type AgentConfig = {
   react_to_trivial?: boolean;
   /** Send agent-proposed follow-ups automatically (default true; approval mode still gates them). */
   follow_ups_enabled?: boolean;
+  /** Track "I'll check and get back" promises with 10-min research jobs (default true). */
+  research_enabled?: boolean;
 };
 
 /** Everything Whapi-shaped the pipeline touches, so simulation can stub it. */
@@ -77,6 +79,14 @@ export type InboundJobPayload = {
   received_at?: number;
   /** Epoch ms when the reply should land (DMs only) — chosen at receipt. */
   target_reply_at?: number;
+  /**
+   * Persisted immediately before the send, so a crash-retry can prove that
+   * THIS job's reply (and only it) already went out. Matching any newer
+   * outbound used to be enough, but the research engine now legitimately
+   * sends interims/answers into the same conversation — an uncorrelated
+   * match silently dropped the reply.
+   */
+  deliver_started?: { at: number; first_part: string };
 };
 
 export type BotJob = {
@@ -147,6 +157,11 @@ export type IntentAnalysis = {
 export type DraftResult = {
   messages: string[];
   reasoning: string;
+  /**
+   * Set when the reply promises to check and get back: the short search query
+   * that would answer the open question. Drives the research-promise job.
+   */
+  openQuestion: string | null;
 };
 
 export type CritiqueResult = {
@@ -160,4 +175,6 @@ export type PipelineOutcome =
   | { action: "replied"; parts: string[] }
   | { action: "queued_approval"; draft: string }
   | { action: "skipped"; reason: string }
+  /** Job must run again later (e.g. anti-ban min-gap) — not a failure, no attempt burned. */
+  | { action: "deferred"; reason: string; runAfterMs: number }
   | { action: "failed"; error: string };

@@ -9,7 +9,7 @@ export type DecisionEntry = {
   job_id?: string | null;
   conversation_id?: string | null;
   chat_id?: string | null;
-  trigger: AgentTrigger | "scheduled" | "follow_up";
+  trigger: AgentTrigger | "scheduled" | "follow_up" | "research";
   stage:
     | "received"
     | "reply_gate"
@@ -22,6 +22,7 @@ export type DecisionEntry = {
     | "queued_approval"
     | "memory"
     | "follow_up"
+    | "research"
     | "moderation"
     | "welcome"
     | "post"

@@ -2,9 +2,10 @@
 // run each through the pipeline. Called inline by the webhook for low latency
 // and by the every-minute sweeper cron for retries and orphan recovery.
 import type { Json } from "@/integrations/supabase/types";
-import { claimJobs, completeJob, failJob } from "./queue.server";
+import { claimJobs, completeJob, deferJob, failJob } from "./queue.server";
 import { logDecision } from "./decisions.server";
 import { PermanentJobError, processInboundJob } from "./pipeline.server";
+import { RESEARCH_JOB_KIND } from "./research";
 import type { AgentDeps, BotJob, PipelineOutcome } from "./types";
 
 export type WorkerRunResult = {
@@ -12,10 +13,18 @@ export type WorkerRunResult = {
   results: Array<{ jobId: string; outcome: PipelineOutcome | { action: "failed"; error: string } }>;
 };
 
+// Stop starting new jobs from a claimed batch once this much wall clock is
+// spent: the platform kills the request around ~60s, and a research job alone
+// can legitimately spend ~45s (search + strong draft + pacing). Jobs not
+// started are RELEASED back to pending (attempt refunded) so the next 20s
+// tick picks them up instead of them rotting under a 3-minute claim lock.
+const BATCH_WALL_BUDGET_MS = 30_000;
+
 export async function processQueuedJobs(
   deps: AgentDeps,
   opts: { chatId?: string; max?: number } = {},
 ): Promise<WorkerRunResult> {
+  const batchStartedAt = Date.now();
   const jobs = await claimJobs(deps.supabase, {
     workerId: deps.workerId,
     chatId: opts.chatId,
@@ -24,13 +33,38 @@ export async function processQueuedJobs(
 
   const results: WorkerRunResult["results"] = [];
   for (const job of jobs) {
+    if (results.length > 0 && Date.now() - batchStartedAt > BATCH_WALL_BUDGET_MS) {
+      await deferJob(deps.supabase, job, {
+        runAfterMs: Date.now(),
+        note: "released: batch wall budget spent",
+      });
+      results.push({
+        jobId: job.id,
+        outcome: {
+          action: "deferred",
+          reason: "released: batch wall budget",
+          runAfterMs: Date.now(),
+        },
+      });
+      continue;
+    }
     try {
       const outcome = await runJob(deps, job);
-      await completeJob(
-        deps.supabase,
-        job.id,
-        outcome.action === "skipped" ? outcome.reason : undefined,
-      );
+      if (outcome.action === "deferred") {
+        // Deliberate reschedule (e.g. anti-ban min-gap before the promised
+        // research answer) — back to pending for the given time, attempt
+        // refunded, NOT completed.
+        await deferJob(deps.supabase, job, {
+          runAfterMs: outcome.runAfterMs,
+          note: outcome.reason,
+        });
+      } else {
+        await completeJob(
+          deps.supabase,
+          job.id,
+          outcome.action === "skipped" ? outcome.reason : undefined,
+        );
+      }
       results.push({ jobId: job.id, outcome });
     } catch (e: unknown) {
       const err = e as Error;
@@ -42,15 +76,20 @@ export async function processQueuedJobs(
       );
       // Out of retries = the contact gets silence. That must never pass
       // unnoticed — raise an admin alert (shows under Activity → Alerts).
+      // Research jobs are exempt from the generic alert: their deadline
+      // watchdog raises its own, correctly-worded escalation alongside the
+      // interim — two alerts for one dead job just confuses the admin.
       if (permanent || job.attempts >= job.max_attempts) {
-        try {
-          const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
-          await raiseAdminAlert(
-            deps.supabase,
-            `Reply job gave up after ${job.attempts} attempts — ${job.chat_id} will get no answer. Last error: ${String(err?.message ?? err).slice(0, 300)}`,
-          );
-        } catch (alertErr) {
-          console.error("[worker] failed to raise permanent-failure alert", alertErr);
+        if (job.kind === "inbound_reply") {
+          try {
+            const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
+            await raiseAdminAlert(
+              deps.supabase,
+              `Reply job gave up after ${job.attempts} attempts — ${job.chat_id} will get no answer. Last error: ${String(err?.message ?? err).slice(0, 300)}`,
+            );
+          } catch (alertErr) {
+            console.error("[worker] failed to raise permanent-failure alert", alertErr);
+          }
         }
         // Never-silent rule for DMs: the alert tells the admin, this tells the
         // CONTACT. Skipped for PermanentJobError — that path means WhatsApp
@@ -69,6 +108,10 @@ export async function processQueuedJobs(
 
 async function runJob(deps: AgentDeps, job: BotJob): Promise<PipelineOutcome> {
   if (job.kind === "inbound_reply") return processInboundJob(deps, job);
+  if (job.kind === RESEARCH_JOB_KIND) {
+    const { processResearchJob } = await import("./research.server");
+    return processResearchJob(deps, job);
+  }
   // Unknown kinds (from a future deploy mid-rollout) are not retried forever.
   return { action: "skipped", reason: `unknown job kind: ${job.kind}` };
 }
@@ -106,14 +149,18 @@ async function sendPermanentFailureFallback(deps: AgentDeps, job: BotJob): Promi
       .maybeSingle();
     if (!settings?.enabled) return;
 
-    // Crash-retry dedup: this path only runs after every attempt was spent,
-    // so an outbound row newer than the message means some attempt DID send
-    // before dying — a fallback on top would be a duplicate.
+    // Crash-retry dedup, CORRELATED: only this job's own attempted text (the
+    // deliver marker) or a previous fallback line proves "some attempt DID
+    // send before dying". An unrelated outbound (research interim/answer)
+    // must not suppress the never-silent fallback.
+    const dedupBodies = [PERMANENT_FAILURE_FALLBACK_LINE];
+    if (p.deliver_started?.first_part) dedupBodies.push(p.deliver_started.first_part);
     const { data: alreadyReplied } = await deps.supabase
       .from("messages")
       .select("id")
       .eq("conversation_id", job.conversation_id)
       .eq("direction", "outbound")
+      .in("body", dedupBodies)
       .gt("created_at", new Date(p.ts).toISOString())
       .limit(1);
     if (alreadyReplied?.length) return;
@@ -123,12 +170,15 @@ async function sendPermanentFailureFallback(deps: AgentDeps, job: BotJob): Promi
     // anti-ban gate as a normal reply: a fallback to a blocked contact (or
     // past the consecutive/min-gap limits) is exactly the traffic the guard
     // exists to stop.
-    const { checkOutboundAllowed, loadConversationByChatId, recordOutbound } = await import(
-      "@/lib/anti-ban.server"
-    );
+    const { checkOutboundAllowed, loadConversationByChatId, recordOutbound } =
+      await import("@/lib/anti-ban.server");
     const conv = await loadConversationByChatId(deps.supabase, job.chat_id);
     if (conv) {
-      const guard = await checkOutboundAllowed(deps.supabase, conv, PERMANENT_FAILURE_FALLBACK_LINE);
+      const guard = await checkOutboundAllowed(
+        deps.supabase,
+        conv,
+        PERMANENT_FAILURE_FALLBACK_LINE,
+      );
       if (!guard.ok) {
         logDecision(deps.supabase, {
           job_id: job.id,
@@ -174,6 +224,27 @@ async function sendPermanentFailureFallback(deps: AgentDeps, job: BotJob): Promi
     });
     // Anti-ban counters must still see this outbound like any other reply.
     await recordOutbound(deps.supabase, job.conversation_id, PERMANENT_FAILURE_FALLBACK_LINE);
+
+    // The canned line PROMISES "אחזור אליך בהקדם" — that promise is tracked
+    // like any other: a research job with the 10-minute deadline. The LLM
+    // path just proved flaky, but the research job brings its own retries,
+    // and if those die too the watchdog's interim + admin alert keep the
+    // promise from being silently broken.
+    try {
+      const { enqueueResearchJob, guessLanguage } = await import("./research.server");
+      await enqueueResearchJob(deps.supabase, {
+        chatId: job.chat_id,
+        conversationId: job.conversation_id,
+        personWaId: p.sender_id ?? null,
+        question: p.body,
+        language: guessLanguage(p.body),
+        sourceBody: p.body,
+        promiseText: PERMANENT_FAILURE_FALLBACK_LINE,
+        promisedAtMs: Date.now(),
+      });
+    } catch (e) {
+      console.error("[worker] research enqueue after fallback failed", e);
+    }
   } catch (e) {
     console.error("[worker] permanent-failure fallback send failed", e);
   }

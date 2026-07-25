@@ -16,7 +16,15 @@ vi.mock("@/lib/llm.server", async (importOriginal) => {
 import type { LLMCallInput, LLMCallResult } from "@/lib/llm.server";
 import { processInboundJob } from "../pipeline.server";
 import type { AgentDeps, BotJob, InboundJobPayload } from "../types";
-import { CONV_ID, DM_CHAT_ID, makeFakeSupa, makeFakeWhapi, seedDmTables, type FakeSupa, type Row } from "./fake-supa";
+import {
+  CONV_ID,
+  DM_CHAT_ID,
+  makeFakeSupa,
+  makeFakeWhapi,
+  seedDmTables,
+  type FakeSupa,
+  type Row,
+} from "./fake-supa";
 
 // ---------------------------------------------------------------------------
 // LLM mock dispatch: one handler per ai_usage_log source tag. Regex keys let a
@@ -28,7 +36,9 @@ type SourceHandler = [match: string | RegExp, respond: (input: LLMCallInput) => 
 
 function llmRespondsBySource(handlers: SourceHandler[]) {
   callLLMMock.mockImplementation(async (input: LLMCallInput): Promise<LLMCallResult> => {
-    const hit = handlers.find(([m]) => (typeof m === "string" ? m === input.source : m.test(input.source)));
+    const hit = handlers.find(([m]) =>
+      typeof m === "string" ? m === input.source : m.test(input.source),
+    );
     if (!hit) throw new Error(`no LLM handler for source "${input.source}"`);
     return { content: hit[1](input), model: "test-model", toolCalls: [], finishReason: "stop" };
   });
@@ -39,7 +49,9 @@ function llmInputs(): LLMCallInput[] {
 }
 
 function callCount(match: string | RegExp): number {
-  return llmInputs().filter((i) => (typeof match === "string" ? i.source === match : match.test(i.source))).length;
+  return llmInputs().filter((i) =>
+    typeof match === "string" ? i.source === match : match.test(i.source),
+  ).length;
 }
 
 const INTENT_JSON = JSON.stringify({
@@ -53,8 +65,17 @@ const INTENT_JSON = JSON.stringify({
 });
 
 const DRAFT_TEXT = "המחיר תלוי בהיקף — אשמח לפרט לך בדיוק מה מקבלים 😊";
-const DRAFT_JSON = JSON.stringify({ messages: [DRAFT_TEXT], reasoning: "Answered the pricing question." });
-const MEMORY_JSON = JSON.stringify({ facts: [], language: null, sentiment: null, funnel_stage: null, follow_up: null });
+const DRAFT_JSON = JSON.stringify({
+  messages: [DRAFT_TEXT],
+  reasoning: "Answered the pricing question.",
+});
+const MEMORY_JSON = JSON.stringify({
+  facts: [],
+  language: null,
+  sentiment: null,
+  funnel_stage: null,
+  follow_up: null,
+});
 
 // ---------------------------------------------------------------------------
 // Job/deps builders around the shared DM seed.
@@ -109,7 +130,13 @@ function seedWithTrigger(nowMs: number, job: BotJob): FakeSupa {
 }
 
 function makeDeps(fake: FakeSupa, whapi: ReturnType<typeof makeFakeWhapi>): AgentDeps {
-  return { supabase: fake.client, whapi: whapi.port, trigger: "inbound", workerId: "worker-test", humanPacing: true };
+  return {
+    supabase: fake.client,
+    whapi: whapi.port,
+    trigger: "inbound",
+    workerId: "worker-test",
+    humanPacing: true,
+  };
 }
 
 /**
@@ -136,7 +163,9 @@ type DeliverDecision = Row & {
 };
 
 function deliverDecisions(fake: FakeSupa): DeliverDecision[] {
-  return ((fake.inserts.bot_decisions ?? []) as DeliverDecision[]).filter((d) => d.stage === "deliver");
+  return ((fake.inserts.bot_decisions ?? []) as DeliverDecision[]).filter(
+    (d) => d.stage === "deliver",
+  );
 }
 
 beforeEach(() => {
@@ -231,7 +260,11 @@ describe("processInboundJob — newer-message consolidation", () => {
             chat_id: DM_CHAT_ID,
             conversation_id: CONV_ID,
             status: "pending",
-            payload: { whapi_message_id: "wamid-in-2", body: "ורגע, אתם עובדים גם בשישי?", ts: Date.now() + 1_000 },
+            payload: {
+              whapi_message_id: "wamid-in-2",
+              body: "ורגע, אתם עובדים גם בשישי?",
+              ts: Date.now() + 1_000,
+            },
             run_after: newerIso,
             created_at: newerIso,
           });
@@ -239,7 +272,11 @@ describe("processInboundJob — newer-message consolidation", () => {
         },
       ],
       // The consolidation stage merges both questions in ONE extra call.
-      [/consolid/i, () => JSON.stringify({ messages: [CONSOLIDATED_TEXT], reasoning: "Merged both questions." })],
+      [
+        /consolid/i,
+        () =>
+          JSON.stringify({ messages: [CONSOLIDATED_TEXT], reasoning: "Merged both questions." }),
+      ],
       ["agent_memory", () => MEMORY_JSON],
     ]);
 
@@ -260,7 +297,9 @@ describe("processInboundJob — newer-message consolidation", () => {
 
     // The newer message's queued job was superseded through the queue helper —
     // a real status transition, or its own worker would double-reply.
-    const superseded = fake.updates.filter((u) => u.table === "bot_jobs" && u.patch.status === "superseded");
+    const superseded = fake.updates.filter(
+      (u) => u.table === "bot_jobs" && u.patch.status === "superseded",
+    );
     expect(superseded.length).toBeGreaterThanOrEqual(1);
     expect(superseded.some((u) => u.applied >= 1)).toBe(true);
     const newerJob = fake.state.bot_jobs.find((j) => j.id === "job-newer");
@@ -346,7 +385,9 @@ describe("processInboundJob — never-silent safety net", () => {
 
     // The silence is explained in the decision trail, naming the guard reason.
     const skips = (fake.inserts.bot_decisions ?? []).filter(
-      (d) => typeof d.summary === "string" && (d.summary as string).includes("Fallback blocked by the anti-ban guard"),
+      (d) =>
+        typeof d.summary === "string" &&
+        (d.summary as string).includes("Fallback blocked by the anti-ban guard"),
     );
     expect(skips).toHaveLength(1);
     expect((skips[0] as { data?: { code?: string } }).data?.code).toBe("blocked");
@@ -391,9 +432,12 @@ describe("processInboundJob — already-replied guard is crash-retry dedup only"
     expect(whapi.sends).toEqual([{ chatId: DM_CHAT_ID, body: DRAFT_TEXT }]);
   });
 
-  it("attempt 2+: skips as already-replied — the retry means a previous attempt died after its send", async () => {
+  it("attempt 2+ WITH a deliver marker matching the outbound: skips as already-replied", async () => {
     const nowMs = Date.now();
     const job = { ...makeJob(nowMs), attempts: 2 };
+    // The previous attempt persisted its marker right before sending exactly
+    // this text — the outbound row is provably OUR reply.
+    job.payload.deliver_started = { at: nowMs - 5_000, first_part: "רגע, אני בודק" };
     const fake = seedWithCrossingOutbound(nowMs, job);
     const whapi = makeFakeWhapi();
     llmRespondsBySource([
@@ -406,5 +450,25 @@ describe("processInboundJob — already-replied guard is crash-retry dedup only"
 
     expect(outcome).toEqual({ action: "skipped", reason: "already replied" });
     expect(whapi.sends).toEqual([]);
+  });
+
+  it("attempt 2+ with an UNRELATED outbound (e.g. a research interim) still replies — uncorrelated rows never swallow a reply", async () => {
+    const nowMs = Date.now();
+    const job = { ...makeJob(nowMs), attempts: 2 };
+    // No deliver marker: no previous attempt ever reached the send. The
+    // crossing outbound is the research engine talking about something else.
+    const fake = seedWithCrossingOutbound(nowMs, job);
+    const whapi = makeFakeWhapi();
+    llmRespondsBySource([
+      ["agent_intent", () => INTENT_JSON],
+      ["agent_draft", () => DRAFT_JSON],
+      ["agent_memory", () => MEMORY_JSON],
+    ]);
+
+    const outcome = await settle(processInboundJob(makeDeps(fake, whapi), job));
+    await vi.runAllTimersAsync();
+
+    expect(outcome.action).toBe("replied");
+    expect(whapi.sends).toEqual([{ chatId: DM_CHAT_ID, body: DRAFT_TEXT }]);
   });
 });

@@ -123,7 +123,11 @@ ${judgeGap ? `\n(עברו ${gapText} מאז ההודעה האחרונה בשיח
  */
 function parseReplyEnvelope(content: string, maxParts: number, stage: string): DraftResult {
   try {
-    const parsed = parseJsonLoose<{ messages?: unknown; reasoning?: unknown }>(content);
+    const parsed = parseJsonLoose<{
+      messages?: unknown;
+      reasoning?: unknown;
+      open_question?: unknown;
+    }>(content);
     const parts = Array.isArray(parsed.messages)
       ? normalizeReplyParts(
           parsed.messages.map((m) => String(m ?? "")),
@@ -132,8 +136,13 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
       : [];
     if (parts.length) {
       // Only the strings inside "messages" are ever returned as reply text; the
-      // "reasoning" field is kept for the decision log and never delivered.
-      return { messages: parts, reasoning: String(parsed.reasoning ?? "") };
+      // "reasoning" and "open_question" fields stay internal (decision log /
+      // research job) and are never delivered.
+      const openQuestion =
+        typeof parsed.open_question === "string" && parsed.open_question.trim()
+          ? parsed.open_question.trim().slice(0, 400)
+          : null;
+      return { messages: parts, reasoning: String(parsed.reasoning ?? ""), openQuestion };
     }
     // Parsed as JSON but without a usable "messages" array: this is the raw
     // envelope, not a reply. Fall through to the leak guard below.
@@ -154,7 +163,9 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
     // reply) is safe to send as-is.
     const plain = normalizeReplyParts([content], maxParts);
     if (!plain.length) throw new Error(`${stage} stage returned an empty reply`);
-    return { messages: plain, reasoning: "Free-form output — sent as-is" };
+    // openQuestion null: the pipeline's deterministic promise detector still
+    // scans the sent text, so a free-form "אבדוק ואחזור" is not lost.
+    return { messages: plain, reasoning: "Free-form output — sent as-is", openQuestion: null };
   }
 }
 
@@ -207,9 +218,10 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
 
 כלל מחייב — אף פעם לא שתיקה: לעולם אל תחזיר תשובה ריקה. אם ההודעה עוסקת בנושא שמחוץ לתחום שלנו או לידע שלך — ענה בקצרה ובטבעיות, בסגנון הדמות, שעם זה אתה לא יכול לעזור או שאתה פשוט לא יודע, ואם מתאים החזר את השיחה לתחום שלנו. אל תמציא תשובה ואל תשאיר את האדם בלי מענה.
 
-פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply"}.
+פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply", "open_question": null או "שאילתת חיפוש"}.
 - בין 1 ל-${maxParts} הודעות, כמו שאדם כותב בוואטסאפ: קצרות, בלי חומות טקסט.
-- ברוב המקרים הודעה אחת מספיקה. פצל רק אם יש באמת שני חלקים נפרדים (למשל תשובה + שאלת המשך).`;
+- ברוב המקרים הודעה אחת מספיקה. פצל רק אם יש באמת שני חלקים נפרדים (למשל תשובה + שאלת המשך).
+- open_question: אם התשובה שלך מבטיחה לבדוק ולחזור (כי התשובה העובדתית לא נמצאת במאגר הידע או בשיחה) — כתוב כאן שאילתת חיפוש קצרה וממוקדת שתמצא את התשובה, בשפה שבה סביר שהמידע קיים ברשת. אם לא הבטחת לבדוק — null.`;
 
   const messages = [
     { role: "system" as const, content: system },
@@ -263,7 +275,7 @@ export async function consolidateReply(
 
 כללי איכות מחייבים (אין שלב בדיקה אחריך): כל התשובה בשפה ${intent.language} בלבד; עובדות עסקיות רק ממאגר הידע או מהשיחה; טון טבעי לוואטסאפ בלי פתיחים רובוטיים; אסור כל רמז לבוט/AI/מערכת; לעולם לא תשובה ריקה.
 
-פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", ...], "reasoning": "one short sentence in English"}.
+פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", ...], "reasoning": "one short sentence in English", "open_question": null או "שאילתת חיפוש אם הבטחת לבדוק ולחזור"}.
 - בין 1 ל-${maxParts} הודעות קצרות וטבעיות.`;
 
   const user = `היסטוריה אחרונה:

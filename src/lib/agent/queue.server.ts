@@ -156,6 +156,30 @@ export async function completeJob(supabase: Supa, jobId: string, note?: string):
     .eq("id", jobId);
 }
 
+/**
+ * Put a claimed job back in the queue for a specific time WITHOUT burning an
+ * attempt — for deliberate deferrals (e.g. the research answer waiting out
+ * the anti-ban min-gap), never for failures. The attempt counted at claim
+ * time is refunded so max_attempts keeps meaning "real failures".
+ */
+export async function deferJob(
+  supabase: Supa,
+  job: BotJob,
+  args: { runAfterMs: number; note: string },
+): Promise<void> {
+  await supabase
+    .from("bot_jobs")
+    .update({
+      status: "pending",
+      run_after: new Date(args.runAfterMs).toISOString(),
+      attempts: Math.max(job.attempts - 1, 0),
+      locked_until: null,
+      last_error: `deferred: ${args.note}`.slice(0, 1000),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id);
+}
+
 export async function failJob(supabase: Supa, job: BotJob, error: string): Promise<void> {
   const permanent = job.attempts >= job.max_attempts;
   await supabase

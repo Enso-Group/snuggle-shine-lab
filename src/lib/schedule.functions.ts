@@ -253,6 +253,58 @@ export const approvePending = createServerFn({ method: "POST" })
         const { recordOutbound } = await import("./anti-ban.server");
         await recordOutbound(supabaseAdmin, row.conversation_id, body);
       }
+      // An approved DM reply that PROMISES "I'll check and get back" gets the
+      // same tracked 10-minute research job as an auto-sent one — approval
+      // mode must not silently disable the promise guarantee. source
+      // "research" is the promised answer itself and must never re-enqueue
+      // (that would loop).
+      try {
+        if (
+          row.conversation_id &&
+          row.source !== "research" &&
+          textBody &&
+          !row.target_chat_id.endsWith("@g.us") &&
+          !row.target_chat_id.endsWith("@simulation")
+        ) {
+          const { detectsCheckBackPromise } = await import("./agent/research");
+          if (detectsCheckBackPromise(textBody)) {
+            const { enqueueResearchJob, guessLanguage } = await import("./agent/research.server");
+            const { data: lastInbound } = await supabaseAdmin
+              .from("messages")
+              .select("body, sender_id")
+              .eq("conversation_id", row.conversation_id)
+              .eq("direction", "inbound")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            const researchJobId = await enqueueResearchJob(supabaseAdmin, {
+              chatId: row.target_chat_id,
+              conversationId: row.conversation_id,
+              personWaId: lastInbound?.sender_id ?? null,
+              question: lastInbound?.body || null,
+              language: guessLanguage(String(lastInbound?.body || textBody)),
+              sourceBody: String(lastInbound?.body ?? ""),
+              promiseText: textBody,
+              promisedAtMs: Date.now(),
+            });
+            log(
+              `check-back promise detected in approved reply — research job ${researchJobId ?? "ENQUEUE FAILED"}`,
+            );
+            if (!researchJobId) {
+              // Same rule as the auto-send pipeline: a delivered promise with
+              // no tracking job is an admin-alert condition, not a log line.
+              const { raiseAdminAlert } = await import("./anti-ban.server");
+              await raiseAdminAlert(
+                supabaseAdmin,
+                `Approved reply promised to check and get back, but the research job could not be enqueued (chat ${row.target_chat_id}) — answer it manually.`,
+              );
+            }
+          }
+        }
+      } catch (e) {
+        // Never fail an approval over promise tracking — the send already happened.
+        log(`research enqueue after approval failed: ${String((e as Error)?.message ?? e)}`);
+      }
     }
 
     const { logDecision } = await import("./agent/decisions.server");
