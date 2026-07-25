@@ -185,7 +185,14 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // the old separate critique call cost a second strong pass per cycle and is
   // gone from the DM path) ---
   t = Date.now();
-  const draft = await draftReply(ctx, intent);
+  // Retries get a tighter draft budget: attempt 1 already proved this thread
+  // is slow, and a retry that outlives the ~60s request wall dies with no
+  // catch path — the exact silent-death chain from 2026-07-25.
+  const draft = await draftReply(
+    ctx,
+    intent,
+    job.attempts >= 2 ? { timeoutMs: 12_000, budgetMs: 15_000 } : {},
+  );
   // Deterministic safety nets, no LLM: persona-leak scrub, then a final hard
   // gate that strips any part still looking like the model's raw JSON
   // envelope. Defense in depth — draftReply already refuses to return raw
@@ -374,6 +381,65 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
         `🔔 הסלמה בקבוצה "${ctx.groupProfile.name ?? job.chat_id}": ${intent.escalate_reason ?? intent.intent}\nמאת: ${p.sender_name || p.sender_id}\nהודעה: ${p.body.slice(0, 200)}\nטיוטת תשובה ממתינה באישורים.`,
       );
     }
+    // An ESCALATED DM parked in Approvals used to mean: contact hears
+    // NOTHING until a human notices the queue (live 2026-07-25: Gigi's
+    // "why don't you answer me" was itself escalated — parked, silent).
+    // Three duties here: the admin is ALERTED (approvals have no push), the
+    // contact gets a holding line NOW, and the open question gets a tracked
+    // research job so the 10-minute machinery answers even if nobody
+    // approves. Global approval-all WITHOUT escalation keeps the old quiet
+    // behavior — that mode is a deliberate human choice.
+    if (
+      intent.escalate &&
+      !message.isGroup &&
+      deps.trigger !== "simulation" &&
+      !job.chat_id.endsWith("@simulation")
+    ) {
+      try {
+        const { raiseAdminAlert, checkOutboundAllowed, loadConversationByChatId } =
+          await import("@/lib/anti-ban.server");
+        await raiseAdminAlert(
+          supabase,
+          `Escalated DM parked in Approvals — ${job.chat_id}: ${intent.escalate_reason ?? intent.intent}. Holding line sent; research follow-up tracking the question.`,
+        );
+        // Holding line only if nothing was sent for this message yet.
+        const { holdingLineFor } = await import("./research");
+        const line = holdingLineFor(intent.language);
+        const { data: outSince } = await supabase
+          .from("messages")
+          .select("id")
+          .eq("conversation_id", job.conversation_id)
+          .eq("direction", "outbound")
+          .gt("created_at", new Date(p.ts).toISOString())
+          .limit(1);
+        if (!outSince?.length) {
+          const escConv = await loadConversationByChatId(supabase, job.chat_id);
+          const escGuard = escConv ? await checkOutboundAllowed(supabase, escConv, line) : null;
+          if (!escConv || escGuard?.ok) {
+            await deliverReply(supabase, deps.whapi, ctx, [line], {
+              humanPacing: deps.humanPacing,
+              botName: settings.bot_name,
+            });
+          }
+        }
+        // The holding line promises an answer — track it like any promise.
+        // promiseText is what the CONTACT saw (the holding line), never the
+        // parked draft they haven't received.
+        const { enqueueResearchJob } = await import("./research.server");
+        await enqueueResearchJob(supabase, {
+          chatId: job.chat_id,
+          conversationId: job.conversation_id,
+          personWaId: ctx.person?.wa_id ?? null,
+          question: p.body,
+          language: intent.language,
+          sourceBody: p.body,
+          promiseText: line,
+          promisedAtMs: Date.now(),
+        });
+      } catch (e) {
+        console.error("[pipeline] escalation holding-line path failed", e);
+      }
+    }
     return { action: "queued_approval", draft: joined };
   }
 
@@ -431,6 +497,17 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       });
       return { action: "skipped", reason: "superseded" };
     }
+  } else if (newerRows?.length && job.attempts >= 2) {
+    // Retry attempts skip the consolidation round entirely: it costs another
+    // strong call at the tail of an attempt that must stay under the request
+    // wall. Sending the drafted reply as-is (which the history already
+    // partially covers) beats dying mid-consolidation with nothing sent.
+    logDecision(supabase, {
+      ...base,
+      stage: "draft",
+      summary: `Retry attempt ${job.attempts}: skipping consolidation of ${newerRows.length} newer message(s) to stay under the request wall`,
+      data: { consolidation_skipped: true, newer_count: newerRows.length },
+    });
   } else if (newerRows?.length) {
     t = Date.now();
     // Everything up to this timestamp is covered by the consolidated reply.

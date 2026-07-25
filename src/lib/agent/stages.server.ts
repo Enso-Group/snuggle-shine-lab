@@ -175,7 +175,11 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
 // no-AI-tells, length) are rules of THIS prompt now: one call returns final
 // parts, which is what keeps the whole cycle inside the 90s reply SLA.
 // ---------------------------------------------------------------------------
-export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Promise<DraftResult> {
+export async function draftReply(
+  ctx: AgentContext,
+  intent: IntentAnalysis,
+  opts: { timeoutMs?: number; budgetMs?: number } = {},
+): Promise<DraftResult> {
   const maxParts = ctx.settings.agent_config?.max_reply_parts ?? 3;
 
   // Time-gap awareness: on a fresh start the old thread is gone from the
@@ -237,8 +241,10 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
     // The draft gets the biggest slice of the 90s SLA. 15s per attempt (not
     // the 25s default) so a second candidate model gets a real shot inside
     // the budget — the pinned strong model is known to stall on long prompts.
-    timeoutMs: 15_000,
-    budgetMs: 25_000,
+    // Retry attempts pass tighter budgets: the whole attempt must fit the
+    // ~60s request wall or it dies with no catch path (live 2026-07-25).
+    timeoutMs: opts.timeoutMs ?? 15_000,
+    budgetMs: opts.budgetMs ?? 25_000,
     messages,
   });
 

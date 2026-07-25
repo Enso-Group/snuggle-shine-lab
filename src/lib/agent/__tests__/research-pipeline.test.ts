@@ -257,6 +257,76 @@ describe("pipeline → research promise handoff", () => {
     expect(researchJobs(fake)).toHaveLength(0);
   });
 
+  it("escalated DM: parks the draft in Approvals but alerts, sends a holding line, and tracks a research job", async () => {
+    const now = Date.now();
+    llmRespondsBySource([
+      [
+        "agent_intent",
+        () =>
+          JSON.stringify({
+            intent: "frustrated about no follow-up",
+            language: "he",
+            urgency: "high",
+            sentiment: "frustrated",
+            goal: "reassure and answer",
+            escalate: true,
+            escalate_reason: "explicit frustration over delay",
+          }),
+      ],
+      [
+        "agent_draft",
+        () => JSON.stringify({ messages: ["מצטער על העיכוב, אני על זה"], reasoning: "Apology." }),
+      ],
+    ]);
+    const job = makeJob(now);
+    const fake = seedWithTrigger(now, job);
+    const whapi = makeFakeWhapi();
+
+    const outcome = await processInboundJob(makeDeps(fake, whapi), job);
+
+    expect(outcome.action).toBe("queued_approval");
+    // Draft parked for a human…
+    expect(fake.inserts.scheduled_approvals).toHaveLength(1);
+    // …but the contact is NOT left hanging,
+    const { holdingLineFor } = await import("../research");
+    expect(whapi.sends.map((s) => s.body)).toEqual([holdingLineFor("he")]);
+    // the admin is loudly told,
+    const alert = (fake.inserts.commands_log ?? []).find((r) =>
+      String(r.prompt).includes("Escalated DM parked in Approvals"),
+    );
+    expect(alert).toBeTruthy();
+    // and the open question is tracked with the 10-minute machinery.
+    expect(researchJobs(fake)).toHaveLength(1);
+  });
+
+  it("retry attempts draft with a tighter budget so the whole attempt fits the request wall", async () => {
+    const now = Date.now();
+    llmRespondsBySource([
+      ["agent_intent", () => INTENT_JSON],
+      [
+        "agent_draft",
+        () =>
+          JSON.stringify({
+            messages: ["תשובה"],
+            reasoning: "Answer.",
+            open_question: null,
+          }),
+      ],
+      ["agent_memory", () => MEMORY_JSON],
+    ]);
+    const job = { ...makeJob(now), attempts: 2 };
+    const fake = seedWithTrigger(now, job);
+    const whapi = makeFakeWhapi();
+
+    await processInboundJob(makeDeps(fake, whapi), job);
+
+    const draftCall = callLLMMock.mock.calls
+      .map(([i]) => i)
+      .find((i) => i.source === "agent_draft");
+    expect(draftCall?.budgetMs).toBe(15_000);
+    expect(draftCall?.timeoutMs).toBe(12_000);
+  });
+
   it("defers (not drops) a DM reply that hits the anti-ban min-gap", async () => {
     const now = Date.now();
     llmRespondsBySource([

@@ -115,10 +115,17 @@ const CHECK_BACK_PATTERNS: RegExp[] = [
   new RegExp(`${HB}(אעדכן|נעדכן)\\s+(אותך|אותכם|אתכם|בהמשך|בהקדם)`),
   // Hebrew: "checking it / on it and getting back"
   new RegExp(`${HB}(בודקת?|מבררת?)\\s+(את\\s+זה|ואחזור|ונחזור|לגבי)`),
+  // Hebrew: "I'll send you / find you"
+  new RegExp(`${HB}(אשלח|נשלח)\\s+(לך|לכם|אליך|בהמשך|בהקדם|את)`),
+  new RegExp(`${HB}(אמצא|נמצא)\\s+(לך|לכם|עבורך)`),
   // English
-  /\bi(?:'|’)?ll (?:check|verify|look into|find out|ask)\b/i,
-  /\bi will (?:check|verify|look into|find out|ask)\b/i,
-  /\blet me (?:check|verify|look into|find out)\b/i,
+  /\bi(?:'|’)?ll (?:check|verify|look into|look up|find out|find|ask|send|share|get)\b/i,
+  /\bi will (?:check|verify|look into|look up|find out|find|ask|send|share|get)\b/i,
+  /\blet me (?:check|verify|look into|look up|find out|find)\b/i,
+  /\bwill (?:send|share|find|have) (?:it|that|one|some|the|a|you)\b/i,
+  /\b(?:i(?:'|’)?m|i am|we(?:'|’)?re|we are) (?:on it|looking (?:it |that |this )?up|working on (?:it|that|this))\b/i,
+  /\bcurrently looking\b/i,
+  /\bas soon as (?:i|we) (?:have|find|know|get)\b/i,
   /\b(?:will\s+)?get back to you\b/i,
   /\bwill get back\b/i,
   /\bcircle back\b/i,
@@ -145,6 +152,20 @@ const INTERIM_LINES: Record<string, string> = {
 export function interimLineFor(language: string | null | undefined): string {
   const code = (language ?? "he").toLowerCase().slice(0, 2);
   return INTERIM_LINES[code] ?? INTERIM_LINES.en;
+}
+
+// Holding line for an ESCALATED DM: the drafted reply parked in Approvals,
+// but the contact must hear something now — a human-sounding "I'm on it".
+const HOLDING_LINES: Record<string, string> = {
+  he: "קיבלתי — אני בודק את זה לעומק ואחזור אליך עם תשובה מסודרת 🙏",
+  en: "Got it — let me look into this properly and I'll get back to you with a full answer.",
+  ru: "Понял — разберусь с этим как следует и вернусь к вам с полным ответом.",
+  ar: "استلمت — سأبحث في الأمر جيدًا وأعود إليك بإجابة وافية.",
+};
+
+export function holdingLineFor(language: string | null | undefined): string {
+  const code = (language ?? "he").toLowerCase().slice(0, 2);
+  return HOLDING_LINES[code] ?? HOLDING_LINES.en;
 }
 
 /**

@@ -96,6 +96,19 @@ export async function processQueuedJobs(
         // restricted the account and the bot was just disabled, so sending
         // more traffic is exactly wrong.
         if (!permanent) await sendPermanentFailureFallback(deps, job);
+        // Mark handled so the dead-job sweep (which exists for wall-killed
+        // jobs whose catch path never ran) doesn't act on this one again.
+        try {
+          await deps.supabase
+            .from("bot_jobs")
+            .update({
+              payload: { ...job.payload, fallback_handled: true },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", job.id);
+        } catch (markErr) {
+          console.error("[worker] failed to mark fallback_handled", markErr);
+        }
       }
       results.push({
         jobId: job.id,
@@ -114,6 +127,92 @@ async function runJob(deps: AgentDeps, job: BotJob): Promise<PipelineOutcome> {
   }
   // Unknown kinds (from a future deploy mid-rollout) are not retried forever.
   return { action: "skipped", reason: `unknown job kind: ${job.kind}` };
+}
+
+export type DeadJobSweepResult = {
+  checked: number;
+  handled: number;
+  results: Array<{ id: string; action: string }>;
+};
+
+/**
+ * Never-silent backstop for WALL-KILLED reply jobs. A job whose attempts all
+ * die by platform kill (request exceeds ~60s) never runs the worker's catch
+ * path: the claim RPC's crash recovery flips it straight to 'failed' with
+ * "worker lock expired" and NOTHING fires — no alert, no fallback, contact
+ * silence (live 2026-07-25, Gigi: three wall-killed attempts, zero output).
+ * This sweep runs from the sweeper ticks and gives every recently-failed
+ * inbound_reply job the same treatment the catch path would have: admin
+ * alert + canned fallback line + a tracked research job for its promise.
+ * Exactly once per job (fallback_handled CAS).
+ */
+export async function sweepDeadReplyJobs(
+  deps: AgentDeps,
+  opts: { max?: number } = {},
+): Promise<DeadJobSweepResult> {
+  const max = opts.max ?? 2;
+  const results: DeadJobSweepResult["results"] = [];
+
+  const { data: rows, error } = await deps.supabase
+    .from("bot_jobs")
+    .select("*")
+    .eq("kind", "inbound_reply")
+    .eq("status", "failed")
+    .gte("updated_at", new Date(Date.now() - 45 * 60_000).toISOString())
+    .order("updated_at", { ascending: true })
+    .limit(20);
+  if (error) {
+    console.warn("[worker] dead-job sweep load failed:", error.message);
+    return { checked: 0, handled: 0, results };
+  }
+
+  let handled = 0;
+  for (const row of (rows ?? []) as BotJob[]) {
+    if (handled >= max) break;
+    const p = row.payload;
+    if (p?.fallback_handled) continue;
+    if (row.chat_id.endsWith("@g.us") || row.chat_id.endsWith("@simulation")) continue;
+
+    // CAS the flag first — one actor per job, ever.
+    const { data: claimed } = await deps.supabase
+      .from("bot_jobs")
+      .update({
+        payload: { ...p, fallback_handled: true },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("updated_at", row.updated_at)
+      .select("id");
+    if (!claimed?.length) continue;
+
+    try {
+      const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
+      await raiseAdminAlert(
+        deps.supabase,
+        `Reply job died wall-killed after ${row.attempts} attempts — ${row.chat_id} got nothing. Sending the canned fallback + research follow-up. Last error: ${String(row.last_error ?? "").slice(0, 200)}`,
+      );
+      // Sends the canned line under the usual guards and enqueues the
+      // research job that tracks its "אחזור אליך" promise. Its own dedup
+      // (deliver marker + fallback-line body match) protects against the
+      // rare crash-after-send case.
+      await sendPermanentFailureFallback(deps, row);
+      logDecision(deps.supabase, {
+        job_id: row.id,
+        conversation_id: row.conversation_id,
+        chat_id: row.chat_id,
+        trigger: deps.trigger,
+        stage: "deliver",
+        summary: `Dead-job sweep: reply job was wall-killed ${row.attempts}x with no catch path — canned fallback + research follow-up dispatched`,
+        data: { fallback: "dead_job_sweep", attempts: row.attempts, last_error: row.last_error },
+      });
+      handled++;
+      results.push({ id: row.id, action: "handled" });
+    } catch (e) {
+      console.error("[worker] dead-job sweep failed for job", row.id, e);
+      results.push({ id: row.id, action: "failed" });
+    }
+  }
+  return { checked: rows?.length ?? 0, handled, results };
 }
 
 /**

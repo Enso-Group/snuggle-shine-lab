@@ -24,6 +24,11 @@ describe("detectsCheckBackPromise", () => {
     "I'll check with the team and get back to you",
     "Let me check on that for you",
     "I will look into it and circle back",
+    // The exact live sentences that were MISSED on 2026-07-25 (Gigi):
+    "I'm currently looking up a really interesting AI report for you. I'll send it over as soon as I have a good one to share.",
+    "I'm on it and will send the best one your way shortly.",
+    "אשלח לך את הדוח בהמשך היום",
+    "אמצא לך משהו מעניין ואשלח",
   ])("detects a promise in %s", (text) => {
     expect(detectsCheckBackPromise(text)).toBe(true);
   });
@@ -99,14 +104,17 @@ describe("interim update", () => {
     expect(RESEARCH_INTERIM_AFTER_MS).toBeLessThan(RESEARCH_DEADLINE_MS - 60_000);
   });
 
-  it("interim lines are persona-safe and never JSON-shaped", () => {
-    for (const lang of ["he", "en", "ru", null]) {
-      const line = interimLineFor(lang);
-      expect(line.length).toBeGreaterThan(10);
-      expect(leaksPersona(line)).toBe(false);
-      expect(looksLikeStructuredOutput(line)).toBe(false);
+  it("interim and holding lines are persona-safe and never JSON-shaped", async () => {
+    const { holdingLineFor } = await import("../research");
+    for (const lang of ["he", "en", "ru", "ar", null]) {
+      for (const line of [interimLineFor(lang), holdingLineFor(lang)]) {
+        expect(line.length).toBeGreaterThan(10);
+        expect(leaksPersona(line)).toBe(false);
+        expect(looksLikeStructuredOutput(line)).toBe(false);
+      }
     }
     expect(interimLineFor("he")).not.toBe(interimLineFor("en"));
+    expect(holdingLineFor("he")).not.toBe(holdingLineFor("en"));
   });
 });
 

@@ -100,14 +100,18 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           let research: Record<string, unknown> | string = {};
           try {
             const { parseResearchPayload } = await import("@/lib/agent/research");
+            const { isTavilyConfigured } = await import("@/lib/tavily.server");
             const { data: rjobs } = await supabase
               .from("bot_jobs")
-              .select("status, attempts, payload, created_at, updated_at")
+              .select("status, attempts, payload, created_at, updated_at, last_error")
               .eq("kind", "research_answer")
               .order("created_at", { ascending: false })
               .limit(10);
             const nowMs = Date.now();
             research = {
+              // Whether the production runtime can actually read the Tavily
+              // secret — the boolean only, never the value.
+              tavily_configured: isTavilyConfigured(),
               recent: (rjobs ?? []).map((j) => {
                 const p = parseResearchPayload(j.payload);
                 return {
@@ -121,6 +125,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                     !!p && j.status !== "done" && j.status !== "superseded"
                       ? nowMs > p.deadline_at
                       : false,
+                  last_error: j.last_error ? String(j.last_error).slice(0, 200) : null,
                 };
               }),
             };
@@ -487,6 +492,19 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             researchInterims = { error: String((e as Error)?.message ?? e).slice(0, 300) };
           }
 
+          // Never-silent backstop for WALL-KILLED reply jobs: attempts that
+          // die by platform kill never run the worker's catch path, so the
+          // job lands in 'failed' with zero output. This pass gives such jobs
+          // the alert + canned fallback + research follow-up they were owed.
+          let deadJobs: unknown = null;
+          try {
+            const { sweepDeadReplyJobs } = await import("@/lib/agent/worker.server");
+            deadJobs = await sweepDeadReplyJobs(deps, { max: 2 });
+          } catch (e) {
+            console.error("[jobs] dead-job sweep failed", e);
+            deadJobs = { error: String((e as Error)?.message ?? e).slice(0, 300) };
+          }
+
           // Cap at 3 per tick: each job may do a short (<=20s) top-up wait, and
           // they run serially, so this bounds a single Worker invocation's time.
           // Jobs beyond the cap are picked up on the next 20s tick.
@@ -521,6 +539,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
               claimed: run.claimed,
               results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
               research_interims: researchInterims,
+              dead_jobs: deadJobs,
               posts,
             });
           }
@@ -623,6 +642,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
             follow_ups: followUps,
             research_interims: researchInterims,
+            dead_jobs: deadJobs,
             groups,
             analytics,
             cleanup,

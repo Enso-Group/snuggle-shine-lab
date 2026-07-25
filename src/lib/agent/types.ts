@@ -87,6 +87,11 @@ export type InboundJobPayload = {
    * match silently dropped the reply.
    */
   deliver_started?: { at: number; first_part: string };
+  /**
+   * Set by the dead-job sweep once it handled a wall-killed job (fallback
+   * line + alert) — the sweep must act exactly once per job.
+   */
+  fallback_handled?: boolean;
 };
 
 export type BotJob = {
