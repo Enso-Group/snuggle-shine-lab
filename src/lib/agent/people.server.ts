@@ -65,9 +65,17 @@ export async function loadOrCreatePerson(
   supabase: Supa,
   waId: string,
   displayName?: string,
+  options?: { dmChatId?: string },
 ): Promise<PersonRow | null> {
   // Canonical key: one human = one row, however Whapi spelled the id today.
-  const canon = normalizeWaId(waId);
+  // For DM messages the caller passes dmChatId and the CHAT id is the key:
+  // in a 1:1 the chat IS the person, and chat ids stay phone-shaped even when
+  // the sender id arrives as a LinkedDevice '@lid' spelling — keying on the
+  // sender would mint a second, unroutable profile for the same human. The
+  // sender id then only contributes the display-name fallback. No fallback to
+  // waId when dmChatId doesn't normalize: that would resurrect the '@lid'
+  // dupe; going memory-less for one junk-id message is the cheaper failure.
+  const canon = normalizeWaId(options?.dmChatId ?? waId);
   if (!canon) return null;
   try {
     // Legacy-tolerant lookup until stored rows converge on the canonical key:

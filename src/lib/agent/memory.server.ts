@@ -45,6 +45,11 @@ ${person.facts.length ? person.facts.map((f) => `- ${f.text}`).join("\n") : "(א
       source: "agent_memory",
       json: true,
       overrides: { model_strong: ctx.settings.model_strong, model_fast: ctx.settings.model_fast },
+      // Post-send, but still inside the same ~60s-walled request as the
+      // reply: unbudgeted retries here could get the request killed before
+      // the job is marked done. A failure only costs memory, never a reply.
+      timeoutMs: 8_000,
+      budgetMs: 10_000,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },

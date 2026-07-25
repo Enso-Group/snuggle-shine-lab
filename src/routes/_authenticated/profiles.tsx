@@ -39,6 +39,36 @@ export const Route = createFileRoute("/_authenticated/profiles")({
   component: ProfilesPage,
 });
 
+// Same preview pattern as the Command Center — lists stay short by default,
+// with search and "Show all" covering everything past the preview.
+const PREVIEW_ROWS = 5;
+// The contact list is the page's navigation, so it gets a slightly deeper preview.
+const CONTACT_PREVIEW_ROWS = 8;
+
+function ShowAllToggle({
+  total,
+  expanded,
+  onToggle,
+  preview = PREVIEW_ROWS,
+}: {
+  total: number;
+  expanded: boolean;
+  onToggle: () => void;
+  preview?: number;
+}) {
+  if (total <= preview) return null;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-6 w-full text-[11px] text-muted-foreground"
+      onClick={onToggle}
+    >
+      {expanded ? "Show less" : `Show all ${total}`}
+    </Button>
+  );
+}
+
 /** The one skeleton used everywhere on this page. */
 function SkeletonRows({ rows }: { rows: number }) {
   return (
@@ -50,11 +80,13 @@ function SkeletonRows({ rows }: { rows: number }) {
   );
 }
 
-function Avatar({ name, className = "size-8" }: { name: string; className?: string }) {
+// Text size travels with className so callers can scale the initial along
+// with the circle instead of fighting a baked-in font size.
+function Avatar({ name, className = "size-8 text-sm" }: { name: string; className?: string }) {
   const initial = name.trim().charAt(0).toUpperCase() || "?";
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary ${className}`}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-primary/10 font-medium text-primary ${className}`}
     >
       {initial}
     </div>
@@ -73,16 +105,20 @@ function ContactRow({
   return (
     <button
       onClick={onSelect}
-      className={`flex w-full items-center gap-2.5 border-s-2 p-3 text-start transition-colors hover:bg-muted/60 ${
+      className={`flex w-full items-center gap-2 border-s-2 px-3 py-1.5 text-start transition-colors hover:bg-muted/60 ${
         selected ? "border-primary bg-primary/10" : "border-transparent"
       }`}
     >
-      <Avatar name={person.display_name ?? person.wa_id} />
+      <Avatar name={person.display_name ?? person.wa_id} className="size-6 text-[10px]" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" dir="auto">
+        <p className="truncate text-xs font-medium" dir="auto">
           {person.display_name ?? person.wa_id}
         </p>
-        <p className="truncate text-[11px] text-muted-foreground">
+        <p className="truncate text-[10px] text-muted-foreground">
+          {/* Phone tail disambiguates same-name contacts (one person, two
+              phones is a real case) — without it two identical rows are a
+              coin flip. */}
+          <span dir="ltr">…{person.wa_id.replace(/@.*$/, "").slice(-4)}</span> ·{" "}
           {person.facts.length} facts · last seen{" "}
           <span dir="ltr">{new Date(person.last_seen_at).toLocaleDateString("en-GB")}</span>
         </p>
@@ -96,35 +132,35 @@ function IdentityCard({ detail }: { detail: PersonDetail }) {
   const p = detail.person;
   return (
     <Card>
-      <CardContent className="space-y-3 p-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <Avatar name={p.display_name ?? p.wa_id} className="size-12 text-lg" />
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-semibold" dir="auto">
-              {p.display_name ?? p.wa_id}
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground" dir="ltr">
-              {p.wa_id} · first seen {new Date(p.first_seen_at).toLocaleDateString("en-GB")} ·
-              last seen {new Date(p.last_seen_at).toLocaleString("en-GB")}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-            <FunnelStageBadge stage={p.funnel_stage} size="md" />
-            {p.language && (
-              <Badge variant="outline" className="text-xs uppercase">
-                {p.language}
-              </Badge>
-            )}
-            {p.sentiment && (
-              <Badge variant="outline" className="text-xs">
-                {p.sentiment}
-              </Badge>
-            )}
-          </div>
+      {/* Single compact band — identity is context, not the payload; the
+          conversation below gets the space instead. */}
+      <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+        <Avatar name={p.display_name ?? p.wa_id} className="size-10 text-base" />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold" dir="auto">
+            {p.display_name ?? p.wa_id}
+          </h2>
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground" dir="ltr">
+            {p.wa_id} · first seen {new Date(p.first_seen_at).toLocaleDateString("en-GB")} ·
+            last seen {new Date(p.last_seen_at).toLocaleString("en-GB")}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          <FunnelStageBadge stage={p.funnel_stage} />
+          {p.language && (
+            <Badge variant="outline" className="text-[10px] uppercase">
+              {p.language}
+            </Badge>
+          )}
+          {p.sentiment && (
+            <Badge variant="outline" className="text-[10px]">
+              {p.sentiment}
+            </Badge>
+          )}
         </div>
         {detail.groups.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Groups</span>
+          <div className="flex basis-full flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground">Groups</span>
             {detail.groups.map((g) => (
               <Badge key={g} variant="outline" className="text-[10px] font-normal" dir="auto">
                 {g}
@@ -137,9 +173,12 @@ function IdentityCard({ detail }: { detail: PersonDetail }) {
   );
 }
 
+// Keyed by person id at the call site so preview expansion resets on every
+// contact switch, whichever way the selection changed (click or URL).
 function FactsCard({ personId, facts }: { personId: string; facts: PersonListItem["facts"] }) {
   const qc = useQueryClient();
   const deleteFactFn = useServerFn(deletePersonFact);
+  const [expanded, setExpanded] = useState(false);
   const removeFact = useMutation({
     mutationFn: (factText: string) => deleteFactFn({ data: { personId, factText } }),
     onSuccess: () => {
@@ -150,26 +189,28 @@ function FactsCard({ personId, facts }: { personId: string; facts: PersonListIte
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Newest first, so the preview window shows what the bot learned last.
+  const ordered = facts.slice().reverse();
+  const shown = expanded ? ordered : ordered.slice(0, PREVIEW_ROWS);
+
   return (
     <Card>
-      <CardHeader className="flex-row items-center gap-2 space-y-0">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-2">
         <Brain className="size-4 text-primary" />
         <CardTitle className="text-sm">What the bot knows</CardTitle>
         <Badge variant="secondary" className="ms-auto text-[10px]">
           {facts.length}
         </Badge>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {facts.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Facts are extracted automatically after each conversation.
           </p>
         ) : (
-          <ul className="space-y-1">
-            {facts
-              .slice()
-              .reverse()
-              .map((f) => (
+          <>
+            <ul className="space-y-1">
+              {shown.map((f) => (
                 <li key={f.at + f.text} className="group flex items-start gap-2 text-xs" dir="auto">
                   <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary/50" />
                   <span className="flex-1">{f.text}</span>
@@ -187,53 +228,70 @@ function FactsCard({ personId, facts }: { personId: string; facts: PersonListIte
                   </Button>
                 </li>
               ))}
-          </ul>
+            </ul>
+            <ShowAllToggle
+              total={ordered.length}
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+            />
+          </>
         )}
       </CardContent>
     </Card>
   );
 }
 
+// Keyed by person id at the call site — same reset rule as FactsCard.
 function IntentsCard({ intents }: { intents: PersonDetail["intents"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? intents : intents.slice(0, PREVIEW_ROWS);
+
   return (
     <Card>
-      <CardHeader className="flex-row items-center gap-2 space-y-0">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-2">
         <TrendingUp className="size-4 text-primary" />
         <CardTitle className="text-sm">Intent history</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {intents.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Appears after the bot analyzes their messages.
           </p>
         ) : (
-          <ul className="space-y-1.5">
-            {intents.map((i, idx) => (
-              <li key={idx} className="text-xs">
-                <span className="text-muted-foreground" dir="ltr">
-                  {new Date(i.at).toLocaleDateString("en-GB")}
-                </span>{" "}
-                <span dir="auto">{i.intent}</span>
-                {i.sentiment && (
-                  <Badge variant="outline" className="ms-1.5 text-[10px]">
-                    {i.sentiment}
-                  </Badge>
-                )}
-                {i.urgency && (
-                  <Badge
-                    variant="outline"
-                    className={`ms-1 text-[10px] ${
-                      i.urgency === "high"
-                        ? "border-red-500/40 text-red-600 dark:text-red-400"
-                        : ""
-                    }`}
-                  >
-                    {i.urgency}
-                  </Badge>
-                )}
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="space-y-1.5">
+              {shown.map((i, idx) => (
+                <li key={idx} className="text-xs">
+                  <span className="text-muted-foreground" dir="ltr">
+                    {new Date(i.at).toLocaleDateString("en-GB")}
+                  </span>{" "}
+                  <span dir="auto">{i.intent}</span>
+                  {i.sentiment && (
+                    <Badge variant="outline" className="ms-1.5 text-[10px]">
+                      {i.sentiment}
+                    </Badge>
+                  )}
+                  {i.urgency && (
+                    <Badge
+                      variant="outline"
+                      className={`ms-1 text-[10px] ${
+                        i.urgency === "high"
+                          ? "border-red-500/40 text-red-600 dark:text-red-400"
+                          : ""
+                      }`}
+                    >
+                      {i.urgency}
+                    </Badge>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <ShowAllToggle
+              total={intents.length}
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+            />
+          </>
         )}
       </CardContent>
     </Card>
@@ -256,15 +314,17 @@ function ConversationCard({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center gap-2 space-y-0">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-2">
         <MessageSquare className="size-4 text-primary" />
         <CardTitle className="text-sm">Conversation</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {timeline.length === 0 ? (
           <p className="text-xs text-muted-foreground">No direct 1:1 conversation yet.</p>
         ) : (
-          <div ref={scrollRef} className="max-h-[32rem] space-y-1.5 overflow-y-auto pe-1">
+          /* Deliberately the tallest thing on the page — the raw conversation
+             is the payload the compacted cards make room for. */
+          <div ref={scrollRef} className="max-h-[30rem] space-y-1.5 overflow-y-auto pe-1">
             {timeline.map((m, i) => (
               <div
                 key={i}
@@ -323,11 +383,11 @@ function AskCard({ personId }: { personId: string }) {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center gap-2 space-y-0">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-2">
         <Sparkles className="size-4 text-primary" />
         <CardTitle className="text-sm">Ask the AI about this contact</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 p-4 pt-0">
         {chat.length > 0 && (
           <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
             {chat.map((m, i) => (
@@ -377,6 +437,7 @@ function ProfilesPage() {
   const { person: selected } = Route.useSearch();
   const navigate = Route.useNavigate();
   const [search, setSearch] = useState("");
+  const [allContacts, setAllContacts] = useState(false);
 
   const { data: people = [], isLoading: listLoading } = useQuery({
     queryKey: ["people-memory"],
@@ -392,6 +453,20 @@ function ProfilesPage() {
       (p) => (p.display_name ?? "").toLowerCase().includes(q) || p.wa_id.includes(q),
     );
   }, [people, search]);
+
+  const searching = search.trim().length > 0;
+  // Search results always show every match — hiding matches behind the
+  // toggle would make the search look broken. A deep-linked selection beyond
+  // the preview is pinned in so the highlighted row is always visible.
+  const visibleContacts = useMemo(() => {
+    if (searching || allContacts) return filtered;
+    const preview = filtered.slice(0, CONTACT_PREVIEW_ROWS);
+    if (selected && !preview.some((p) => p.id === selected)) {
+      const selectedRow = filtered.find((p) => p.id === selected);
+      if (selectedRow) return [...preview, selectedRow];
+    }
+    return preview;
+  }, [filtered, searching, allContacts, selected]);
 
   const {
     data: detail,
@@ -424,7 +499,7 @@ function ProfilesPage() {
       />
 
       <PageContent maxWidthClass="max-w-6xl">
-        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+        <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
           {/* Contact list */}
           <Card className="h-fit overflow-hidden lg:sticky lg:top-4">
             <CardContent className="p-0">
@@ -439,7 +514,8 @@ function ProfilesPage() {
                   />
                 </div>
               </div>
-              <div className="max-h-[70vh] divide-y overflow-y-auto">
+              {/* ~45vh cap keeps the pane above the fold — search covers rows scrolled away */}
+              <div className="max-h-[45vh] divide-y overflow-y-auto">
                 {listLoading && people.length === 0 && (
                   <div className="p-4">
                     <SkeletonRows rows={5} />
@@ -456,7 +532,7 @@ function ProfilesPage() {
                     }
                   />
                 )}
-                {filtered.map((person) => (
+                {visibleContacts.map((person) => (
                   <ContactRow
                     key={person.id}
                     person={person}
@@ -465,6 +541,16 @@ function ProfilesPage() {
                   />
                 ))}
               </div>
+              {!searching && filtered.length > CONTACT_PREVIEW_ROWS && (
+                <div className="border-t p-1">
+                  <ShowAllToggle
+                    total={filtered.length}
+                    preview={CONTACT_PREVIEW_ROWS}
+                    expanded={allContacts}
+                    onToggle={() => setAllContacts((v) => !v)}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -481,7 +567,7 @@ function ProfilesPage() {
             </Card>
           ) : detailLoading && !detail ? (
             <Card>
-              <CardContent className="p-6">
+              <CardContent className="p-4">
                 <SkeletonRows rows={5} />
               </CardContent>
             </Card>
@@ -496,12 +582,17 @@ function ProfilesPage() {
               </CardContent>
             </Card>
           ) : detail ? (
-            <div className="space-y-6">
+            <div className="space-y-4">
               <IdentityCard detail={detail} />
-              <div className="grid gap-6 xl:grid-cols-2">
-                <div className="space-y-6">
-                  <FactsCard personId={detail.person.id} facts={detail.person.facts} />
-                  <IntentsCard intents={detail.intents} />
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="space-y-4">
+                  {/* person-id keys reset each card's preview expansion on contact switch */}
+                  <FactsCard
+                    key={`facts-${detail.person.id}`}
+                    personId={detail.person.id}
+                    facts={detail.person.facts}
+                  />
+                  <IntentsCard key={`intents-${detail.person.id}`} intents={detail.intents} />
                 </div>
                 <ConversationCard personId={detail.person.id} timeline={detail.timeline} />
               </div>

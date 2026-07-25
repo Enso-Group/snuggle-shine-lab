@@ -16,7 +16,9 @@ import type { Supa } from "./types";
 // this is a cheap safety net, so a long gap keeps the sweeper light.
 const MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Version marker in the summary: bump when the rules change so the throttle
-// doesn't suppress the first run of a newer rule set.
+// doesn't suppress the first run of a newer rule set. (A "v2" name-based
+// '@lid' fold existed briefly and was reverted — same display name is not
+// the same person; the rules are v1's.)
 const DEDUPE_SUMMARY_PREFIX = "People dedupe v1";
 const CHUNK = 100;
 

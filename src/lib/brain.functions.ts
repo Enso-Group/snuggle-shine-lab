@@ -80,7 +80,6 @@ export type AgentConfigView = {
   model_fast: string | null;
   reply_delay_seconds: number;
   max_reply_parts: number;
-  critique_enabled: boolean;
   react_to_trivial: boolean;
   follow_ups_enabled: boolean;
 };
@@ -109,7 +108,6 @@ export const getAgentConfig = createServerFn({ method: "GET" })
       model_fast: data.model_fast,
       reply_delay_seconds: cfg.reply_delay_seconds ?? 4,
       max_reply_parts: cfg.max_reply_parts ?? 3,
-      critique_enabled: !cfg.skip_critique,
       react_to_trivial: cfg.react_to_trivial ?? true,
       follow_ups_enabled: cfg.follow_ups_enabled ?? true,
     };
@@ -125,7 +123,6 @@ export const saveAgentConfig = createServerFn({ method: "POST" })
         model_fast: z.string().max(80).nullable(),
         reply_delay_seconds: z.number().int().min(0).max(30),
         max_reply_parts: z.number().int().min(1).max(5),
-        critique_enabled: z.boolean(),
         react_to_trivial: z.boolean(),
         follow_ups_enabled: z.boolean(),
       })
@@ -141,7 +138,6 @@ export const saveAgentConfig = createServerFn({ method: "POST" })
         agent_config: {
           reply_delay_seconds: data.reply_delay_seconds,
           max_reply_parts: data.max_reply_parts,
-          skip_critique: !data.critique_enabled,
           react_to_trivial: data.react_to_trivial,
           follow_ups_enabled: data.follow_ups_enabled,
         },

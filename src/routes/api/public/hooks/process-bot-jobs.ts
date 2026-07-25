@@ -294,19 +294,64 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             debug.error_decisions = String((e as Error)?.message ?? e);
           }
           try {
+            // The flip side of recent_dm_replies: DM decisions that ended
+            // WITHOUT a reply (skips + errors), so a silent contact can be
+            // diagnosed from outside without auth. Group rows are noise here —
+            // the never-silent SLA is DM-only, so they're filtered out
+            // (over-fetch then filter, since chat shape isn't queryable).
+            const { data: noReply } = await supabase
+              .from("bot_decisions")
+              .select("created_at, stage, status, chat_id, summary")
+              .in("status", ["skip", "error"])
+              .order("created_at", { ascending: false })
+              .limit(50);
+            debug.recent_dm_no_reply = (noReply ?? [])
+              .filter((r) => {
+                const chat = String(r.chat_id ?? "");
+                return chat !== "" && !chat.endsWith("@g.us");
+              })
+              .slice(0, 8)
+              .map((r) => ({
+                at: r.created_at,
+                stage: r.stage,
+                status: r.status,
+                chat: maskChat(r.chat_id),
+                summary: String(r.summary ?? "").slice(0, 200),
+              }));
+          } catch (e) {
+            debug.recent_dm_no_reply = String((e as Error)?.message ?? e);
+          }
+          try {
             const { count: totalPeople } = await supabase
               .from("people")
               .select("id", { count: "exact", head: true });
-            const { data: peopleRows } = await supabase.from("people").select("wa_id").limit(2000);
+            const { data: peopleRows } = await supabase
+              .from("people")
+              .select("id, wa_id, display_name")
+              .limit(2000);
             const byPhone = new Map<string, number>();
+            const byName = new Map<string, number>();
             for (const r of peopleRows ?? []) {
               const phone = String(r.wa_id ?? "").split("@")[0].replace(/\D/g, "");
-              if (!phone) continue;
-              byPhone.set(phone, (byPhone.get(phone) ?? 0) + 1);
+              if (phone) byPhone.set(phone, (byPhone.get(phone) ?? 0) + 1);
+              // Names under 5 chars are ignored — same threshold as the v2
+              // dedupe's cross-format match, so this counter mirrors what the
+              // dedupe is allowed to fix.
+              const name = String(r.display_name ?? "").trim().toLowerCase();
+              if (name.length >= 5) byName.set(name, (byName.get(name) ?? 0) + 1);
             }
             debug.people = {
               total: totalPeople ?? 0,
               duplicate_phone_groups: [...byPhone.values()].filter((n) => n > 1).length,
+              // Cross-format dupes ('@lid' + phone row for one human) share no
+              // digits, so duplicate_phone_groups reads 0 while the dashboard
+              // still shows the same name twice — this counter is the external
+              // proof that class of dupe is gone.
+              // Informational, NOT a defect count: distinct people can share
+              // a display name (the owner has a contact with two phones) —
+              // dedupe never merges on names, this just makes such pairs
+              // visible so a "duplicate" report can be triaged from outside.
+              name_collisions: [...byName.values()].filter((n) => n > 1).length,
             };
           } catch (e) {
             debug.people = String((e as Error)?.message ?? e);

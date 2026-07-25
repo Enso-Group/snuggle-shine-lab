@@ -92,17 +92,70 @@ export function interPartDelayMs(): number {
   return 900 + Math.floor(Math.random() * 800);
 }
 
-export const REPLY_TARGET_MIN_MS = 15_000;
-export const REPLY_TARGET_MAX_MS = 120_000;
+/** Hard cap on total delivery pacing for a DM reply — its slice of the 90s SLA. */
+export const MAX_DM_PACING_MS = 6_000;
+
+export type PacingPlan = {
+  /** Typing-simulation duration before each part, index-aligned with parts. */
+  typingMs: number[];
+  /** Pause after part i (none after the last part). */
+  pauseMs: number[];
+  totalMs: number;
+};
+
+/**
+ * Plan the human pacing (typing simulations + inter-part pauses) for a reply
+ * up front, so the TOTAL can be capped. When the natural formula exceeds
+ * capMs, every delay is scaled down proportionally — the rhythm between parts
+ * is preserved instead of the old sequential clamp that starved the last
+ * parts of the budget entirely. Pure so the cap math is unit-testable;
+ * pauseDraw is injectable for deterministic tests.
+ */
+export function planPacing(
+  parts: string[],
+  capMs: number,
+  pauseDraw: () => number = interPartDelayMs,
+): PacingPlan {
+  const typingMs = parts.map((p) => typingSecondsFor(p) * 1000);
+  const pauseMs = parts.slice(1).map(() => pauseDraw());
+  const naturalMs = [...typingMs, ...pauseMs].reduce((a, b) => a + b, 0);
+  if (naturalMs <= capMs) return { typingMs, pauseMs, totalMs: naturalMs };
+  const scale = capMs / naturalMs;
+  const scaledTyping = typingMs.map((ms) => Math.floor(ms * scale));
+  const scaledPauses = pauseMs.map((ms) => Math.floor(ms * scale));
+  return {
+    typingMs: scaledTyping,
+    pauseMs: scaledPauses,
+    totalMs: [...scaledTyping, ...scaledPauses].reduce((a, b) => a + b, 0),
+  };
+}
+
+export const REPLY_TARGET_MIN_MS = 3_000;
+export const REPLY_TARGET_MAX_MS = 10_000;
 
 /**
  * How long after receiving a DM the reply should land, in milliseconds —
- * a fresh uniform draw in the 15s–2min window per message, so response timing
- * looks human rather than machine-constant. This is the DURABLE delay: it is
- * encoded in the job's run_after (see enqueueInboundReply), never slept out
- * inside the webhook request — a Cloudflare Worker cannot hold a request open
- * that long, and doing so used to strand the job under its claim lock and push
- * the reply out to several minutes.
+ * a fresh uniform draw in the 3–10s window per message, so response timing
+ * looks human rather than machine-constant. The window used to be 15s–2min,
+ * but the product SLA is now EVERY DM answered within 90s of the message,
+ * and the LLM stages + delivery pacing need the rest of that budget — the
+ * human-feel floor stays, the long tail is gone.
+ *
+ * Zero-failure ceiling against the 90s SLA (each term is a hard cap):
+ *   delay ≤10s + sweeper fast-tick ≤20s + intent ≤12s (budgetMs)
+ *   + draft ≤25s (budgetMs) + consolidation ≤15s (budgetMs)
+ *   + pacing ≤6s (MAX_DM_PACING_MS) ≈ 88s.
+ * Be honest about what that ≈88s is: the NO-FAILURE path only. One transient
+ * LLM failure worst-cases around ~2 minutes (10s retry backoff + waiting out
+ * the next sweeper tick + a second full attempt), and whapi's own send time
+ * is excluded entirely — the 90s SLA is the no-failure envelope, not a
+ * guarantee. Typical replies land in ~20–35s: tick ~10s, one draft call ~8s,
+ * no consolidation round.
+ *
+ * This is the DURABLE delay: it is encoded in the job's run_after (see
+ * enqueueInboundReply), never slept out inside the webhook request — a
+ * Cloudflare Worker cannot hold a request open that long, and doing so used
+ * to strand the job under its claim lock and push the reply out to minutes.
  */
 export function randomReplyDelayMs(): number {
   return (
@@ -190,9 +243,14 @@ export function stripStructuredOutput(parts: string[]): { parts: string[]; leake
   return { parts: safe, leaked };
 }
 
-/** Retry backoff for failed jobs: 30s, 2m, then 10m. */
+/**
+ * Retry backoff for failed jobs: 10s, 2m, then 10m. The FIRST retry is short
+ * so a transient first failure still lands the reply inside the 90s SLA
+ * (first attempt fails by ~40s → retry runnable at ~50s → answered by the
+ * next fast tick); later retries back off for real, persistent outages.
+ */
 export function retryBackoffMs(attempts: number): number {
-  const steps = [30_000, 120_000, 600_000];
+  const steps = [10_000, 120_000, 600_000];
   return steps[Math.min(Math.max(attempts - 1, 0), steps.length - 1)];
 }
 

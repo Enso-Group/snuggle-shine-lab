@@ -140,6 +140,41 @@ describe("planPeopleDedupe", () => {
     expect(facts.some((f) => f.text === "old 0")).toBe(false);
   });
 
+  // --- No name-based merging: same display name is NOT the same person ---
+  // (A name-match '@lid'→phone fold was tried and reverted the same day: the
+  // owner has a real contact with TWO phones sharing one display name.)
+
+  it("never merges rows with different canonical ids, even with identical display names", () => {
+    const plan = planPeopleDedupe([
+      row("p-phone-1", "972501234567", "2026-07-01T10:00:00+00:00", {
+        display_name: "Gigi Levy Weiss",
+      }),
+      row("p-phone-2", "972509999999", "2026-07-02T10:00:00+00:00", {
+        display_name: "Gigi Levy Weiss",
+      }),
+      row("p-lid", "18803584966843@lid", "2026-07-03T10:00:00+00:00", {
+        display_name: "Gigi Levy Weiss",
+      }),
+    ]);
+    expect(plan.merges).toEqual([]);
+    expect(plan.renames).toEqual([]);
+    expect(plan.deletes).toEqual([]);
+  });
+
+  it("leaves '@lid' rows untouched regardless of matching phone-row names", () => {
+    const plan = planPeopleDedupe([
+      row("p-phone", "972501234567", "2026-07-05T10:00:00+00:00", {
+        display_name: "Gigi Levy Weiss",
+      }),
+      row("p-lid", "18803584966843@lid", "2026-07-01T10:00:00+00:00", {
+        display_name: "Gigi Levy Weiss",
+      }),
+    ]);
+    expect(plan.merges).toEqual([]);
+    expect(plan.renames).toEqual([]);
+    expect(plan.deletes).toEqual([]);
+  });
+
   it("takes min first_seen_at and max last_seen_at across the group", () => {
     const plan = planPeopleDedupe([
       row("p-1", "972501234567", "2026-07-02T10:00:00+00:00", {

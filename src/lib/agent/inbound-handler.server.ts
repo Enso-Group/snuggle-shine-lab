@@ -8,7 +8,8 @@
 // historical replay, stop/blocked contacts, trivial acks in brand-new chats)
 // are never persisted.
 //
-// Timing: DM replies are DURABLE-delayed via the job's run_after (15–120s),
+// Timing: DM replies are DURABLE-delayed via the job's run_after (target
+// 3–10s after the message; see randomReplyDelayMs for the 90s-SLA math),
 // delivered by the queue sweeper. The webhook never sleeps out the human delay
 // inline — a Cloudflare Worker request can't be held open that long, and doing
 // so used to strand the claimed job under its lock and push replies to minutes.
@@ -31,9 +32,17 @@ const MAX_INLINE_WAIT_MS = 8_000;
 // degrading to the sweeper.
 const MAX_REPLY_DELAY_S = Math.floor(MAX_INLINE_WAIT_MS / 1000);
 // How long before target_reply_at a DM job becomes runnable, so the LLM stages
-// finish right around the target instead of pushing past it. Small enough that
-// the pipeline's remaining top-up wait stays Cloudflare-safe.
+// finish right around the target instead of pushing past it. With the 3–10s
+// reply target this makes the job runnable essentially immediately (run_after
+// floors at now+1s) — the pipeline's bounded top-up wait lands the reply on
+// target when the LLM stages finish early.
 const PROCESSING_LEAD_MS = 15_000;
+
+// The kill switch eats EVERY inbound message while it's off, and the webhook
+// fires for each one — a single throttled Activity-log row per window says
+// "messages are being skipped" without flooding the log.
+const BOT_DISABLED_LOG_THROTTLE_MS = 10 * 60 * 1000;
+const BOT_DISABLED_SUMMARY = "Bot is disabled — inbound messages are being skipped at the webhook";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -139,29 +148,32 @@ export async function handleInboundMessage(
   // Own-phone messages are stored and counted, never replied to.
   if (m.fromMe) return { action: "stored_own", conversationId: convId };
 
-  // Historical replay must never trigger stale replies. For a chat we've
-  // participated in the drop is logged (a silent drop looks like the bot
-  // ignoring someone); a brand-new chat we only observed via a stale message is
-  // simply not saved.
+  // Historical replay must never trigger stale replies. A brand-new chat we
+  // only observed via a stale message is not saved — but the skip is ALWAYS
+  // logged (keyed by chat_id even without a conversation row): this used to
+  // be a completely silent drop for new chats, undiagnosable from the
+  // Activity log when a real contact's first message arrived via a lagging
+  // webhook.
   const webhookLagMs = Math.abs(Date.now() - m.ts);
   const horizonMs = m.isGroup ? FRESHNESS_WINDOW_MS : DM_REPLY_HORIZON_MS;
   if (webhookLagMs > horizonMs) {
-    if (convId) {
-      logDecision(supabase, {
-        conversation_id: convId,
-        chat_id: m.chatId,
-        trigger: deps.trigger,
-        stage: "skipped",
-        status: "skip",
-        summary: `Message stored without a reply — it reached the webhook ${Math.round(webhookLagMs / 60_000)}min after being sent (over the ${Math.round(horizonMs / 60_000)}min reply horizon)`,
-        data: { webhook_lag_s: Math.round(webhookLagMs / 1000) },
-      });
-    }
+    logDecision(supabase, {
+      conversation_id: convId ?? null,
+      chat_id: m.chatId,
+      trigger: deps.trigger,
+      stage: "skipped",
+      status: "skip",
+      summary: `Message ${convId ? "stored" : "dropped (chat not persisted)"} without a reply — it reached the webhook ${Math.round(webhookLagMs / 60_000)}min after being sent (over the ${Math.round(horizonMs / 60_000)}min reply horizon)`,
+      data: { webhook_lag_s: Math.round(webhookLagMs / 1000) },
+    });
     return { action: "stored_stale", conversationId: convId };
   }
 
   const { recordInbound, isStopRequest } = await import("@/lib/anti-ban.server");
-  if (!settings.enabled) return { action: "bot_disabled", conversationId: convId };
+  if (!settings.enabled) {
+    await logBotDisabledSkip(deps, m.chatId, convId ?? null);
+    return { action: "bot_disabled", conversationId: convId };
+  }
   // Stop request — detected purely from the text so a brand-new chat needn't be
   // created just to refuse it. For a chat we've already participated in, record
   // the block durably (also bumps the inbound counter) so we never message again.
@@ -240,7 +252,7 @@ export async function handleInboundMessage(
 
   // --- Enqueue (supersedes older pending jobs for this chat) ---
   // DMs: the human-timing delay is DURABLE. target_reply_at is a random moment
-  // 15-120s after the MESSAGE; the job's run_after is set a short lead before
+  // 3-10s after the MESSAGE; the job's run_after is set a short lead before
   // that so the LLM stages finish around the target. The webhook returns without
   // holding the request open — the sweeper delivers it. Groups/simulation keep a
   // small inline debounce and are processed inline for immediacy.
@@ -310,4 +322,39 @@ export async function handleInboundMessage(
   // until the sweeper's next tick.
   const worker = await processQueuedJobs(deps, { chatId: m.chatId, max: 3 });
   return { action: "enqueued", conversationId: convId, jobId, worker };
+}
+
+// The disabled-bot skip used to leave NO trace outside the server console —
+// an admin staring at a silent bot had nothing in the Activity log to explain
+// it. One row per 10-minute window (looked up by the constant summary text)
+// is enough of a breadcrumb without a row per swallowed message.
+async function logBotDisabledSkip(
+  deps: AgentDeps,
+  chatId: string,
+  convId: string | null,
+): Promise<void> {
+  try {
+    const { data: recent } = await deps.supabase
+      .from("bot_decisions")
+      .select("id")
+      .eq("summary", BOT_DISABLED_SUMMARY)
+      .gte("created_at", new Date(Date.now() - BOT_DISABLED_LOG_THROTTLE_MS).toISOString())
+      .limit(1);
+    if (recent?.length) return;
+    // AWAITED insert, not the fire-and-forget logDecision: the throttle is a
+    // select-then-insert, and during a disabled-bot burst the async insert
+    // wouldn't be visible to the next message's select — exactly when the
+    // throttle matters. A direct awaited insert closes most of that window.
+    await deps.supabase.from("bot_decisions").insert({
+      conversation_id: convId,
+      chat_id: chatId,
+      trigger: deps.trigger,
+      stage: "skipped",
+      status: "skip",
+      summary: BOT_DISABLED_SUMMARY,
+    });
+  } catch (e) {
+    // Logging must never break inbound handling.
+    console.warn("[inbound] bot-disabled skip log failed:", e);
+  }
 }

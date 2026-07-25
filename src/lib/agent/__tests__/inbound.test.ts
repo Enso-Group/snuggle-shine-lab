@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   looksLikeStructuredOutput,
+  MAX_DM_PACING_MS,
   normalizeReplyParts,
+  planPacing,
   randomReplyDelayMs,
   REPLY_TARGET_MIN_MS,
   REPLY_TARGET_MAX_MS,
@@ -86,12 +88,15 @@ describe("normalizeReplyParts", () => {
 });
 
 describe("retryBackoffMs", () => {
-  it("escalates 30s → 2m → 10m and saturates", () => {
-    expect(retryBackoffMs(1)).toBe(30_000);
+  it("keeps the first retry short (10s) so one transient failure stays inside the 90s SLA", () => {
+    expect(retryBackoffMs(1)).toBe(10_000);
+    expect(retryBackoffMs(0)).toBe(10_000);
+  });
+
+  it("escalates 2m → 10m for later attempts and saturates", () => {
     expect(retryBackoffMs(2)).toBe(120_000);
     expect(retryBackoffMs(3)).toBe(600_000);
     expect(retryBackoffMs(9)).toBe(600_000);
-    expect(retryBackoffMs(0)).toBe(30_000);
   });
 });
 
@@ -107,20 +112,46 @@ describe("secretsEqual", () => {
 });
 
 describe("randomReplyDelayMs", () => {
-  it("uses the required 15s-2min window", () => {
-    expect(REPLY_TARGET_MIN_MS).toBe(15_000);
-    expect(REPLY_TARGET_MAX_MS).toBe(120_000);
+  it("uses the 3-10s window required by the 90s reply SLA", () => {
+    expect(REPLY_TARGET_MIN_MS).toBe(3_000);
+    expect(REPLY_TARGET_MAX_MS).toBe(10_000);
   });
 
-  it("always lands in the 15s-120s window and varies between draws", () => {
+  it("always lands in the 3-10s window and varies between draws", () => {
     const draws = Array.from({ length: 500 }, () => randomReplyDelayMs());
     for (const d of draws) {
-      expect(d).toBeGreaterThanOrEqual(15_000);
-      expect(d).toBeLessThanOrEqual(120_000);
+      expect(d).toBeGreaterThanOrEqual(3_000);
+      expect(d).toBeLessThanOrEqual(10_000);
     }
     // Varied draws, and the spread actually reaches the upper half of the range.
     expect(new Set(draws).size).toBeGreaterThan(10);
-    expect(Math.max(...draws)).toBeGreaterThan(90_000);
+    expect(Math.max(...draws)).toBeGreaterThan(7_500);
+  });
+});
+
+describe("planPacing", () => {
+  it("caps DM delivery pacing at 6s — its slice of the 90s SLA", () => {
+    expect(MAX_DM_PACING_MS).toBe(6_000);
+  });
+
+  it("keeps the natural rhythm when it already fits the cap", () => {
+    const plan = planPacing(["קצר"], MAX_DM_PACING_MS, () => 1_000);
+    // One short part: 2s typing, no pauses — untouched by the cap.
+    expect(plan.typingMs).toEqual([2_000]);
+    expect(plan.pauseMs).toEqual([]);
+    expect(plan.totalMs).toBe(2_000);
+  });
+
+  it("scales every delay proportionally when the natural total exceeds the cap", () => {
+    // Three long parts: natural = 7s+7s+7s typing + 1s+1s pauses = 23s.
+    const long = "א".repeat(1000);
+    const plan = planPacing([long, long, long], MAX_DM_PACING_MS, () => 1_000);
+    expect(plan.totalMs).toBeLessThanOrEqual(MAX_DM_PACING_MS);
+    // Proportional scaling: the last part still gets typing time (the old
+    // sequential clamp starved trailing parts to zero).
+    expect(plan.typingMs[2]).toBeGreaterThan(0);
+    expect(plan.typingMs[0]).toBe(plan.typingMs[2]);
+    expect(plan.pauseMs).toHaveLength(2);
   });
 });
 

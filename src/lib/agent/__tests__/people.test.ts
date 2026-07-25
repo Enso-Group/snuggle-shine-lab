@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mergeFacts, type PersonFact } from "../people.server";
+import { loadOrCreatePerson, mergeFacts, type PersonFact } from "../people.server";
+import type { Supa } from "../types";
 
 const at = "2026-07-20T10:00:00.000Z";
 const now = new Date("2026-07-20T12:00:00.000Z");
@@ -32,5 +33,72 @@ describe("mergeFacts", () => {
     expect(merged).toHaveLength(40);
     expect(merged[merged.length - 1].text).toBe("עובדה חדשה לגמרי");
     expect(merged.some((f) => f.text === "עובדה ישנה 0")).toBe(false);
+  });
+});
+
+// Chainable thenable stub standing in for the PostgREST query builder — just
+// enough to capture which wa_id key the lookup filters on, which is the whole
+// point of the dmChatId option.
+function fakeSupa(capture: { orFilters: string[] }): Supa {
+  const result = {
+    data: [
+      {
+        id: "p1",
+        wa_id: "972501234567",
+        display_name: "Gigi Levy Weiss",
+        language: null,
+        sentiment: null,
+        funnel_stage: "unknown",
+        facts: [],
+        tags: [],
+        last_seen_at: at,
+      },
+    ],
+    error: null,
+  };
+  // 'any' is deliberate: typing a full PostgREST builder buys nothing here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const builder: any = {
+    select: () => builder,
+    or: (f: string) => {
+      capture.orFilters.push(f);
+      return builder;
+    },
+    order: () => builder,
+    limit: () => builder,
+    update: () => builder,
+    eq: () => builder,
+    insert: () => builder,
+    single: () => builder,
+    then: (resolve: (v: unknown) => void) => resolve(result),
+  };
+  return { from: () => builder } as unknown as Supa;
+}
+
+describe("loadOrCreatePerson DM keying", () => {
+  it("keys on the chat id when dmChatId is given — an '@lid' sender maps to the phone profile", async () => {
+    const capture = { orFilters: [] as string[] };
+    const person = await loadOrCreatePerson(fakeSupa(capture), "18803584966843@lid", "Gigi", {
+      dmChatId: "972501234567@s.whatsapp.net",
+    });
+    expect(capture.orFilters[0]).toBe("wa_id.eq.972501234567,wa_id.like.972501234567@%");
+    expect(person?.wa_id).toBe("972501234567");
+  });
+
+  it("keys on the sender id when dmChatId is absent (group messages, old call sites)", async () => {
+    const capture = { orFilters: [] as string[] };
+    await loadOrCreatePerson(fakeSupa(capture), "18803584966843@lid", "Gigi");
+    expect(capture.orFilters[0]).toBe(
+      "wa_id.eq.18803584966843@lid,wa_id.like.18803584966843@lid@%",
+    );
+  });
+
+  it("returns null (no fallback to the '@lid' sender) when dmChatId does not normalize", async () => {
+    const capture = { orFilters: [] as string[] };
+    const person = await loadOrCreatePerson(fakeSupa(capture), "18803584966843@lid", "Gigi", {
+      dmChatId: "status@broadcast",
+    });
+    expect(person).toBeNull();
+    expect(capture.orFilters).toEqual([]);
   });
 });

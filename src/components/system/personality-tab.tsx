@@ -182,13 +182,6 @@ export function PersonalityTab() {
                 />
               </label>
               <label className="flex items-center justify-between gap-2 text-xs">
-                Self-critique before sending (maximum quality)
-                <Switch
-                  checked={cfgForm.critique_enabled}
-                  onCheckedChange={(v) => setCfgForm({ ...cfgForm, critique_enabled: v })}
-                />
-              </label>
-              <label className="flex items-center justify-between gap-2 text-xs">
                 React 👍 to trivial messages ("thanks" etc.)
                 <Switch
                   checked={cfgForm.react_to_trivial}

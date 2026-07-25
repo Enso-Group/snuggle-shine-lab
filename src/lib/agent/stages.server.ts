@@ -1,6 +1,9 @@
-// Reasoning stages: intent analysis (fast model) → draft (strong model) →
-// self-critique & revision (strong model). Each returns structured data that
-// the pipeline logs to bot_decisions.
+// Reasoning stages: intent analysis (fast model) → draft (strong model, with
+// the quality rules baked into its prompt) → optional consolidation when newer
+// messages arrived mid-draft. ONE strong call per reply: the old separate
+// critique stage cost a second strong call (7–8s per cycle, measured live)
+// and its checks now live inside the draft prompt — the deterministic gates
+// (sanitizeParts + stripStructuredOutput) still run on every output.
 import { callLLM, parseJsonLoose } from "@/lib/llm.server";
 import type { LLMModelOverrides } from "@/lib/llm.server";
 import { gapDescription, isSignificantGap } from "./conversation-gap";
@@ -10,7 +13,7 @@ import { groupPromptBlock } from "./groups.server";
 import { personPromptBlock } from "./people.server";
 import { leaksPersona, stripLeakSentences, PERSONA_FALLBACK_LINE } from "./persona";
 import { buildHumanizeRules, buildDateContext } from "./prompts.server";
-import type { AgentContext, CritiqueResult, DraftResult, IntentAnalysis } from "./types";
+import type { AgentContext, DraftResult, IntentAnalysis } from "./types";
 
 function overridesOf(ctx: AgentContext): LLMModelOverrides {
   return { model_strong: ctx.settings.model_strong, model_fast: ctx.settings.model_fast };
@@ -80,6 +83,11 @@ ${judgeGap ? `\n(עברו ${gapText} מאז ההודעה האחרונה בשיח
       source: "agent_intent",
       json: true,
       overrides: overridesOf(ctx),
+      // Budget-clamped: the reply SLA is 90s and the runtime kills the request
+      // after ~60s of wall — an unbudgeted retry ladder here would eat the
+      // draft stage's time. Intent has a safe fallback, so it gets a small slice.
+      timeoutMs: 10_000,
+      budgetMs: 12_000,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -108,8 +116,53 @@ ${judgeGap ? `\n(עברו ${gapText} מאז ההודעה האחרונה בשיח
   }
 }
 
+/**
+ * Parse a strong-model reply envelope into sendable parts. Shared by
+ * draftReply and consolidateReply so neither can ever surface the raw JSON
+ * envelope — or its English "reasoning" field — to a user.
+ */
+function parseReplyEnvelope(content: string, maxParts: number, stage: string): DraftResult {
+  try {
+    const parsed = parseJsonLoose<{ messages?: unknown; reasoning?: unknown }>(content);
+    const parts = Array.isArray(parsed.messages)
+      ? normalizeReplyParts(
+          parsed.messages.map((m) => String(m ?? "")),
+          maxParts,
+        )
+      : [];
+    if (parts.length) {
+      // Only the strings inside "messages" are ever returned as reply text; the
+      // "reasoning" field is kept for the decision log and never delivered.
+      return { messages: parts, reasoning: String(parsed.reasoning ?? "") };
+    }
+    // Parsed as JSON but without a usable "messages" array: this is the raw
+    // envelope, not a reply. Fall through to the leak guard below.
+    throw new Error(`${stage} output had no usable messages array`);
+  } catch {
+    // The output could not be turned into a clean reply. NEVER fall back to
+    // sending the raw model output when it is (or resembles) a JSON envelope —
+    // that is exactly how the `{"messages":[...],"reasoning":"..."}` blob and
+    // the English reasoning field leaked to users. Fail the stage instead so
+    // the queue retries; if it never parses, the never-silent fallbacks take
+    // over, which is the correct trade-off vs. leaking JSON.
+    if (looksLikeStructuredOutput(content)) {
+      throw new Error(
+        `${stage} stage returned unparseable structured output — refusing to send raw JSON: ${content.slice(0, 120)}`,
+      );
+    }
+    // Genuinely plain prose (the model ignored the JSON format and just wrote a
+    // reply) is safe to send as-is.
+    const plain = normalizeReplyParts([content], maxParts);
+    if (!plain.length) throw new Error(`${stage} stage returned an empty reply`);
+    return { messages: plain, reasoning: "Free-form output — sent as-is" };
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Stage: draft
+// Stage: draft — the ONE strong call per reply. The quality checks that used
+// to be a second strong-model critique pass (language, KB grounding, tone,
+// no-AI-tells, length) are rules of THIS prompt now: one call returns final
+// parts, which is what keeps the whole cycle inside the 90s reply SLA.
 // ---------------------------------------------------------------------------
 export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Promise<DraftResult> {
   const maxParts = ctx.settings.agent_config?.max_reply_parts ?? 3;
@@ -144,6 +197,16 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
 - דחיפות: ${intent.urgency} | מצב רגשי: ${intent.sentiment}
 - המטרה שלך בתשובה: ${intent.goal}
 
+כללי איכות מחייבים (אין שלב בדיקה אחריך — בדוק את עצמך מול כולם לפני שאתה מחזיר):
+1. שפה: כל התשובה בשפה ${intent.language} בלבד.
+2. דיוק: עובדות עסקיות (מחירים, מדיניות, מוצרים, לינקים) מותרות אך ורק אם הן מופיעות במאגר הידע או בהקשר השיחה. אם אין מקור — אמור בכנות שתבדוק ותחזור, אל תנחש ואל תמציא.
+3. מקדם את המטרה: "${intent.goal}".
+4. טון: מקצועי, חם וטבעי לוואטסאפ; בלי פתיחים רובוטיים; אורך סביר, לא חומת טקסט.
+5. זהות: אסור כל רמז לבוט/AI/מערכת, ואסור גם להצהיר "אני בן אדם".
+6. בטיחות: אין חשיפת פרטים טכניים, סודות או מידע על אנשים אחרים.
+
+כלל מחייב — אף פעם לא שתיקה: לעולם אל תחזיר תשובה ריקה. אם ההודעה עוסקת בנושא שמחוץ לתחום שלנו או לידע שלך — ענה בקצרה ובטבעיות, בסגנון הדמות, שעם זה אתה לא יכול לעזור או שאתה פשוט לא יודע, ואם מתאים החזר את השיחה לתחום שלנו. אל תמציא תשובה ואל תשאיר את האדם בלי מענה.
+
 פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply"}.
 - בין 1 ל-${maxParts} הודעות, כמו שאדם כותב בוואטסאפ: קצרות, בלי חומות טקסט.
 - ברוב המקרים הודעה אחת מספיקה. פצל רק אם יש באמת שני חלקים נפרדים (למשל תשובה + שאלת המשך).`;
@@ -159,115 +222,80 @@ export async function draftReply(ctx: AgentContext, intent: IntentAnalysis): Pro
     source: "agent_draft",
     json: true,
     overrides: overridesOf(ctx),
+    // The draft gets the biggest slice of the 90s SLA. 15s per attempt (not
+    // the 25s default) so a second candidate model gets a real shot inside
+    // the budget — the pinned strong model is known to stall on long prompts.
+    timeoutMs: 15_000,
+    budgetMs: 25_000,
     messages,
   });
 
-  try {
-    const parsed = parseJsonLoose<{ messages?: unknown; reasoning?: unknown }>(res.content);
-    const parts = Array.isArray(parsed.messages)
-      ? normalizeReplyParts(
-          parsed.messages.map((m) => String(m ?? "")),
-          maxParts,
-        )
-      : [];
-    if (parts.length) {
-      // Only the strings inside "messages" are ever returned as reply text; the
-      // "reasoning" field is kept for the decision log and never delivered.
-      return { messages: parts, reasoning: String(parsed.reasoning ?? "") };
-    }
-    // Parsed as JSON but without a usable "messages" array: this is the raw
-    // envelope, not a reply. Fall through to the leak guard below.
-    throw new Error("draft output had no usable messages array");
-  } catch {
-    // The output could not be turned into a clean reply. NEVER fall back to
-    // sending the raw model output when it is (or resembles) a JSON envelope —
-    // that is exactly how the `{"messages":[...],"reasoning":"..."}` blob and
-    // the English reasoning field leaked to users. Fail the stage instead so
-    // the queue retries; if it never parses, the contact gets no reply (raised
-    // as an admin alert), which is the correct trade-off vs. leaking JSON.
-    if (looksLikeStructuredOutput(res.content)) {
-      throw new Error(
-        `Draft stage returned unparseable structured output — refusing to send raw JSON: ${res.content.slice(0, 120)}`,
-      );
-    }
-    // Genuinely plain prose (the model ignored the JSON format and just wrote a
-    // reply) is safe to send as-is.
-    const plain = normalizeReplyParts([res.content], maxParts);
-    if (!plain.length) throw new Error("Draft stage returned an empty reply");
-    return { messages: plain, reasoning: "Free-form output — sent as-is" };
-  }
+  return parseReplyEnvelope(res.content, maxParts, "Draft");
 }
 
 // ---------------------------------------------------------------------------
-// Stage: self-critique & revise
+// Stage: consolidation — newer messages arrived while the reply was being
+// drafted. One bounded strong call folds them into the already-drafted parts,
+// instead of the old "superseded" restart that made the newest message's job
+// redo intent+draft from scratch (measured live: intent ran 3x for one reply).
 // ---------------------------------------------------------------------------
-export async function critiqueAndRevise(
+
+/** A message that arrived after the one this job is answering. */
+export type NewerInbound = { body: string; senderName: string | null };
+
+export async function consolidateReply(
   ctx: AgentContext,
   intent: IntentAnalysis,
-  draft: DraftResult,
-): Promise<CritiqueResult> {
+  draftedParts: string[],
+  newer: NewerInbound[],
+): Promise<DraftResult> {
   const maxParts = ctx.settings.agent_config?.max_reply_parts ?? 3;
-  const approved: CritiqueResult = {
-    verdict: "approve",
-    issues: [],
-    messages: draft.messages,
-    reasoning: "",
-  };
-  if (ctx.settings.agent_config?.skip_critique) return approved;
 
-  const system = `אתה עורך איכות קפדן של תשובות וואטסאפ עסקיות. בדוק את הטיוטה מול הקריטריונים והחזר JSON בלבד:
-{"verdict": "approve" או "revise", "issues": ["issue found, in English", ...], "messages": ["הגרסה הסופית של כל הודעה", ...], "reasoning": "one sentence in English"}
+  const system =
+    ctx.settings.system_prompt +
+    buildHumanizeRules() +
+    buildDateContext() +
+    personPromptBlock(ctx.person) +
+    buildGroundingRules(ctx.kb ?? { block: "", count: 0 }) +
+    `
 
-קריטריונים (כל כשל = revise עם תיקון):
-1. שפה: התשובה חייבת להיות בשפה ${intent.language} בלבד.
-2. דיוק: עובדות עסקיות (מחירים, מדיניות, מוצרים, לינקים) מותרות אך ורק אם הן מופיעות במאגר הידע המצורף או בהקשר השיחה. אם הטיוטה ממציאה — החלף בניסוח כן ("אבדוק ואחזור אליך").
-3. מקדם את המטרה: "${intent.goal}".
-4. טון: מקצועי, חם וטבעי לוואטסאפ; בלי פתיחים רובוטיים; אורך סביר (לא חומת טקסט).
-5. זהות: אסור כל רמז לבוט/AI/מערכת. אסור גם להצהיר "אני בן אדם".
-6. בטיחות: אין חשיפת פרטים טכניים/סודות/מידע על אחרים.
-- עד ${maxParts} הודעות. אם verdict=approve החזר את ההודעות כמו שהן.`;
+מצב: בזמן שכתבת את התשובה שלמטה, האדם שלח הודעות נוספות. כתוב תשובה אחת מעודכנת שמכסה את הכל — אל תענה בנפרד לכל הודעה ואל תתעלם מההודעות החדשות. אם ההודעות החדשות משנות את התמונה, עדכן את התשובה בהתאם.
 
-  const user = `הקשר — ההודעה האחרונה של הלקוח (${ctx.message.senderName || "לקוח"}):
-"""${ctx.message.body.slice(0, 800)}"""
+כללי איכות מחייבים (אין שלב בדיקה אחריך): כל התשובה בשפה ${intent.language} בלבד; עובדות עסקיות רק ממאגר הידע או מהשיחה; טון טבעי לוואטסאפ בלי פתיחים רובוטיים; אסור כל רמז לבוט/AI/מערכת; לעולם לא תשובה ריקה.
 
-היסטוריה אחרונה:
+פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", ...], "reasoning": "one short sentence in English"}.
+- בין 1 ל-${maxParts} הודעות קצרות וטבעיות.`;
+
+  const user = `היסטוריה אחרונה:
 ${condensedHistory(ctx, 8) || "(שיחה חדשה)"}
 
-מאגר הידע המאומת (המקור היחיד המותר לעובדות עסקיות):
-${ctx.kb?.block || "(ריק — אסור לציין שום עובדה עסקית ספציפית)"}
+ההודעה שעליה התחלת לענות:
+"""${ctx.message.body.slice(0, 800)}"""
 
-הטיוטה לבדיקה:
-${draft.messages.map((m, i) => `[${i + 1}] ${m}`).join("\n")}`;
+הטיוטה שכתבת (טרם נשלחה):
+${draftedParts.map((m, i) => `[${i + 1}] ${m}`).join("\n")}
 
-  try {
-    const res = await callLLM({
-      role: "strong",
-      source: "agent_critique",
-      json: true,
-      overrides: overridesOf(ctx),
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    });
-    const parsed = parseJsonLoose<Partial<CritiqueResult>>(res.content);
-    const revised = Array.isArray(parsed.messages)
-      ? normalizeReplyParts(
-          parsed.messages.map((m) => String(m ?? "")),
-          maxParts,
-        )
-      : [];
-    return {
-      verdict: parsed.verdict === "revise" ? "revise" : "approve",
-      issues: Array.isArray(parsed.issues) ? parsed.issues.map((i) => String(i)) : [],
-      messages: revised.length ? revised : draft.messages,
-      reasoning: String(parsed.reasoning ?? ""),
-    };
-  } catch (e) {
-    // Critique must never block a send — fall back to the draft.
-    console.warn("[agent] critique failed, sending draft:", String((e as Error)?.message ?? e));
-    return approved;
-  }
+ההודעות החדשות שהגיעו בינתיים:
+${newer.map((n) => `${n.senderName || "הלקוח"}: ${n.body.slice(0, 500)}`).join("\n")}`;
+
+  const res = await callLLM({
+    role: "strong",
+    source: "agent_consolidate",
+    json: true,
+    overrides: overridesOf(ctx),
+    // Runs at the tail of the cycle, after the draft already spent its slice —
+    // a tight budget keeps the worst case inside the 90s SLA and the ~60s
+    // request wall. On failure the pipeline falls back to the old superseded
+    // return, so the newest pending job still answers.
+    timeoutMs: 12_000,
+    budgetMs: 15_000,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  return parseReplyEnvelope(res.content, maxParts, "Consolidation");
 }
 
 // ---------------------------------------------------------------------------
@@ -284,4 +312,57 @@ export function sanitizeParts(parts: string[]): { parts: string[]; leaked: boole
     })
     .filter(Boolean);
   return { parts: out.length ? out : [PERSONA_FALLBACK_LINE], leaked };
+}
+
+// ---------------------------------------------------------------------------
+// Never-silent fallback (DMs only): when the normal draft path produced
+// nothing sendable, the pipeline asks for ONE short in-persona "can't help
+// with that" line instead of going quiet on the contact.
+// ---------------------------------------------------------------------------
+
+/** Canned "can't help" line for when even the fallback LLM call fails. */
+export const CANT_HELP_FALLBACK_LINE = "סליחה, לא בטוח שהבנתי — עם זה אני לא יכול לעזור 🙈";
+
+/**
+ * Validate a candidate fallback line: one short line, no JSON envelope, no
+ * persona leak. Returns null when unusable so the caller substitutes the
+ * fixed line. Pure — unit-tested directly.
+ */
+export function safeFallbackLine(raw: string | null | undefined): string | null {
+  const line = String(raw ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!line || line.length > 200) return null;
+  if (looksLikeStructuredOutput(line) || leaksPersona(line)) return null;
+  return line;
+}
+
+/**
+ * One bounded fast-model shot for a natural "can't help with that right now"
+ * sentence in the conversation's language. Runs at the END of an already-long
+ * request, so it must never buy quality with time; any failure falls back to
+ * the fixed Hebrew line.
+ */
+export async function draftCantHelpLine(ctx: AgentContext, language: string): Promise<string> {
+  try {
+    const res = await callLLM({
+      role: "fast",
+      source: "agent_fallback",
+      overrides: overridesOf(ctx),
+      timeoutMs: 8_000,
+      budgetMs: 8_000,
+      messages: [
+        {
+          role: "system",
+          content: `${ctx.settings.system_prompt}
+
+כתוב משפט אחד בלבד, קצר וטבעי בסגנון הדמות, בשפה "${language}", שאומר בנימוס שאתה לא יכול לעזור בזה כרגע. בלי JSON, בלי הסברים ובלי מרכאות — רק המשפט עצמו.`,
+        },
+        { role: "user", content: ctx.message.body.slice(0, 500) },
+      ],
+    });
+    return safeFallbackLine(res.content) ?? CANT_HELP_FALLBACK_LINE;
+  } catch {
+    return CANT_HELP_FALLBACK_LINE;
+  }
 }

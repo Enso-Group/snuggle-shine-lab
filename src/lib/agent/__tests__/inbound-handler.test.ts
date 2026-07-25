@@ -110,8 +110,10 @@ function makeFakeSupabase(seed: { conversations?: Row[]; groupProfiles?: Row[] }
           if (table === "conversations") {
             row.inbound_count = (row.inbound_count as number) ?? 0;
             row.first_inbound_at = (row.first_inbound_at as string) ?? null;
-            state.conversations.push(row);
           }
+          // Inserted rows become queryable, like in Postgres — the
+          // bot-disabled log throttle looks its previous row up by summary.
+          (state[table] ??= []).push(row);
           (inserts[table] ??= []).push(row);
           return row;
         });
@@ -169,6 +171,10 @@ function makeSettings(): AgentSettings {
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
+// logDecision is fire-and-forget (void async) — give its insert a tick to
+// land in the fake before asserting on bot_decisions.
+const flushLogs = () => new Promise((r) => setTimeout(r, 0));
+
 describe("handleInboundMessage — participation-gated persistence", () => {
   it("does NOT save a group chat the bot only observes (not addressed)", async () => {
     const fake = makeFakeSupabase();
@@ -196,7 +202,7 @@ describe("handleInboundMessage — participation-gated persistence", () => {
     expect(fake.inserts.bot_jobs).toHaveLength(0);
   });
 
-  it("does NOT save a brand-new chat whose only message is stale replay", async () => {
+  it("does NOT save a brand-new chat whose only message is stale replay — but DOES log the skip", async () => {
     const fake = makeFakeSupabase();
     const staleSec = Math.floor((Date.now() - 30 * 60 * 1000) / 1000); // > 15min DM horizon
     const m = parseWhapiMessage({
@@ -218,9 +224,20 @@ describe("handleInboundMessage — participation-gated persistence", () => {
     expect(outcome.action).toBe("stored_stale");
     expect(fake.inserts.conversations).toHaveLength(0);
     expect(fake.inserts.messages).toHaveLength(0);
+
+    // This used to be a completely silent drop for a brand-new chat. Now a
+    // bot_decisions skip row (keyed by chat_id, no conversation) leaves a
+    // trace in the Activity log.
+    await flushLogs();
+    expect(fake.inserts.bot_decisions).toHaveLength(1);
+    const row = fake.inserts.bot_decisions[0] as Row;
+    expect(row.status).toBe("skip");
+    expect(row.chat_id).toBe("972500000004@s.whatsapp.net");
+    expect(row.conversation_id).toBeNull();
+    expect(String(row.summary)).toContain("reached the webhook");
   });
 
-  it("SAVES a DM the bot participates in, and schedules a durable 15-120s delay", async () => {
+  it("SAVES a DM the bot participates in, and schedules a durable 3-10s delay", async () => {
     const fake = makeFakeSupabase();
     const m = parseWhapiMessage({
       chat_id: "972500000002@s.whatsapp.net",
@@ -250,11 +267,13 @@ describe("handleInboundMessage — participation-gated persistence", () => {
       payload: { target_reply_at: number };
     };
 
-    // The human delay is randomized within the required 15s-2min window,
-    // measured from when the message was sent.
+    // The human delay is randomized within the 3-10s window required by the
+    // 90s reply SLA, measured from when the message was sent. Slack of 1.5s
+    // on the upper bound: the "now + floor" clamp measures from receipt, and
+    // Whapi timestamps are truncated to whole seconds.
     const delayFromMessage = job.payload.target_reply_at - m.ts;
-    expect(delayFromMessage).toBeGreaterThanOrEqual(15_000);
-    expect(delayFromMessage).toBeLessThanOrEqual(120_000);
+    expect(delayFromMessage).toBeGreaterThanOrEqual(3_000);
+    expect(delayFromMessage).toBeLessThanOrEqual(11_500);
 
     // The delay is DURABLE: run_after is in the future so the queue delivers it,
     // rather than the webhook holding the request open (which used to strand it).
@@ -279,9 +298,47 @@ describe("handleInboundMessage — participation-gated persistence", () => {
 
     const start = Date.now();
     await handleInboundMessage(makeDeps(fake.client, "inbound"), makeSettings(), m, {});
-    // The whole call must be fast (no 15-120s inline wait). Generous bound to
+    // The whole call must be fast (no 3-10s inline wait). Generous bound to
     // avoid flakiness while still catching any accidental multi-second sleep.
     expect(Date.now() - start).toBeLessThan(2_000);
+  });
+
+  it("logs the bot-disabled skip once, throttled — not one row per swallowed message", async () => {
+    const fake = makeFakeSupabase();
+    const disabled = { ...makeSettings(), enabled: false };
+    const msg = (id: string) =>
+      parseWhapiMessage({
+        chat_id: "972500000006@s.whatsapp.net",
+        from: "972500000006@s.whatsapp.net",
+        from_name: "נועה",
+        id,
+        text: { body: "יש מישהו שם?" },
+        timestamp: nowSec(),
+      })!;
+
+    const first = await handleInboundMessage(
+      makeDeps(fake.client, "inbound"),
+      disabled,
+      msg("wamid-off-1"),
+      {},
+    );
+    await flushLogs();
+    const second = await handleInboundMessage(
+      makeDeps(fake.client, "inbound"),
+      disabled,
+      msg("wamid-off-2"),
+      {},
+    );
+    await flushLogs();
+
+    expect(first.action).toBe("bot_disabled");
+    expect(second.action).toBe("bot_disabled");
+    // One skip row for the whole throttle window — the second message found
+    // the recent same-summary row and stayed quiet.
+    expect(fake.inserts.bot_decisions).toHaveLength(1);
+    const row = fake.inserts.bot_decisions[0] as Row;
+    expect(row.status).toBe("skip");
+    expect(String(row.summary)).toContain("disabled");
   });
 
   it("SAVES the chat when we send from the linked phone (participation), without replying", async () => {

@@ -3,13 +3,14 @@
 // and record every outbound row. Pacing is skipped in simulation.
 import type { Json } from "@/integrations/supabase/types";
 import type { Supa } from "./types";
-import { interPartDelayMs, typingSecondsFor } from "./inbound";
+import { interPartDelayMs, MAX_DM_PACING_MS, planPacing, typingSecondsFor } from "./inbound";
 import type { AgentContext, WhapiPort } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Upper bound on total pacing (typing + pauses) so a delivery can never push
-// the serverless request toward its timeout.
+// the serverless request toward its timeout. Groups only — DMs answer under a
+// 90s SLA and get the tighter, proportionally-scaled MAX_DM_PACING_MS plan.
 const MAX_TOTAL_PACING_MS = 12_000;
 
 export type DeliveryResult = {
@@ -25,6 +26,12 @@ export async function deliverReply(
   opts: { humanPacing: boolean; botName: string },
 ): Promise<DeliveryResult> {
   let pacingBudgetMs = MAX_TOTAL_PACING_MS;
+  // DMs: plan ALL pacing up front against the MAX_DM_PACING_MS cap, scaling
+  // every delay down proportionally when the natural formula exceeds it — the
+  // reply keeps its rhythm without the last parts eating the SLA. Groups keep
+  // the larger sequential budget (no reply-time SLA there).
+  const dmPlan =
+    opts.humanPacing && !ctx.message.isGroup ? planPacing(parts, MAX_DM_PACING_MS) : null;
 
   // Read receipt on the message we're answering — best-effort.
   if (ctx.message.messageId) {
@@ -35,7 +42,9 @@ export async function deliverReply(
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
     if (opts.humanPacing) {
-      const typingMs = Math.min(typingSecondsFor(part) * 1000, pacingBudgetMs);
+      const typingMs = dmPlan
+        ? dmPlan.typingMs[i]
+        : Math.min(typingSecondsFor(part) * 1000, pacingBudgetMs);
       if (typingMs > 500) {
         await whapi
           .presence(ctx.message.chatId, "typing", Math.ceil(typingMs / 1000))
@@ -60,7 +69,9 @@ export async function deliverReply(
     });
 
     if (opts.humanPacing && i < parts.length - 1) {
-      const pauseMs = Math.min(interPartDelayMs(), Math.max(pacingBudgetMs, 0));
+      const pauseMs = dmPlan
+        ? dmPlan.pauseMs[i]
+        : Math.min(interPartDelayMs(), Math.max(pacingBudgetMs, 0));
       if (pauseMs > 0) {
         await sleep(pauseMs);
         pacingBudgetMs -= pauseMs;

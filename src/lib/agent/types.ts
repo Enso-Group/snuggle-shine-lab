@@ -22,7 +22,11 @@ export type AgentSettings = {
 export type AgentConfig = {
   /** Debounce before replying, so message bursts get one considered answer. */
   reply_delay_seconds?: number;
-  /** Skip the critique stage (faster/cheaper, lower quality). */
+  /**
+   * Historical: the separate critique stage was merged into the draft call
+   * (one LLM cycle per reply). Old stored configs may still carry this key;
+   * it is ignored everywhere.
+   */
   skip_critique?: boolean;
   /** Max WhatsApp messages a single reply may be split into. */
   max_reply_parts?: number;
