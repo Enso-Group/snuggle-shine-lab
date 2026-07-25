@@ -31,20 +31,26 @@ export async function processQueuedJobs(
     limit: opts.max ?? 3,
   });
 
+  // Replies run first (their 90s SLA is the tick's primary duty); research
+  // jobs run last — and only with a mostly-fresh wall, because a research
+  // attempt legitimately needs ~45s to itself and a late start is exactly
+  // how attempts got wall-killed live (2026-07-25, 3x in a row).
+  jobs.sort((a, b) => Number(a.kind === RESEARCH_JOB_KIND) - Number(b.kind === RESEARCH_JOB_KIND));
+
   const results: WorkerRunResult["results"] = [];
   for (const job of jobs) {
-    if (results.length > 0 && Date.now() - batchStartedAt > BATCH_WALL_BUDGET_MS) {
-      await deferJob(deps.supabase, job, {
-        runAfterMs: Date.now(),
-        note: "released: batch wall budget spent",
-      });
+    const elapsedMs = Date.now() - batchStartedAt;
+    const releaseNote =
+      results.length > 0 && elapsedMs > BATCH_WALL_BUDGET_MS
+        ? "released: batch wall budget spent"
+        : job.kind === RESEARCH_JOB_KIND && results.length > 0 && elapsedMs > 15_000
+          ? "released: research needs a fresh wall"
+          : null;
+    if (releaseNote) {
+      await deferJob(deps.supabase, job, { runAfterMs: Date.now(), note: releaseNote });
       results.push({
         jobId: job.id,
-        outcome: {
-          action: "deferred",
-          reason: "released: batch wall budget",
-          runAfterMs: Date.now(),
-        },
+        outcome: { action: "deferred", reason: releaseNote, runAfterMs: Date.now() },
       });
       continue;
     }

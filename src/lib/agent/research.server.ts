@@ -6,7 +6,7 @@
 // time, the contact gets an interim update instead of silence — sent by the
 // watchdog sweep (fast tick + full sweep) for jobs that are stuck, backing
 // off, waiting out the anti-ban min-gap, or dead.
-import { callLLM } from "@/lib/llm.server";
+import { callLLM, modelCandidates } from "@/lib/llm.server";
 import { isTavilyConfigured, tavilySearch, type TavilySearchOutcome } from "@/lib/tavily.server";
 import { loadAgentSettings } from "./context.server";
 import { logDecision } from "./decisions.server";
@@ -405,14 +405,30 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
     // move is always to finish and deliver; the watchdog covers the cases
     // where no live attempt is running.
 
+    // A retry (or a revived job) must be CHEAP — attempt 1 already proved the
+    // full-price path dies at the ~60s wall on this thread. Cached search
+    // results skip the search; the draft leads with the chain-tail model
+    // (fast, known to deliver) under tight budgets. Same medicine that cured
+    // the posting engine's wall deaths.
+    const cheapAttempt = job.attempts >= 2 || !!payload.revived;
+
     // --- Research: web search + KB ---
     const t = Date.now();
-    if (isTavilyConfigured()) {
+    if (
+      payload.search_results &&
+      (payload.search_results.answer || payload.search_results.results.length)
+    ) {
+      search = payload.search_results;
+    } else if (isTavilyConfigured()) {
       try {
         search = await tavilySearch(payload.question, {
-          timeoutMs: SEARCH_TIMEOUT_MS,
-          budgetMs: SEARCH_BUDGET_MS,
+          timeoutMs: cheapAttempt ? 5_000 : SEARCH_TIMEOUT_MS,
+          budgetMs: cheapAttempt ? 6_000 : SEARCH_BUDGET_MS,
         });
+        // Cache immediately: a wall-kill after this line costs the retry
+        // nothing — it resumes at the draft.
+        payload.search_results = search;
+        await persistPayload(supabase, job.id, payload);
       } catch (e) {
         searchError = String((e as Error)?.message ?? e).slice(0, 200);
       }
@@ -508,13 +524,22 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
 
 השאלה הפתוחה לבדיקה: ${payload.question}`;
 
+    // Cheap attempts lead with the candidate-chain TAIL (flash — the model
+    // that reliably drafts when the pinned strong model stalls on long
+    // prompts) and a tight budget: the whole attempt must fit the wall.
+    const baseOverrides = { model_strong: settings.model_strong, model_fast: settings.model_fast };
     const res = await callLLM({
       role: "strong",
       source: "agent_research_answer",
       json: true,
-      overrides: { model_strong: settings.model_strong, model_fast: settings.model_fast },
-      timeoutMs: ANSWER_TIMEOUT_MS,
-      budgetMs: ANSWER_BUDGET_MS,
+      overrides: cheapAttempt
+        ? {
+            model_strong: modelCandidates("strong", baseOverrides).at(-1) ?? null,
+            model_fast: settings.model_fast,
+          }
+        : baseOverrides,
+      timeoutMs: cheapAttempt ? 10_000 : ANSWER_TIMEOUT_MS,
+      budgetMs: cheapAttempt ? 12_000 : ANSWER_BUDGET_MS,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -750,11 +775,84 @@ export async function sendOverdueResearchInterims(
     if (sent >= max) break;
     const payload = parseResearchPayload(row.payload);
     if (!payload) continue;
+    if (row.chat_id.endsWith("@simulation")) continue;
+
+    // FAILED jobs get handled ahead of the interim window: a dead job whose
+    // answer never went out is revived ONCE for a cheap final attempt (cached
+    // search + fast model — see processResearchJob's cheapAttempt path), so
+    // wall-killed attempts don't leave the promise permanently unanswered.
+    // Already-revived-and-dead-again jobs alert the admin exactly once.
+    if (row.status === "failed") {
+      const answerOut =
+        !!payload.answer_parts?.length &&
+        row.conversation_id &&
+        (
+          await supabase
+            .from("messages")
+            .select("id")
+            .eq("conversation_id", row.conversation_id)
+            .eq("direction", "outbound")
+            .in("body", answerBodyCandidates(payload.answer_parts))
+            .gt("created_at", row.created_at)
+            .limit(1)
+        ).data?.length;
+      if (!answerOut) {
+        const withinCap = Date.now() < payload.deadline_at + STALE_GIVE_UP_MS;
+        if (!payload.revived && withinCap) {
+          const { data: revivedRow } = await supabase
+            .from("bot_jobs")
+            .update({
+              status: "pending",
+              attempts: 0,
+              run_after: new Date().toISOString(),
+              locked_until: null,
+              payload: { ...payload, revived: true },
+              last_error: "revived by watchdog for one cheap final attempt",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", row.id)
+            .eq("updated_at", row.updated_at)
+            .select("id");
+          if (revivedRow?.length) {
+            logDecision(supabase, {
+              job_id: row.id,
+              conversation_id: row.conversation_id,
+              chat_id: row.chat_id,
+              trigger: "research",
+              stage: "research",
+              summary:
+                "Research job died out of attempts — revived once for a cheap final attempt (cached search + fast model)",
+              data: { question: payload.question.slice(0, 300), attempts_spent: row.attempts },
+            });
+            results.push({ id: row.id, action: "revived" });
+            continue;
+          }
+        } else if (!payload.escalated_alerted) {
+          const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
+          await raiseAdminAlert(
+            supabase,
+            `Research promise is DEAD (revive spent, ${row.attempts} attempts) — a human must answer "${payload.question.slice(0, 200)}" (chat ${row.chat_id}). Interim ${payload.interim_sent ? "was" : "was NOT"} sent.`,
+          );
+          await supabase
+            .from("bot_jobs")
+            .update({
+              payload: { ...payload, escalated_alerted: true },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", row.id);
+          payload.escalated_alerted = true;
+          results.push({ id: row.id, action: "alerted" });
+          // The alert update changed updated_at, so this pass's interim CAS
+          // would fail anyway — the next sweep (≤20s) sends the interim.
+          continue;
+        }
+      }
+    }
+
     // Threshold-only gate here: the interim_sent flag is checked further
     // down AGAINST THE MESSAGES TABLE, because a wall-killed sender can leave
     // the flag true with nothing delivered.
     if (Date.now() < payload.promised_at + RESEARCH_INTERIM_AFTER_MS) continue;
-    if (row.chat_id.endsWith("@simulation")) continue;
     // Trust a processing lock only while the attempt could still be alive:
     // claim locks last 3 min but a real attempt never exceeds ~90s, so an
     // older lock is a wall-killed worker that will never send anything.
@@ -850,7 +948,7 @@ export async function sendOverdueResearchInterims(
         results.push({ id: row.id, action: "skipped" });
         continue;
       }
-      const { checkOutboundAllowed, raiseAdminAlert } = await import("@/lib/anti-ban.server");
+      const { checkOutboundAllowed } = await import("@/lib/anti-ban.server");
       const line = interimLineFor(payload.language);
       const guard = await checkOutboundAllowed(supabase, conv, line);
       if (!guard.ok) {
@@ -883,21 +981,9 @@ export async function sendOverdueResearchInterims(
           attempts: row.attempts,
         },
       });
-      // A job that already died out of attempts will never answer — the
-      // interim bought time, but a human must deliver. Alert alongside it.
-      if (row.status === "failed" && !payload.escalated_alerted) {
-        await raiseAdminAlert(
-          supabase,
-          `Research promise job died out of attempts — interim sent, but a human must answer "${payload.question.slice(0, 200)}" (chat ${row.chat_id}).`,
-        );
-        await supabase
-          .from("bot_jobs")
-          .update({
-            payload: { ...payload, interim_sent: true, escalated_alerted: true },
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", row.id);
-      }
+      // (Failed-job alerting lives in the failed-handling block at the top of
+      // the loop — by the time a failed job reaches this send, it was already
+      // revived or alerted on an earlier sweep.)
       sent++;
       results.push({ id: row.id, action: "interim_sent" });
     } catch (e) {

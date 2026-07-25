@@ -40,6 +40,14 @@ export type ResearchJobPayload = {
   approval_queued?: boolean;
   /** Approval-mode: id of the scheduled_approvals row holding the answer. */
   approval_id?: string | null;
+  /**
+   * Search results cached the moment the search succeeds, so a wall-killed
+   * attempt's retry resumes at the draft instead of paying for the search
+   * again (live 2026-07-25: attempts cost ~50-60s and died at the ~60s wall).
+   */
+  search_results?: TavilySearchOutcome | null;
+  /** Set when the watchdog revived a failed job for one cheap final attempt. */
+  revived?: boolean;
 };
 
 /**
@@ -93,6 +101,14 @@ export function parseResearchPayload(raw: unknown): ResearchJobPayload | null {
       escalated_alerted: p.escalated_alerted === true,
       approval_queued: p.approval_queued === true,
       approval_id: p.approval_id ? String(p.approval_id) : null,
+      search_results:
+        p.search_results && typeof p.search_results === "object"
+          ? {
+              answer: typeof p.search_results.answer === "string" ? p.search_results.answer : null,
+              results: Array.isArray(p.search_results.results) ? p.search_results.results : [],
+            }
+          : null,
+      revived: p.revived === true,
     };
   } catch {
     return null;

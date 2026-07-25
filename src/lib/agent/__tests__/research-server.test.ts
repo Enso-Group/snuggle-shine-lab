@@ -468,7 +468,7 @@ describe("sendOverdueResearchInterims (deadline watchdog)", () => {
     expect(whapi.sends).toHaveLength(1);
   });
 
-  it("also covers a job that died out of attempts (status failed)", async () => {
+  it("revives a failed job once for a cheap final attempt instead of giving up", async () => {
     const now = Date.now();
     const job = makeResearchJob({ promisedAtMs: now - 9 * 60_000, status: "failed", attempts: 3 });
     const fake = seedResearch(now, job);
@@ -476,8 +476,43 @@ describe("sendOverdueResearchInterims (deadline watchdog)", () => {
 
     const run = await sendOverdueResearchInterims(makeDeps(fake, whapi));
 
-    expect(run.sent).toBe(1);
+    expect(run.results.map((r) => r.action)).toContain("revived");
+    const row = jobRow(fake);
+    expect(row.status).toBe("pending");
+    expect(row.attempts).toBe(0);
+    expect((row.payload as ResearchJobPayload).revived).toBe(true);
+    // No interim yet — the revived attempt is imminent and may still answer.
+    expect(whapi.sends).toEqual([]);
+  });
+
+  it("a job that died AGAIN after its revive alerts the admin once, then the next sweep sends the interim", async () => {
+    const now = Date.now();
+    const job = makeResearchJob({
+      promisedAtMs: now - 9 * 60_000,
+      status: "failed",
+      attempts: 3,
+      payloadPatch: { revived: true },
+    });
+    const fake = seedResearch(now, job);
+    const whapi = makeFakeWhapi();
+    const deps = makeDeps(fake, whapi);
+
+    const first = await sendOverdueResearchInterims(deps);
+    expect(first.results.map((r) => r.action)).toContain("alerted");
+    const alert = (fake.inserts.commands_log ?? []).find((r) =>
+      String(r.prompt).includes("Research promise is DEAD"),
+    );
+    expect(alert).toBeTruthy();
+    expect(whapi.sends).toEqual([]);
+
+    const second = await sendOverdueResearchInterims(deps);
+    expect(second.sent).toBe(1);
     expect(whapi.sends.map((s) => s.body)).toEqual([interimLineFor("he")]);
+    // Alert fired exactly once across both sweeps.
+    const alerts = (fake.inserts.commands_log ?? []).filter((r) =>
+      String(r.prompt).includes("Research promise is DEAD"),
+    );
+    expect(alerts).toHaveLength(1);
   });
 
   it("leaves fresh jobs and genuinely live-locked processing jobs alone", async () => {
@@ -562,20 +597,26 @@ describe("sendOverdueResearchInterims (deadline watchdog)", () => {
     expect((jobRow(fake).payload as ResearchJobPayload).interim_sent).toBe(false);
   });
 
-  it("alerts the admin when it interims for a job that died out of attempts", async () => {
+  it("a revived attempt resumes from the cached search and drafts with the fast tail model", async () => {
     const now = Date.now();
-    const job = makeResearchJob({ promisedAtMs: now - 9 * 60_000, status: "failed", attempts: 3 });
+    answerLLM();
+    const job = makeResearchJob({
+      promisedAtMs: now - 9 * 60_000,
+      attempts: 1,
+      payloadPatch: { revived: true, search_results: TAVILY_HIT },
+    });
     const fake = seedResearch(now, job);
     const whapi = makeFakeWhapi();
 
-    const run = await sendOverdueResearchInterims(makeDeps(fake, whapi));
+    const outcome = await processResearchJob(makeDeps(fake, whapi), job);
 
-    expect(run.sent).toBe(1);
-    const alert = (fake.inserts.commands_log ?? []).find((r) =>
-      String(r.prompt).includes("died out of attempts"),
-    );
-    expect(alert).toBeTruthy();
-    expect((jobRow(fake).payload as ResearchJobPayload).escalated_alerted).toBe(true);
+    expect(outcome.action).toBe("replied");
+    // Cached search used — no second Tavily bill, no search latency.
+    expect(tavilyMock).not.toHaveBeenCalled();
+    // Cheap draft: tight budget + the chain-tail model leads.
+    const draftInput = callLLMMock.mock.calls[0][0] as LLMCallInput;
+    expect(draftInput.budgetMs).toBe(12_000);
+    expect(draftInput.overrides?.model_strong).toBeTruthy();
   });
 });
 
