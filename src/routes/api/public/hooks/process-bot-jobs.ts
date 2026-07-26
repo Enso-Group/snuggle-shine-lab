@@ -80,6 +80,31 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                   };
                 }
                 try {
+                  const { isApifyConfigured, xSearch } = await import("@/lib/apify-x.server");
+                  if (!isApifyConfigured()) {
+                    probe.apify_x = { ok: false, error: "APIFY_API_KEY not configured" };
+                  } else {
+                    const t0 = Date.now();
+                    const r = await xSearch("AI news", {
+                      maxItems: 5,
+                      timeoutMs: 25_000,
+                      budgetMs: 26_000,
+                    });
+                    probe.apify_x = {
+                      ok: true,
+                      results: r.results.length,
+                      top_url: r.results[0]?.url ?? null,
+                      top_author: r.results[0]?.author ?? null,
+                      ms: Date.now() - t0,
+                    };
+                  }
+                } catch (e) {
+                  probe.apify_x = {
+                    ok: false,
+                    error: String((e as Error)?.message ?? e).slice(0, 200),
+                  };
+                }
+                try {
                   const { callLLM } = await import("@/lib/llm.server");
                   const t0 = Date.now();
                   const r = await callLLM({
@@ -214,6 +239,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
               // Whether the production runtime can actually read the Tavily
               // secret — the boolean only, never the value.
               tavily_configured: isTavilyConfigured(),
+              apify_x_configured: (await import("@/lib/apify-x.server")).isApifyConfigured(),
               recent: (rjobs ?? []).map((j) => {
                 const p = parseResearchPayload(j.payload);
                 return {

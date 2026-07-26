@@ -2,6 +2,7 @@
 // you"). Detection, deadline math, payload shape, interim lines and the
 // prompt block are all here so they can be unit-tested without I/O; the job
 // engine lives in research.server.ts.
+import type { XSearchOutcome } from "@/lib/apify-x.server";
 import type { TavilySearchOutcome } from "@/lib/tavily.server";
 
 export const RESEARCH_JOB_KIND = "research_answer";
@@ -46,6 +47,11 @@ export type ResearchJobPayload = {
    * again (live 2026-07-25: attempts cost ~50-60s and died at the ~60s wall).
    */
   search_results?: TavilySearchOutcome | null;
+  /**
+   * Twitter/X results (Apify) cached like search_results — retries reuse them
+   * instead of paying for another scraper run.
+   */
+  x_results?: XSearchOutcome | null;
   /** Set when the watchdog revived a failed job for one cheap final attempt. */
   revived?: boolean;
 };
@@ -107,6 +113,10 @@ export function parseResearchPayload(raw: unknown): ResearchJobPayload | null {
               answer: typeof p.search_results.answer === "string" ? p.search_results.answer : null,
               results: Array.isArray(p.search_results.results) ? p.search_results.results : [],
             }
+          : null,
+      x_results:
+        p.x_results && typeof p.x_results === "object"
+          ? { results: Array.isArray(p.x_results.results) ? p.x_results.results : [] }
           : null,
       revived: p.revived === true,
     };
@@ -209,6 +219,33 @@ ${search.answer ? `סיכום אוטומטי של תוצאות החיפוש: ${s
 
 כללי שימוש בתוצאות: הסתמך רק על מה שמופיע כאן או במאגר הידע. אל תמציא פרטים מעבר לזה, ואל תזכיר שביצעת "חיפוש" — פשוט תן את התשובה כמו מישהו שבדק את הנושא. אסור סימוני מקור כמו [1].
 כלל קישורים (חשוב): ההבטחה הייתה לחזור עם משהו קונקרטי. אם הלקוח ביקש קישור, דוח, מאמר, מדריך, סרטון או כל משאב — חובה לכלול בתשובה את כתובת ה-URL המלאה של התוצאה המתאימה ביותר מלמעלה, מועתקת אות-באות (לעולם אל תמציא כתובת ואל תקצר אותה). גם כשלא ביקש קישור במפורש, אם התשובה נשענת על מקור מרכזי אחד — צרף את הקישור שלו בסוף ההודעה האחרונה. אסור לסיים בהבטחה נוספת כמו "אשלח לך קישור" — הקישור נשלח עכשיו או שאין קישור.`;
+}
+
+/**
+ * Prompt block for live Twitter/X results (Apify). Kept separate from the web
+ * block so each carries its own usage rules: X is the "what people are saying
+ * RIGHT NOW" source — takes, reactions, fresh links — never the source of
+ * record for hard facts.
+ */
+export function buildXBlock(x: XSearchOutcome | null): string {
+  if (!x || !x.results.length) return "";
+  const tweets = x.results
+    .slice(0, 5)
+    .map((t) => {
+      const when = t.date ? ` · ${String(t.date).slice(0, 10)}` : "";
+      const engagement =
+        t.likes != null || t.retweets != null
+          ? ` · ${t.likes ?? 0} likes, ${t.retweets ?? 0} reposts`
+          : "";
+      return `- ${t.author}${when}${engagement}\n  "${t.text.slice(0, 280)}"\n  ${t.url}`;
+    })
+    .join("\n");
+  return `
+
+ציוצים עדכניים מ-X/טוויטר על הנושא (מה אנשים אומרים עכשיו):
+${tweets}
+
+כללי שימוש בציוצים: אלה דעות ותגובות של אנשים — השתמש בהם כדי לשקף "מה מדברים עליו עכשיו", טרנדים ותחושות, לא כמקור לעובדות קשות (עובדות רק מתוצאות החיפוש או ממאגר הידע). מותר לשתף קישור לציוץ רק אם הוא מופיע ברשימה למעלה, מועתק במדויק. אל תזכיר "טוויטר סרוק" או איך השגת את זה — פשוט "ראיתי ש..." כמו מישהו שמעודכן.`;
 }
 
 // ---------------------------------------------------------------------------

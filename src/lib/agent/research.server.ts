@@ -6,6 +6,7 @@
 // time, the contact gets an interim update instead of silence — sent by the
 // watchdog sweep (fast tick + full sweep) for jobs that are stuck, backing
 // off, waiting out the anti-ban min-gap, or dead.
+import { isApifyConfigured, xSearch, type XSearchOutcome } from "@/lib/apify-x.server";
 import { callLLM, modelCandidates } from "@/lib/llm.server";
 import { isTavilyConfigured, tavilySearch, type TavilySearchOutcome } from "@/lib/tavily.server";
 import { loadAgentSettings } from "./context.server";
@@ -19,6 +20,7 @@ import { buildHumanizeRules, buildDateContext } from "./prompts.server";
 import {
   buildResearchBlock,
   buildResearchPayload,
+  buildXBlock,
   detectsResourceRequest,
   interimLineFor,
   parseResearchPayload,
@@ -42,6 +44,10 @@ import type {
 // retry) + draft (≤25s) + pacing (≤6s) stays inside the ~60s request wall.
 const SEARCH_TIMEOUT_MS = 7_000;
 const SEARCH_BUDGET_MS = 12_000;
+// X/Twitter runs IN PARALLEL with Tavily, so its budget rides inside the same
+// search slice of the wall — it never adds wall time, only breadth.
+const X_SEARCH_TIMEOUT_MS = 10_000;
+const X_SEARCH_BUDGET_MS = 11_000;
 const ANSWER_TIMEOUT_MS = 15_000;
 const ANSWER_BUDGET_MS = 25_000;
 // Anti-ban min-gap between consecutive outbound is 3 min; deferral lands just
@@ -403,6 +409,8 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
   let parts = payload.answer_parts?.length ? payload.answer_parts : null;
   let search: TavilySearchOutcome | null = null;
   let searchError: string | null = null;
+  let xResults: XSearchOutcome | null = null;
+  let xError: string | null = null;
 
   if (!parts) {
     // Deliberately NO inline interim here even when the attempt starts late:
@@ -418,32 +426,65 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
     // the posting engine's wall deaths.
     const cheapAttempt = job.attempts >= 2 || !!payload.revived;
 
-    // --- Research: web search + KB ---
+    // --- Research: web search (Tavily) + X/Twitter (Apify) IN PARALLEL + KB.
+    // X is strictly additive: it runs alongside Tavily inside the same wall
+    // budget, its failure NEVER fails the attempt (Tavily-only is a fine
+    // answer), and cheap retry attempts use only its cached results — a
+    // scraper re-run is exactly the slow, paid work a retry must not do.
     const t = Date.now();
-    if (
+    const cachedTavily =
       payload.search_results &&
       (payload.search_results.answer || payload.search_results.results.length)
-    ) {
-      search = payload.search_results;
-    } else if (isTavilyConfigured()) {
-      try {
-        search = await tavilySearch(payload.question, {
-          timeoutMs: cheapAttempt ? 5_000 : SEARCH_TIMEOUT_MS,
-          budgetMs: cheapAttempt ? 6_000 : SEARCH_BUDGET_MS,
-        });
-        // Cache immediately: a wall-kill after this line costs the retry
-        // nothing — it resumes at the draft.
-        payload.search_results = search;
-        await persistPayload(supabase, job.id, payload);
-      } catch (e) {
-        searchError = String((e as Error)?.message ?? e).slice(0, 200);
-      }
+        ? payload.search_results
+        : null;
+    const cachedX = payload.x_results?.results.length ? payload.x_results : null;
+
+    const tavilyPromise: Promise<TavilySearchOutcome | null> = cachedTavily
+      ? Promise.resolve(cachedTavily)
+      : isTavilyConfigured()
+        ? tavilySearch(payload.question, {
+            timeoutMs: cheapAttempt ? 5_000 : SEARCH_TIMEOUT_MS,
+            budgetMs: cheapAttempt ? 6_000 : SEARCH_BUDGET_MS,
+          })
+        : Promise.reject(new Error("TAVILY_API_KEY not configured"));
+    const xPromise: Promise<XSearchOutcome | null> = cachedX
+      ? Promise.resolve(cachedX)
+      : !cheapAttempt && isApifyConfigured()
+        ? xSearch(payload.question, {
+            maxItems: 10,
+            timeoutMs: X_SEARCH_TIMEOUT_MS,
+            budgetMs: X_SEARCH_BUDGET_MS,
+          })
+        : Promise.resolve(null);
+
+    const [tavilySettled, xSettled] = await Promise.allSettled([tavilyPromise, xPromise]);
+    if (tavilySettled.status === "fulfilled") {
+      search = tavilySettled.value;
     } else {
-      searchError = "TAVILY_API_KEY not configured";
+      searchError = String((tavilySettled.reason as Error)?.message ?? tavilySettled.reason).slice(
+        0,
+        200,
+      );
+    }
+    if (xSettled.status === "fulfilled") {
+      xResults = xSettled.value;
+    } else {
+      // Scrapers break and stall — that is an expected, non-blocking outcome.
+      xError = String((xSettled.reason as Error)?.message ?? xSettled.reason).slice(0, 200);
+    }
+    // Cache both immediately: a wall-kill after this line costs the retry
+    // nothing — it resumes at the draft.
+    if ((search && search !== cachedTavily) || (xResults && xResults !== cachedX)) {
+      if (search) payload.search_results = search;
+      if (xResults) payload.x_results = xResults;
+      await persistPayload(supabase, job.id, payload);
     }
     const kb = await loadKnowledge(supabase, `${payload.question} ${payload.source_body}`);
 
-    const hasMaterial = !!(search && (search.answer || search.results.length)) || kb.count > 0;
+    const hasMaterial =
+      !!(search && (search.answer || search.results.length)) ||
+      !!xResults?.results.length ||
+      kb.count > 0;
     if (!hasMaterial) {
       // A transient search failure with attempts left is a retry, not an
       // escalation — a 20s Tavily blip must not burn an answerable question.
@@ -458,7 +499,7 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
         const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
         await raiseAdminAlert(
           supabase,
-          `Research promise needs a human: no web results and no KB entry for "${payload.question.slice(0, 200)}" (chat ${job.chat_id}).${searchError ? ` Search error: ${searchError}` : ""}`,
+          `Research promise needs a human: no web/X results and no KB entry for "${payload.question.slice(0, 200)}" (chat ${job.chat_id}).${searchError ? ` Search error: ${searchError}` : ""}`,
         );
         payload.escalated_alerted = true;
         await persistPayload(supabase, job.id, payload);
@@ -527,6 +568,7 @@ ${kb.block}`
       personPromptBlock(person) +
       kbBlock +
       buildResearchBlock(search) +
+      buildXBlock(xResults) +
       `
 
 משימה: קודם הבטחת ללקוח לבדוק משהו ולחזור אליו — עכשיו בדקת, וזו הודעת ההמשך עם התשובה.
@@ -596,20 +638,26 @@ ${kb.block}`
     // written. If the model ignored the link rule, append the best search
     // result's URL as its own closing message (WhatsApp renders a preview).
     const hasUrl = parts.some((p) => /https?:\/\//i.test(p));
-    if (wantsResource && !hasUrl && search?.results.length) {
-      const top = [...search.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
-      if (top?.url) parts = [...parts, top.url];
+    if (wantsResource && !hasUrl) {
+      // Prefer a web article/report (source of record); fall back to the top
+      // tweet when X was the only source that found anything.
+      const top = search?.results.length
+        ? [...search.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0]?.url
+        : xResults?.results[0]?.url;
+      if (top) parts = [...parts, top];
     }
 
     logDecision(supabase, {
       ...base,
       trigger: "research",
       stage: "research",
-      summary: `Research done — drafted the promised answer (${search?.results.length ?? 0} web result(s), ${kb.count} KB item(s))`,
+      summary: `Research done — drafted the promised answer (${search?.results.length ?? 0} web result(s), ${xResults?.results.length ?? 0} X post(s), ${kb.count} KB item(s))`,
       data: {
         question: payload.question.slice(0, 300),
         tavily_results: search?.results.length ?? 0,
         tavily_answer: !!search?.answer,
+        x_results: xResults?.results.length ?? 0,
+        x_error: xError,
         kb_items: kb.count,
         search_error: searchError,
       },

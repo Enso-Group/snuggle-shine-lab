@@ -44,8 +44,9 @@ deadline, and still leaves final control with a human.
 
 **Research promises**: when a reply says "I'll check and get back to you",
 that promise becomes a tracked job with a hard 10-minute deadline. The agent
-runs a real web search (Tavily), drafts a grounded answer that includes the
-actual source link when a resource was requested, and sends it within minutes.
+runs a real web search (Tavily) and a live Twitter/X search (Apify) in
+parallel, drafts a grounded answer that merges both — including the actual
+source link when a resource was requested — and sends it within minutes.
 If the answer can't land in time, the contact gets an honest interim update
 and the admin is alerted — a promise is never silently dropped.
 
@@ -92,7 +93,9 @@ runs on the same profile.
   classification) through an LLM gateway with automatic fallback across model
   candidates, wall-clock budgets on every call, and per-call cost logging.
 - **Integrations**: Whapi.Cloud for WhatsApp send/receive (text, media,
-  polls, presence), Tavily for web research.
+  polls, presence); Tavily for web research; Apify (Tweet Scraper) for live
+  Twitter/X search — both research sources run in parallel and the answer
+  merges them, degrading gracefully to web-only if the X scraper fails.
 
 ## Reliability & safety (selected)
 
