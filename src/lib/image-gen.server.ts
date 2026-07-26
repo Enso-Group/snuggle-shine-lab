@@ -11,17 +11,23 @@
 // every call is logged to ai_usage_log.
 import type { MediaAttachment } from "./media";
 
-const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const GATEWAY_CHAT_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const GATEWAY_IMAGES_URL = "https://ai.gateway.lovable.dev/v1/images/generations";
 // Image models render slowly (10-40s is normal) — one generous attempt per
 // candidate, capped so a dashboard server-fn stays inside the ~60s wall.
 const REQUEST_TIMEOUT_MS = 45_000;
 const BUDGET_MS = 50_000;
 
-const IMAGE_MODEL_CANDIDATES = [
-  "openai/gpt-image-2",
-  "openai/gpt-image-1-mini",
-  "google/gemini-3.1-flash-image",
-  "google/gemini-2.5-flash-image",
+// Endpoint per family (confirmed by Lovable's assistant 2026-07-26):
+// gemini image models take messages+modalities on chat/completions; the
+// openai/gpt-image-* models exist ONLY on /v1/images/generations with the
+// OpenAI shape (prompt/quality). Gemini leads — proven live at ~13s — and the
+// OpenAI models are real fallbacks now that they're called correctly.
+const IMAGE_MODEL_CANDIDATES: Array<{ model: string; endpoint: "chat" | "images" }> = [
+  { model: "google/gemini-3.1-flash-image", endpoint: "chat" },
+  { model: "openai/gpt-image-2", endpoint: "images" },
+  { model: "openai/gpt-image-1-mini", endpoint: "images" },
+  { model: "google/gemini-2.5-flash-image", endpoint: "chat" },
 ];
 
 let workingImageModel: string | null = null;
@@ -93,11 +99,14 @@ export async function generateImage(
 
   const deadlineAt = Date.now() + (opts.budgetMs ?? BUDGET_MS);
   const chain = workingImageModel
-    ? [workingImageModel, ...IMAGE_MODEL_CANDIDATES.filter((m) => m !== workingImageModel)]
+    ? [
+        ...IMAGE_MODEL_CANDIDATES.filter((c) => c.model === workingImageModel),
+        ...IMAGE_MODEL_CANDIDATES.filter((c) => c.model !== workingImageModel),
+      ]
     : IMAGE_MODEL_CANDIDATES;
   let lastError: Error = new Error("no image model candidates");
 
-  for (const model of chain) {
+  for (const { model, endpoint } of chain) {
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs < 5_000) break;
     const start = Date.now();
@@ -107,14 +116,18 @@ export async function generateImage(
       Math.min(opts.timeoutMs ?? REQUEST_TIMEOUT_MS, remainingMs),
     );
     try {
-      const res = await fetch(GATEWAY_URL, {
+      const res = await fetch(endpoint === "images" ? GATEWAY_IMAGES_URL : GATEWAY_CHAT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: prompt }],
-          modalities: ["image", "text"],
-        }),
+        body: JSON.stringify(
+          endpoint === "images"
+            ? { model, prompt, quality: "medium" }
+            : {
+                model,
+                messages: [{ role: "user", content: prompt }],
+                modalities: ["image", "text"],
+              },
+        ),
         signal: ctrl.signal,
       });
       const bodyText = await res.text();
