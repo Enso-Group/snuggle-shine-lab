@@ -110,35 +110,35 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                 // does not serve.
                 const attempt = async (
                   path: string,
-                  body: Record<string, unknown>,
+                  body: Record<string, unknown> | null,
+                  method = "POST",
                 ): Promise<Record<string, unknown>> => {
                   try {
                     const r = await fetch(`https://ai.gateway.lovable.dev${path}`, {
-                      method: "POST",
+                      method,
                       headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
-                      body: JSON.stringify(body),
+                      ...(body ? { body: JSON.stringify(body) } : {}),
                     });
-                    return { path, status: r.status, body: (await r.text()).slice(0, 260) };
+                    return { path, status: r.status, body: (await r.text()).slice(0, 2500) };
                   } catch (e) {
                     return { path, error: String((e as Error)?.message ?? e).slice(0, 200) };
                   }
                 };
                 const video = {
-                  veo_chat: await attempt("/v1/chat/completions", {
-                    model: "google/veo-3.1",
-                    messages: [{ role: "user", content: "A 3 second clip of ocean waves" }],
+                  // The prize: an invalid model id makes the gateway enumerate
+                  // its FULL allowed-models list in the error body.
+                  full_catalog_via_error: await attempt("/v1/chat/completions", {
+                    model: "definitely/not-a-model",
+                    messages: [{ role: "user", content: "hi" }],
                   }),
-                  veo_images_endpoint: await attempt("/v1/images/generations", {
-                    model: "google/veo-3.1",
-                    prompt: "A 3 second clip of ocean waves",
-                  }),
-                  videos_endpoint: await attempt("/v1/videos/generations", {
+                  veo_videos_post: await attempt("/v1/videos/generations", {
                     model: "google/veo-3.1",
                     prompt: "A 3 second clip of ocean waves",
                   }),
-                  sora_chat: await attempt("/v1/chat/completions", {
-                    model: "openai/sora-2",
-                    messages: [{ role: "user", content: "A 3 second clip of ocean waves" }],
+                  veo_videos_get: await attempt("/v1/videos/generations", null, "GET"),
+                  veo_video_singular: await attempt("/v1/video/generations", {
+                    model: "google/veo-3.1",
+                    prompt: "A 3 second clip of ocean waves",
                   }),
                 };
                 probe = {
