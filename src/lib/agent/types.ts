@@ -92,6 +92,13 @@ export type InboundJobPayload = {
    * line + alert) — the sweep must act exactly once per job.
    */
   fallback_handled?: boolean;
+  /**
+   * The generated image for this reply, cached the moment generation
+   * succeeds: a retry (wall-kill, transient failure) reuses it instead of
+   * paying for another generation, and a cycle that already owns an image
+   * never bows out to a newer "send it already" nudge.
+   */
+  image_media?: import("@/lib/media").MediaAttachment | null;
 };
 
 export type BotJob = {

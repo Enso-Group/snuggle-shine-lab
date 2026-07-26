@@ -15,7 +15,7 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
         Response.json({
           ok: true,
           info: "Whapi webhook endpoint",
-          rev: "2026-07-26-image-e2e-fix",
+          rev: "2026-07-26-image-e2e-fix-v2",
         }),
       POST: async ({ request }) => {
         const url = new URL(request.url);

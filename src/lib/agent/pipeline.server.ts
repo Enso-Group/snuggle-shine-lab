@@ -140,12 +140,16 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     .gt("created_at", new Date(p.ts).toISOString())
     .order("created_at", { ascending: false })
     .limit(1);
-  if (newer?.length) {
+  if (newer?.length && !p.image_media) {
     // "Superseded" is only safe when SOME other live job will actually write
     // the reply. Trivial messages ("תודה", "👍") never enqueue a job — bowing
     // out on their account would leave the original message answered by
     // nobody. No owner → keep going: the trivial newcomer needs no reply of
     // its own, and the history this cycle drafts from already includes it.
+    // A cycle that already OWNS a generated image (p.image_media cached by a
+    // previous attempt) never bows out: the newer message is almost always a
+    // "send it already" nudge, and restarting throws the paid-for image away
+    // and re-enters the same loop (live 2026-07-26, Yona).
     const owned = await hasOwningReplyJob(supabase, {
       chatId: job.chat_id,
       excludeJobId: job.id,
@@ -388,7 +392,16 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // real image action).
   let imageMedia: MediaAttachment | null = null;
   let imageGenMs = 0;
+  // A previous attempt's image survives the retry: reuse it instead of paying
+  // for (and waiting on) a second generation. The cached attachment also
+  // answers the original ask even when a cheap retry draft forgot to set
+  // image_request.
+  if (p.image_media && !message.isGroup && isDmChatId(job.chat_id)) {
+    const { parseMedia } = await import("@/lib/media");
+    imageMedia = parseMedia(p.image_media);
+  }
   if (
+    !imageMedia &&
     imageRequest &&
     !message.isGroup &&
     isDmChatId(job.chat_id) &&
@@ -404,6 +417,13 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       });
       imageMedia = generated.attachment;
       imageGenMs = Date.now() - t;
+      // Cache IMMEDIATELY (awaited): a wall-kill from here on costs the retry
+      // nothing — it resumes with the image in hand.
+      p.image_media = imageMedia;
+      await supabase
+        .from("bot_jobs")
+        .update({ payload: p, updated_at: new Date().toISOString() })
+        .eq("id", job.id);
       logDecision(supabase, {
         ...base,
         stage: "image",
@@ -582,15 +602,19 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       });
       return { action: "skipped", reason: "superseded" };
     }
-  } else if (newerRows?.length && job.attempts >= 2) {
+  } else if (newerRows?.length && (job.attempts >= 2 || imageMedia)) {
     // Retry attempts skip the consolidation round entirely: it costs another
     // strong call at the tail of an attempt that must stay under the request
-    // wall. Sending the drafted reply as-is (which the history already
-    // partially covers) beats dying mid-consolidation with nothing sent.
+    // wall. Same for IMAGE cycles: generation already spent ~15-25s of this
+    // attempt, and the newer messages are almost always "send it already"
+    // nudges — delivering the image now answers them better than another LLM
+    // round (live 2026-07-26, Yona).
     logDecision(supabase, {
       ...base,
       stage: "draft",
-      summary: `Retry attempt ${job.attempts}: skipping consolidation of ${newerRows.length} newer message(s) to stay under the request wall`,
+      summary: imageMedia
+        ? `Image ready: skipping consolidation of ${newerRows.length} newer message(s) — delivering the image answers them`
+        : `Retry attempt ${job.attempts}: skipping consolidation of ${newerRows.length} newer message(s) to stay under the request wall`,
       data: { consolidation_skipped: true, newer_count: newerRows.length },
     });
   } else if (newerRows?.length) {
