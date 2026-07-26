@@ -105,23 +105,42 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                 } catch {
                   /* non-JSON body — return the raw snippet below */
                 }
-                // One direct video attempt so the exact rejection is visible.
-                let video: Record<string, unknown>;
-                try {
-                  const vres = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
-                    body: JSON.stringify({
-                      model: "google/veo-3.1",
-                      messages: [{ role: "user", content: "A 3 second clip of ocean waves" }],
-                      modalities: ["video", "text"],
-                    }),
-                  });
-                  const vbody = await vres.text();
-                  video = { status: vres.status, body: vbody.slice(0, 300) };
-                } catch (e) {
-                  video = { error: String((e as Error)?.message ?? e).slice(0, 200) };
-                }
+                // A battery of endpoint/model attempts — each rejection's
+                // exact wording is the evidence for what the gateway does and
+                // does not serve.
+                const attempt = async (
+                  path: string,
+                  body: Record<string, unknown>,
+                ): Promise<Record<string, unknown>> => {
+                  try {
+                    const r = await fetch(`https://ai.gateway.lovable.dev${path}`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+                      body: JSON.stringify(body),
+                    });
+                    return { path, status: r.status, body: (await r.text()).slice(0, 260) };
+                  } catch (e) {
+                    return { path, error: String((e as Error)?.message ?? e).slice(0, 200) };
+                  }
+                };
+                const video = {
+                  veo_chat: await attempt("/v1/chat/completions", {
+                    model: "google/veo-3.1",
+                    messages: [{ role: "user", content: "A 3 second clip of ocean waves" }],
+                  }),
+                  veo_images_endpoint: await attempt("/v1/images/generations", {
+                    model: "google/veo-3.1",
+                    prompt: "A 3 second clip of ocean waves",
+                  }),
+                  videos_endpoint: await attempt("/v1/videos/generations", {
+                    model: "google/veo-3.1",
+                    prompt: "A 3 second clip of ocean waves",
+                  }),
+                  sora_chat: await attempt("/v1/chat/completions", {
+                    model: "openai/sora-2",
+                    messages: [{ role: "user", content: "A 3 second clip of ocean waves" }],
+                  }),
+                };
                 probe = {
                   models: {
                     ok: res.ok,
