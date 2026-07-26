@@ -9,7 +9,7 @@ vi.mock("../ai-pricing.server", () => ({
 
 import { callLLM, type LLMCallInput } from "../llm.server";
 
-const FAST_CANDIDATES = 2; // google/gemini-3-flash-preview, google/gemini-2.5-flash
+const FAST_CANDIDATES = 2; // openai/gpt-5.5, google/gemini-2.5-flash
 const ATTEMPTS_PER_MODEL = 3; // initial + RETRY_DELAYS_MS [800, 2500]
 
 const fetchMock = vi.fn();
@@ -76,8 +76,8 @@ describe("callLLM budgetMs", () => {
     const err = await runToError(input({ budgetMs: 4000 }));
     expect(err.message).toBe("connection refused");
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(modelOfCall(0)).toBe("google/gemini-3-flash-preview");
-    expect(modelOfCall(1)).toBe("google/gemini-3-flash-preview");
+    expect(modelOfCall(0)).toBe("openai/gpt-5.5");
+    expect(modelOfCall(1)).toBe("openai/gpt-5.5");
   });
 
   it("never starts an attempt when the budget is already exhausted", async () => {
@@ -126,7 +126,7 @@ describe("callLLM budgetMs", () => {
       .mockReset()
       .mockImplementation((_url: string, init: { signal: AbortSignal; body?: unknown }) => {
         const model = JSON.parse(String(init.body)).model;
-        if (model === "google/gemini-3-flash-preview") {
+        if (model === "openai/gpt-5.5") {
           // The pinned model stalls — never resolves until aborted.
           return new Promise((_resolve, reject) => {
             init.signal.addEventListener("abort", () =>

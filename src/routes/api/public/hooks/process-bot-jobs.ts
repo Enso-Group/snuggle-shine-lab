@@ -25,7 +25,57 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           // probes are throttled to one per 10 minutes via a decision-row
           // marker; inside the window the last result is returned instead.
           let probe: Record<string, unknown> | null = null;
-          const probeRequested = new URL(request.url).searchParams.get("probe") === "1";
+          const probeParam = new URL(request.url).searchParams.get("probe");
+
+          // ?probe=imagegen — ONE-SHOT live proof of gateway image generation
+          // (marker-gated: generation costs credits, so it never re-runs on
+          // repeated calls; the stored result is returned instead). Generates
+          // a real image, uploads it to the media bucket, returns the signed
+          // preview URL + which model answered.
+          if (probeParam === "imagegen") {
+            const MARKER = "Image gen self-test v1";
+            try {
+              const { data: done } = await supabase
+                .from("bot_decisions")
+                .select("created_at, data")
+                .eq("stage", "config")
+                .like("summary", `${MARKER}%`)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (done) {
+                probe = { image_gen: { already_ran: true, at: done.created_at, last: done.data } };
+              } else {
+                const { generateImage } = await import("@/lib/image-gen.server");
+                const t0 = Date.now();
+                const g = await generateImage(
+                  "A warm, modern flat illustration of a small business community chatting on their phones, soft teal and green palette, no text or letters anywhere in the image.",
+                  { source: "image_gen_selftest" },
+                );
+                const result = {
+                  ok: true,
+                  model: g.model,
+                  storage_path: g.attachment.storage_path,
+                  preview_url: g.attachment.url,
+                  ms: Date.now() - t0,
+                };
+                await supabase.from("bot_decisions").insert({
+                  trigger: "scheduled",
+                  stage: "config",
+                  status: "ok",
+                  summary: `${MARKER}: generated via ${g.model} in ${Math.round((Date.now() - t0) / 1000)}s and stored in the media bucket`,
+                  data: result,
+                });
+                probe = { image_gen: result };
+              }
+            } catch (e) {
+              probe = {
+                image_gen: { ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) },
+              };
+            }
+          }
+
+          const probeRequested = probeParam === "1";
           if (probeRequested) {
             const MARKER = "Integration probe v1";
             probe = {};
@@ -735,6 +785,47 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return { ran: true as const };
           });
 
+          // One-shot model pin (2026-07-26, Itamar: "use only gpt 5.5"): any
+          // stored model override in bot_settings outranks the code chain, so
+          // the pin is written to the DB too. Marker-gated — a later
+          // deliberate change in the Personality tab is never fought.
+          const modelPin = await guarded("model-pin", async () => {
+            const MARKER = "Model pin v1 — gpt-5.5";
+            const { data: done } = await supabase
+              .from("bot_decisions")
+              .select("id")
+              .eq("stage", "config")
+              .like("summary", `${MARKER}%`)
+              .limit(1)
+              .maybeSingle();
+            if (done) return { ran: false as const, reason: "already pinned" };
+            const { data: settings } = await supabase
+              .from("bot_settings")
+              .select("id, model_strong, model_fast")
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (!settings?.id) return { ran: false as const, reason: "no settings row" };
+            const { error: markerErr } = await supabase.from("bot_decisions").insert({
+              trigger: "scheduled",
+              stage: "config",
+              status: "ok",
+              summary: `${MARKER}: model_strong/model_fast set to openai/gpt-5.5 (were ${settings.model_strong ?? "null"}/${settings.model_fast ?? "null"})`,
+              data: { previous_strong: settings.model_strong, previous_fast: settings.model_fast },
+            });
+            if (markerErr) throw new Error(`marker insert failed: ${markerErr.message}`);
+            const { error: pinErr } = await supabase
+              .from("bot_settings")
+              .update({
+                model_strong: "openai/gpt-5.5",
+                model_fast: "openai/gpt-5.5",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", settings.id);
+            if (pinErr) throw new Error(`pin failed: ${pinErr.message}`);
+            return { ran: true as const };
+          });
+
           // One-shot demo teardown (2026-07-26, Itamar: "take out the demo"):
           // deletes every `demo-`-marked row left from the earlier server-side
           // seeding and clears agent_config.demo_view, so the dashboard shows
@@ -904,6 +995,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             dedupe,
             approval_restore: approvalRestore,
             demo_wipe: demoWipe,
+            model_pin: modelPin,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {

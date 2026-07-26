@@ -19,17 +19,14 @@ const MIN_ATTEMPT_BUDGET_MS = 3_000;
 
 export type LLMRole = "strong" | "fast";
 
-// Newest-first candidates; ids confirmed against the gateway catalog on
-// 2026-07-20. The tail of each chain is a known-good fallback so a catalog
-// change can degrade quality but never silence the bot.
+// GPT-5.5 ONLY (Itamar, 2026-07-26): every text call leads with
+// openai/gpt-5.5 — gemini-3.1-pro-preview was stalling in production all
+// morning and is out of the chain entirely. The single gemini-2.5-flash tail
+// is an EMERGENCY fallback (never-silent rule: an OpenAI outage must degrade
+// the bot, not silence it), reached only if gpt-5.5 itself errors/times out.
 const MODEL_CANDIDATES: Record<LLMRole, string[]> = {
-  strong: [
-    "google/gemini-3.1-pro-preview",
-    "openai/gpt-5.5",
-    "google/gemini-2.5-pro",
-    "google/gemini-2.5-flash",
-  ],
-  fast: ["google/gemini-3-flash-preview", "google/gemini-2.5-flash"],
+  strong: ["openai/gpt-5.5", "google/gemini-2.5-flash"],
+  fast: ["openai/gpt-5.5", "google/gemini-2.5-flash"],
 };
 
 const workingModel = new Map<LLMRole, string>();

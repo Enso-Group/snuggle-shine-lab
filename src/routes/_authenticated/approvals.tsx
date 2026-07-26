@@ -18,6 +18,7 @@ import {
   Paperclip,
   FileText,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import {
@@ -27,6 +28,7 @@ import {
   updatePendingBody,
 } from "@/lib/schedule.functions";
 import { uploadMedia, setApprovalMedia } from "@/lib/media.functions";
+import { generateApprovalImage } from "@/lib/media-gen.functions";
 import type { MediaAttachment } from "@/lib/media";
 import { DEMO_MODE, demoApprovals } from "@/lib/demo";
 
@@ -144,6 +146,18 @@ function ApprovalsPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const genImageFn = useServerFn(generateApprovalImage);
+  const genImage = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      if (DEMO_MODE) return;
+      return genImageFn({ data: { id } });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Image generated and attached — it will be sent with the message");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <div className="min-h-full">
@@ -182,7 +196,9 @@ function ApprovalsPage() {
             onSaveEdit={(body) => updateBody.mutate({ id: r.id, body })}
             onAttach={(file) => attach.mutate({ id: r.id, file })}
             onRemoveMedia={() => removeMedia.mutate(r.id)}
+            onGenerateImage={() => genImage.mutate({ id: r.id })}
             uploading={attach.isPending && attach.variables?.id === r.id}
+            generating={genImage.isPending && genImage.variables?.id === r.id}
             pending={approve.isPending || reject.isPending || updateBody.isPending}
           />
         ))}
@@ -234,7 +250,9 @@ function ApprovalCard({
   onSaveEdit,
   onAttach,
   onRemoveMedia,
+  onGenerateImage,
   uploading,
+  generating,
   pending,
 }: {
   row: Approval;
@@ -243,7 +261,9 @@ function ApprovalCard({
   onSaveEdit: (body: string) => void;
   onAttach: (file: File) => void;
   onRemoveMedia: () => void;
+  onGenerateImage: () => void;
   uploading: boolean;
+  generating: boolean;
   pending: boolean;
 }) {
   const [editing, setEditing] = useState(false);
@@ -370,7 +390,7 @@ function ApprovalCard({
                 size="sm"
                 variant="outline"
                 onClick={() => fileInput.current?.click()}
-                disabled={uploading || pending}
+                disabled={uploading || generating || pending}
               >
                 {uploading ? (
                   <Loader2 className="size-3 ms-1 animate-spin" />
@@ -378,6 +398,20 @@ function ApprovalCard({
                   <Paperclip className="size-3 ms-1" />
                 )}
                 {row.media ? "Replace attachment" : "Attach"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onGenerateImage}
+                disabled={uploading || generating || pending}
+                title="AI writes an image prompt from the message text and generates a matching image (~30s)"
+              >
+                {generating ? (
+                  <Loader2 className="size-3 ms-1 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3 ms-1" />
+                )}
+                {generating ? "Generating…" : "Generate image"}
               </Button>
               <Button
                 size="sm"

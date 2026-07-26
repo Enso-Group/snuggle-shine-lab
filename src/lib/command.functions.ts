@@ -38,7 +38,7 @@ const TOOLS = [
     function: {
       name: "plan_post",
       description:
-        "Queue a one-off campaign post for this group. The posting engine drafts, self-reviews and publishes it within ~1 minute (or routes it to Approvals when approval mode is on). If the manager wants a poll, say so explicitly in the prompt (e.g. 'include a poll asking X with options A/B/C') — the engine sends it as a native tappable WhatsApp poll, never as inline text.",
+        "Queue a one-off campaign post for this group. The posting engine drafts, self-reviews and publishes it within ~1 minute (or routes it to Approvals when approval mode is on). If the manager wants a poll, say so explicitly in the prompt (e.g. 'include a poll asking X with options A/B/C') — the engine sends it as a native tappable WhatsApp poll, never as inline text. If the manager also wants an image, call generate_post_image right after this.",
       parameters: {
         type: "object",
         properties: {
@@ -46,6 +46,24 @@ const TOOLS = [
           pillar: { type: "string", description: "Optional content pillar label" },
         },
         required: ["prompt"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "generate_post_image",
+      description:
+        "Generate an AI image and attach it to this group's most recent unsent post (planned or awaiting approval) — use right after plan_post when the manager asked for an image, or when they ask to add an image to the pending post. The image is generated from the post's content plus the description, shows as a preview in the dashboard, and is sent together with the post text. Takes up to ~1 minute.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description: "What the image should show, in the manager's words (optional)",
+          },
+        },
+        required: [],
       },
     },
   },
@@ -167,9 +185,58 @@ export const commandChat = createServerFn({ method: "POST" })
       });
     }
 
+    async function generatePostImage(description?: string): Promise<string> {
+      // Newest unsent post owns the image — the one the manager just planned
+      // or the one sitting in Approvals.
+      const { data: post } = await supabaseAdmin
+        .from("planned_posts")
+        .select("id, prompt, body, status")
+        .eq("group_chat_id", chatId)
+        .in("status", ["planned", "queued_approval"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!post) {
+        return JSON.stringify({
+          ok: false,
+          error: "no unsent post to attach an image to — plan_post first",
+        });
+      }
+      const { writeImagePrompt, generateImage } = await import("./image-gen.server");
+      const baseText = String(post.body ?? post.prompt ?? "").trim();
+      const imagePrompt = await writeImagePrompt({
+        postText: baseText || String(description ?? ""),
+        instruction: description ?? null,
+      });
+      const generated = await generateImage(imagePrompt, { source: "post_image_gen" });
+      const { error } = await supabaseAdmin
+        .from("planned_posts")
+        .update({ media: generated.attachment, updated_at: new Date().toISOString() } as never)
+        .eq("id", post.id)
+        .in("status", ["planned", "queued_approval"]);
+      if (error) return JSON.stringify({ ok: false, error: error.message });
+      const summary = `AI image generated for the pending post (${generated.model})`;
+      actions.push({ tool: "generate_post_image", summary });
+      logDecision(supabaseAdmin, {
+        chat_id: chatId,
+        trigger: "scheduled",
+        stage: "config",
+        summary,
+        data: {
+          planned_post_id: post.id,
+          model: generated.model,
+          prompt: generated.prompt.slice(0, 400),
+        },
+      });
+      return JSON.stringify({
+        ok: true,
+        note: "image generated and attached — it previews on the post card and sends with the post",
+      });
+    }
+
     const system = `You are the operations copilot for an autonomous WhatsApp community-manager agent. The manager is talking to you about ONE group: "${data.groupName ?? chatId}" (${chatId}).
 
-You can: answer questions about how the agent runs this group (always ground answers in get_group_status data — never invent numbers), and APPLY changes the manager asks for using update_group_profile / plan_post.
+You can: answer questions about how the agent runs this group (always ground answers in get_group_status data — never invent numbers), and APPLY changes the manager asks for using update_group_profile / plan_post / generate_post_image.
 
 Rules:
 - Before proposing or applying changes, call get_group_status to see the current state.
@@ -220,6 +287,10 @@ Rules:
             result = await planPost(
               String(args.prompt ?? ""),
               args.pillar ? String(args.pillar) : undefined,
+            );
+          else if (tc.function.name === "generate_post_image")
+            result = await generatePostImage(
+              args.description ? String(args.description) : undefined,
             );
           else result = JSON.stringify({ error: "unknown tool" });
         } catch (e) {
