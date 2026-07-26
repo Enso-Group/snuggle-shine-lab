@@ -238,6 +238,8 @@ export async function draftReply(
 
 כלל מחייב — אף פעם לא שתיקה: לעולם אל תחזיר תשובה ריקה. אם ההודעה עוסקת בנושא שמחוץ לתחום שלנו או לידע שלך — ענה בקצרה ובטבעיות, בסגנון הדמות, שעם זה אתה לא יכול לעזור או שאתה פשוט לא יודע, ואם מתאים החזר את השיחה לתחום שלנו. אל תמציא תשובה ואל תשאיר את האדם בלי מענה.
 
+כלל מחייב — כנות על יכולות: היכולות האמיתיות היחידות שלך הן (1) לענות כאן, בשיחה הזו בלבד; (2) ליצור תמונה (image_request); (3) לבדוק מידע ברשת ולחזור עם תשובה (open_question); (4) לזכור פרטים על האדם. אין לך שום יכולת אחרת: אינך יכול לפרסם או להגיב בקבוצות או בצ'אטים אחרים, לשלוח הודעות לאנשים אחרים, לקבוע פגישות, או לבצע פעולות מחוץ לשיחה. אם מבקשים ממך פעולה כזו — אמור בפשטות ובכנות שאין לך אפשרות לעשות את זה, והצע מה כן אפשר. לעולם אל תכתוב "אעשה/אפרסם/אעביר/אדבר עם" על דבר שלא יקרה בפועל — הבטחה כזו היא שקר ללקוח.
+
 פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply", "open_question": null או "שאילתת חיפוש", "image_request": null או "english image prompt"}.
 - בין 1 ל-${maxParts} הודעות, כמו שאדם כותב בוואטסאפ: קצרות, בלי חומות טקסט.
 - ברוב המקרים הודעה אחת מספיקה. פצל רק אם יש באמת שני חלקים נפרדים (למשל תשובה + שאלת המשך).
@@ -372,6 +374,45 @@ export function safeFallbackLine(raw: string | null | undefined): string | null 
   if (!line || line.length > 200) return null;
   if (looksLikeStructuredOutput(line) || leaksPersona(line)) return null;
   return line;
+}
+
+/** Canned honest "that's outside my abilities" line (Hebrew default). */
+export const CANT_DO_FALLBACK_LINE =
+  "את זה אני לא יכול לעשות מכאן 🙏 אני עוזר רק כאן בשיחה — לבדוק מידע, להכין תמונה או לענות על שאלות.";
+
+/**
+ * The honesty guard's rewrite: the draft promised an action the bot cannot
+ * perform (post in a group, message someone else…). ONE bounded fast-model
+ * shot for an honest, in-persona "I can't do that, here's what I can do"
+ * reply in the conversation language; any failure falls back to the canned
+ * line — a fake commitment must never reach the contact.
+ */
+export async function draftHonestCantDoLine(
+  ctx: AgentContext,
+  language: string,
+  askedFor: string,
+): Promise<string> {
+  try {
+    const res = await callLLM({
+      role: "fast",
+      source: "agent_honesty_rewrite",
+      overrides: overridesOf(ctx),
+      timeoutMs: 8_000,
+      budgetMs: 10_000,
+      messages: [
+        {
+          role: "system",
+          content: `${ctx.settings.system_prompt}
+
+האדם ביקש ממך פעולה שאין לך יכולת אמיתית לבצע (למשל לפרסם בקבוצה, לשלוח הודעה למישהו אחר, לתאם משהו). כתוב תשובה של משפט-שניים בשפה "${language}", בסגנון הדמות: אמור בפירוש ובכנות שאין לך אפשרות לעשות את זה, ואם מתאים הצע מה כן אפשר (לענות כאן, לבדוק מידע ברשת, להכין תמונה). אסור להבטיח שום פעולה עתידית. בלי JSON ובלי מרכאות — רק הטקסט עצמו.`,
+        },
+        { role: "user", content: askedFor.slice(0, 500) },
+      ],
+    });
+    return safeFallbackLine(res.content) ?? CANT_DO_FALLBACK_LINE;
+  } catch {
+    return CANT_DO_FALLBACK_LINE;
+  }
 }
 
 /**

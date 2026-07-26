@@ -272,6 +272,41 @@ export function detectsResourceRequest(text: string): boolean {
   return RESOURCE_REQUEST_PATTERNS.some((re) => re.test(text));
 }
 
+// ---------------------------------------------------------------------------
+// Honesty guard — promises of actions the bot has NO machinery for. Its real
+// abilities are: replying in THIS chat, generating an image, researching the
+// web and getting back (both tracked). Anything else — posting/replying in
+// groups or other chats, messaging other people, booking/arranging things —
+// is a fake commitment that will silently never happen (live 2026-07-26: the
+// bot told a contact it would reply in a specific group). Deterministic net
+// behind the prompt rules; matches stay narrow so backed promises ("אבדוק
+// ואחזור", "אשלח לך") are never flagged.
+// ---------------------------------------------------------------------------
+const UNBACKED_ACTION_PATTERNS: RegExp[] = [
+  // Hebrew: "I'll post/write/share/reply/send ... in/to a group"
+  new RegExp(
+    `${HB}(אפרסם|אעלה|אשתף|אכתוב|אגיב|אענה|אשלח|אעביר)[^.!?\\n]{0,40}(בקבוצה|לקבוצה|בקבוצת|לקבוצת)`,
+  ),
+  // Hebrew: "I'll send/forward/write to him/her/them" (never "לך" — sending
+  // to the person in this chat is a real, backed ability)
+  new RegExp(`${HB}(אשלח|אעביר|אכתוב|אמסור)\\s+(לו|לה|להם|לו את|לה את)($|[^\\u05d0-\\u05ea])`),
+  // Hebrew: "I'll talk to / coordinate with / update <someone>"
+  new RegExp(`${HB}(אדבר|אתאם|אסתדר)\\s+(עם|מול)`),
+  new RegExp(`${HB}אעדכן\\s+(אותו|אותה|אותם|את\\s+[א-ת])`),
+  // English
+  /\bi(?:'|’)?ll (?:post|publish|share|reply|respond|write|send)\b[^.!?\n]{0,40}\b(?:in|to|on) (?:the |that |your )?group\b/i,
+  /\bi(?:'|’)?ll (?:message|text|contact|talk to|tell|update) (?:him|her|them)\b/i,
+];
+
+/**
+ * True when reply text promises an action outside the bot's real abilities —
+ * the class of promise that must be rewritten to an honest "can't do that".
+ */
+export function detectsUnbackedActionPromise(text: string): boolean {
+  if (!text) return false;
+  return UNBACKED_ACTION_PATTERNS.some((re) => re.test(text));
+}
+
 /**
  * Strip "[1]"-style citation markers a model sometimes copies from numbered
  * search results — they read as machine output in a WhatsApp chat.

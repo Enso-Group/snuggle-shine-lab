@@ -247,7 +247,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // The final envelope's "I promised to check" flag — replaced along with the
   // parts when consolidation rewrites the reply.
   let openQuestion = draft.openQuestion;
-  const imageRequest = draft.imageRequest;
+  let imageRequest = draft.imageRequest;
   logDecision(supabase, {
     ...base,
     stage: "draft",
@@ -382,6 +382,37 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   }
 
   let joined = parts.join("\n\n");
+
+  // --- Honesty guard: no fake commitments ---
+  // The bot's ONLY real abilities are replying here, generating an image and
+  // researching-then-getting-back. A draft that promises anything else
+  // (posting in a group, messaging someone else…) is a lie the system will
+  // silently never fulfill — rewrite it to an honest "I can't do that" before
+  // it reaches the contact (live 2026-07-26: the bot told a contact it would
+  // reply in a specific group). The prompt forbids this too; this is the
+  // deterministic net behind it.
+  {
+    const { detectsUnbackedActionPromise } = await import("./research");
+    if (detectsUnbackedActionPromise(joined)) {
+      t = Date.now();
+      const { draftHonestCantDoLine } = await import("./stages.server");
+      const honest = await draftHonestCantDoLine(ctx, intent.language, message.body);
+      logDecision(supabase, {
+        ...base,
+        stage: "critique",
+        summary:
+          "Honesty guard: the draft promised an action outside the bot's abilities — rewritten to an honest can't-do",
+        data: { original_draft: joined.slice(0, 500), rewritten: honest },
+        duration_ms: Date.now() - t,
+      });
+      parts = [honest];
+      joined = honest;
+      // An unfulfillable ask gets no research job and no image — the honest
+      // answer IS the reply.
+      openQuestion = null;
+      imageRequest = null;
+    }
+  }
 
   // --- Stage: image (the person asked for a created image) ---
   // Runs BEFORE the approval gate so the approval row carries the attachment

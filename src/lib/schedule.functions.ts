@@ -114,6 +114,32 @@ async function resolvePlannedPostId(admin: Supa, row: ApprovalRowShape): Promise
   return queued.find((p) => (p.body ?? "").includes(row.body))?.id ?? null;
 }
 
+/**
+ * The reply job whose pipeline queued this approval — the human's decision is
+ * appended to that job's decision trace so the Activity entry flips from
+ * "awaiting approval" to sent/rejected instead of freezing at creation-time
+ * state. Matched by conversation + the queued draft text; falls back to the
+ * conversation's newest queued_approval trace.
+ */
+async function findApprovalJobId(
+  admin: Supa,
+  conversationId: string,
+  originalBody: string,
+): Promise<string | null> {
+  const { data } = await admin
+    .from("bot_decisions")
+    .select("job_id, data, created_at")
+    .eq("stage", "queued_approval")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const rows = data ?? [];
+  const match = rows.find(
+    (r) => String((r.data as { draft?: unknown } | null)?.draft ?? "") === originalBody,
+  );
+  return (match ?? rows[0])?.job_id ?? null;
+}
+
 export const approvePending = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
   .inputValidator((d: { id: string; body?: string }) =>
@@ -406,6 +432,31 @@ export const approvePending = createServerFn({ method: "POST" })
     }
 
     const { logDecision } = await import("./agent/decisions.server");
+    // Activity state sync: the reply job's trace currently ends at
+    // "queued_approval" — append the human's decision to the SAME job so the
+    // Activity entry flips from "awaiting approval" to a sent reply.
+    if (row.conversation_id) {
+      const jobId = await findApprovalJobId(supabaseAdmin, row.conversation_id, row.body);
+      logDecision(supabaseAdmin, {
+        job_id: jobId,
+        conversation_id: row.conversation_id,
+        chat_id: row.target_chat_id,
+        trigger: "scheduled",
+        stage: "deliver",
+        status: warnings.length ? "error" : "ok",
+        summary: `Approved by the admin — sent to ${row.target_name ?? row.target_chat_id}${
+          data.body && data.body !== row.body ? " (edited before sending)" : ""
+        }`,
+        data: {
+          approval_id: row.id,
+          approval_decision: "approved",
+          parts: [textBody || body],
+          whapi_ids: [
+            mediaRes?.message?.id ?? textRes?.message?.id ?? pollRes?.message?.id ?? null,
+          ],
+        },
+      });
+    }
     if (plannedPostId) {
       logDecision(supabaseAdmin, {
         chat_id: row.target_chat_id,
@@ -486,6 +537,23 @@ export const rejectPending = createServerFn({ method: "POST" })
           .update({ status: "cancelled", updated_at: new Date().toISOString() })
           .eq("id", plannedPostId)
           .eq("status", "queued_approval");
+      }
+      // Activity state sync: the entry must stop reading "awaiting approval" —
+      // append the rejection to the originating job's trace (the feed shows
+      // it as handled, not as a still-pending approval).
+      if (row.conversation_id) {
+        const { logDecision } = await import("./agent/decisions.server");
+        const jobId = await findApprovalJobId(supabaseAdmin, row.conversation_id, row.body);
+        logDecision(supabaseAdmin, {
+          job_id: jobId,
+          conversation_id: row.conversation_id,
+          chat_id: row.target_chat_id,
+          trigger: "scheduled",
+          stage: "skipped",
+          status: "skip",
+          summary: "Rejected by the admin — nothing was sent",
+          data: { approval_id: row.id, approval_decision: "rejected" },
+        });
       }
     }
     return { ok: true };

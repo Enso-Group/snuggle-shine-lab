@@ -153,15 +153,26 @@ export const listActivity = createServerFn({ method: "GET" })
       const asc = rows.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
       const stages = new Set(asc.map((r) => r.stage));
       const hasError = asc.some((r) => r.status === "error");
+      // The human's approve/reject is APPENDED to the job trace (approvePending
+      // / rejectPending), so an entry reflects the CURRENT state: approved →
+      // reply, rejected → handled — never frozen at "awaiting approval".
+      const rejected = asc.find(
+        (r) => (r.data as { approval_decision?: string } | null)?.approval_decision === "rejected",
+      );
       const kind: ActivityKind = hasError
         ? "error"
         : stages.has("deliver")
           ? "reply"
-          : stages.has("queued_approval")
-            ? "approval"
-            : "handled";
+          : rejected
+            ? "handled"
+            : stages.has("queued_approval")
+              ? "approval"
+              : "handled";
       const received = asc.find((r) => r.stage === "received");
-      const deliver = asc.find((r) => r.stage === "deliver" || r.stage === "queued_approval");
+      // Title preference mirrors state: the sent reply wins over the parked
+      // draft, a rejection wins over "awaiting approval".
+      const deliverRow = asc.find((r) => r.stage === "deliver");
+      const queuedRow = asc.find((r) => r.stage === "queued_approval");
       entries.push({
         id: `job-${jobId}`,
         ts: asc[asc.length - 1].created_at,
@@ -169,7 +180,12 @@ export const listActivity = createServerFn({ method: "GET" })
         chat_id: asc[0].chat_id,
         chat_name: null,
         title:
-          deliver?.summary ?? received?.summary ?? asc[asc.length - 1].summary ?? "Message handled",
+          deliverRow?.summary ??
+          rejected?.summary ??
+          queuedRow?.summary ??
+          received?.summary ??
+          asc[asc.length - 1].summary ??
+          "Message handled",
         stages: asc.map((r) => ({
           stage: r.stage,
           status: r.status,
