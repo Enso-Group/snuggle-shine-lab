@@ -75,6 +75,70 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             }
           }
 
+          // ?probe=models — read-only: the gateway's LIVE model catalog, the
+          // authoritative answer to "which models (image? video?) exist here".
+          // Model ids only, no secrets. Also probes one video-model id so the
+          // rejection error is on record.
+          if (probeParam === "models") {
+            try {
+              const apiKey = process.env.LOVABLE_API_KEY;
+              if (!apiKey) {
+                probe = { models: { ok: false, error: "LOVABLE_API_KEY not configured" } };
+              } else {
+                const res = await fetch("https://ai.gateway.lovable.dev/v1/models", {
+                  headers: { "Lovable-API-Key": apiKey, Authorization: `Bearer ${apiKey}` },
+                });
+                const bodyText = await res.text();
+                let ids: string[] | null = null;
+                try {
+                  const parsed = JSON.parse(bodyText) as {
+                    data?: Array<{ id?: string }>;
+                    models?: Array<{ id?: string } | string>;
+                  };
+                  const list = parsed.data ?? parsed.models;
+                  if (Array.isArray(list)) {
+                    ids = list
+                      .map((m) => (typeof m === "string" ? m : String(m?.id ?? "")))
+                      .filter(Boolean)
+                      .sort();
+                  }
+                } catch {
+                  /* non-JSON body — return the raw snippet below */
+                }
+                // One direct video attempt so the exact rejection is visible.
+                let video: Record<string, unknown>;
+                try {
+                  const vres = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+                    body: JSON.stringify({
+                      model: "google/veo-3.1",
+                      messages: [{ role: "user", content: "A 3 second clip of ocean waves" }],
+                      modalities: ["video", "text"],
+                    }),
+                  });
+                  const vbody = await vres.text();
+                  video = { status: vres.status, body: vbody.slice(0, 300) };
+                } catch (e) {
+                  video = { error: String((e as Error)?.message ?? e).slice(0, 200) };
+                }
+                probe = {
+                  models: {
+                    ok: res.ok,
+                    http: res.status,
+                    count: ids?.length ?? null,
+                    ids: ids ?? bodyText.slice(0, 800),
+                    video_attempt: video,
+                  },
+                };
+              }
+            } catch (e) {
+              probe = {
+                models: { ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) },
+              };
+            }
+          }
+
           const probeRequested = probeParam === "1";
           if (probeRequested) {
             const MARKER = "Integration probe v1";
