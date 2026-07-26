@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import { FunnelStageBadge } from "@/components/funnel-badge";
+import { DEMO_MODE, demoPeople, demoPersonDetail, demoAskAnswer } from "@/lib/demo";
 import {
   askAboutPerson,
   deletePersonFact,
@@ -141,8 +142,8 @@ function IdentityCard({ detail }: { detail: PersonDetail }) {
             {p.display_name ?? p.wa_id}
           </h2>
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground" dir="ltr">
-            {p.wa_id} · first seen {new Date(p.first_seen_at).toLocaleDateString("en-GB")} ·
-            last seen {new Date(p.last_seen_at).toLocaleString("en-GB")}
+            {p.wa_id} · first seen {new Date(p.first_seen_at).toLocaleDateString("en-GB")} · last
+            seen {new Date(p.last_seen_at).toLocaleString("en-GB")}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -180,7 +181,10 @@ function FactsCard({ personId, facts }: { personId: string; facts: PersonListIte
   const deleteFactFn = useServerFn(deletePersonFact);
   const [expanded, setExpanded] = useState(false);
   const removeFact = useMutation({
-    mutationFn: (factText: string) => deleteFactFn({ data: { personId, factText } }),
+    mutationFn: async (factText: string) => {
+      if (DEMO_MODE) return;
+      return deleteFactFn({ data: { personId, factText } });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["person-detail", personId] });
       qc.invalidateQueries({ queryKey: ["people-memory"] });
@@ -367,8 +371,10 @@ function AskCard({ personId }: { personId: string }) {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const ask = useMutation({
-    mutationFn: (q: string) =>
-      askFn({ data: { personId, question: q, history: chat.slice(-10) } }),
+    mutationFn: async (q: string) => {
+      if (DEMO_MODE) return { answer: demoAskAnswer(q) };
+      return askFn({ data: { personId, question: q, history: chat.slice(-10) } });
+    },
     onSuccess: (res, q) => {
       setChat((c) => [
         ...c,
@@ -439,12 +445,15 @@ function ProfilesPage() {
   const [search, setSearch] = useState("");
   const [allContacts, setAllContacts] = useState(false);
 
-  const { data: people = [], isLoading: listLoading } = useQuery({
+  const { data: realPeople = [], isLoading: realListLoading } = useQuery({
     queryKey: ["people-memory"],
     queryFn: () => listFn(),
     staleTime: 15_000,
     refetchInterval: 30_000,
+    enabled: !DEMO_MODE,
   });
+  const people = DEMO_MODE ? (demoPeople as unknown as typeof realPeople) : realPeople;
+  const listLoading = DEMO_MODE ? false : realListLoading;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -469,15 +478,19 @@ function ProfilesPage() {
   }, [filtered, searching, allContacts, selected]);
 
   const {
-    data: detail,
+    data: realDetail,
     isLoading: detailLoading,
     isError: detailError,
   } = useQuery({
     queryKey: ["person-detail", selected],
     queryFn: () => detailFn({ data: { personId: selected! } }),
-    enabled: !!selected,
+    enabled: !!selected && !DEMO_MODE,
     refetchInterval: 20000,
   });
+  const detail =
+    DEMO_MODE && selected
+      ? (demoPersonDetail(selected) as unknown as NonNullable<typeof realDetail>)
+      : realDetail;
 
   function selectPerson(id: string) {
     navigate({ search: { person: id }, replace: true });

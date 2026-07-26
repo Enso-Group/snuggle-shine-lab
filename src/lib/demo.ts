@@ -14,7 +14,7 @@
 // Nothing here writes to the DB or calls any external service.
 // ---------------------------------------------------------------------------
 
-export const DEMO_MODE = false;
+export const DEMO_MODE = true;
 
 // --- relative timestamps so the data always looks fresh -----------------------
 const now = Date.now();
@@ -592,4 +592,616 @@ export function demoOverviewSeries(range: "today" | "week" | "month") {
     label: `${i + 1}`,
     messages: 28 + ((i * 13 + 7) % 90),
   }));
+}
+
+// ===========================================================================
+// Datasets for the CURRENT five-page structure (Command Center / Activity /
+// Profiles / Approvals / Behind the Scenes). Everything below is pure static
+// content — no DB, no WhatsApp, no server calls.
+// ===========================================================================
+
+const dayStr = (n: number) => new Date(now - n * 86_400_000).toISOString().slice(0, 10);
+
+// --- Command Center: managed groups -----------------------------------------
+const demoGroupProfile = (chatId: string, name: string, enabled: boolean, purpose: string) => ({
+  id: `demo-profile-${chatId.slice(0, 8)}`,
+  chat_id: chatId,
+  name,
+  enabled,
+  instructions:
+    "Keep the group active and helpful. Lead with discussion questions, share one practical tip a week, welcome every new member personally.",
+  purpose,
+  audience: "Startup founders and operators",
+  tone: "Professional, warm, no fluff",
+  language: "he",
+  content_pillars: ["טיפ פרקטי", "שאלה לדיון", "חדשות AI"],
+  posting_schedule: [
+    { day: 0, time: "09:00", pillar: "טיפ פרקטי" },
+    { day: 3, time: "12:30", pillar: "שאלה לדיון" },
+  ],
+  rules: ["No self-promotion without value", "Keep it respectful"],
+  forbidden_topics: ["פוליטיקה"],
+  moderation: { enabled: true, delete_violations: true, warn_limit: 2, remove_limit: 3 },
+  welcome: { enabled: true, hint: "Welcome warmly, point to the pinned intro post" },
+  reply_when_mentioned: true,
+  reply_to_questions: true,
+  allow_reactive_posts: enabled,
+  escalation_rules: "Refunds, legal topics or angry members — alert the owner immediately.",
+  kpis: "Replies per post, weekly active members",
+  owner_dm: null,
+  created_at: daysAgo(30),
+  updated_at: hoursAgo(4),
+});
+
+export const AI_FOUNDERS = "120363011111111111@g.us";
+export const demoManagedGroups = [
+  {
+    chat_id: AI_FOUNDERS,
+    whatsapp_name: "AI Founders IL 🚀",
+    profile: demoGroupProfile(
+      AI_FOUNDERS,
+      "AI Founders IL 🚀",
+      true,
+      "Community of AI-curious founders; keep it active and helpful",
+    ),
+  },
+  {
+    chat_id: GROUPS[0].id.replace("1111", "2222"),
+    whatsapp_name: "VIP Customers",
+    profile: demoGroupProfile(
+      GROUPS[0].id.replace("1111", "2222"),
+      "VIP Customers",
+      true,
+      "Keep VIP customers engaged and informed about launches",
+    ),
+  },
+  {
+    chat_id: GROUPS[2].id,
+    whatsapp_name: "Product Updates",
+    profile: demoGroupProfile(
+      GROUPS[2].id,
+      "Product Updates",
+      false,
+      "Announcement channel — bot assists but does not post autonomously",
+    ),
+  },
+];
+
+// --- Command Center: per-group activity -------------------------------------
+export function demoGroupActivity(chatId: string) {
+  const boost = chatId === AI_FOUNDERS ? 1 : 0.6;
+  const stats = [6, 5, 4, 3, 2, 1, 0].map((n, i) => ({
+    date: dayStr(n),
+    messages: Math.round((42 + i * 9 + (i % 3) * 5) * boost),
+    active_members: Math.round((18 + i * 2) * boost),
+    bot_posts: i % 2 === 0 ? 1 : 2,
+    post_replies: Math.round((6 + i * 3) * boost),
+    new_members: i === 4 ? 3 : i % 2,
+    left_members: i === 2 ? 1 : 0,
+  }));
+  return {
+    posts: [
+      {
+        id: `demo-post-up1-${chatId.slice(0, 6)}`,
+        source: "schedule",
+        pillar: "שאלה לדיון",
+        prompt: null,
+        body: "סקר שבועי: כמה מהעבודה השיווקית שלכם כבר רצה על AI?",
+        status: "queued_approval",
+        reasoning: null,
+        sent_at: null,
+        engagement: {},
+        media: null,
+        created_at: hoursAgo(3),
+      },
+      {
+        id: `demo-post-up2-${chatId.slice(0, 6)}`,
+        source: "schedule",
+        pillar: "טיפ פרקטי",
+        prompt: null,
+        body: "📊 גרף השבוע: ככה נראית קפיצת המעורבות מאז שהבוט מנהל את הקבוצה.",
+        status: "queued_approval",
+        reasoning: null,
+        sent_at: null,
+        engagement: {},
+        media: { kind: "image", url: "/demo/sample-image.png", filename: "engagement-chart.png" },
+        created_at: hoursAgo(2),
+      },
+      {
+        id: `demo-post-s1-${chatId.slice(0, 6)}`,
+        source: "reactive",
+        pillar: "חדשות AI",
+        prompt: null,
+        body: "🤖 יצא הדוח השנתי על אימוץ AI בארגונים — 3 מספרים שכדאי להכיר: 67% מהחברות כבר משתמשות ב-GenAI, החיסכון הממוצע הוא 12 שעות עובד בשבוע, ורק 22% מודדות ROI. מי פה כבר מודד?",
+        status: "sent",
+        reasoning: null,
+        sent_at: hoursAgo(26),
+        engagement: { replies_24h: Math.round(23 * boost) },
+        media: null,
+        created_at: hoursAgo(28),
+      },
+      {
+        id: `demo-post-s2-${chatId.slice(0, 6)}`,
+        source: "schedule",
+        pillar: "טיפ פרקטי",
+        prompt: null,
+        body: "💡 טיפ למנהלי קהילות: תסיימו כל פוסט בשאלה פתוחה אחת. קבוצות שעושות את זה מקבלות פי 2 תגובות.",
+        status: "sent",
+        reasoning: null,
+        sent_at: hoursAgo(50),
+        engagement: { replies_24h: Math.round(14 * boost) },
+        media: null,
+        created_at: hoursAgo(52),
+      },
+      {
+        id: `demo-post-s3-${chatId.slice(0, 6)}`,
+        source: "campaign",
+        pillar: "שאלה לדיון",
+        prompt: null,
+        body: "🔥 שאלת השבוע: איזה תהליך אחד הייתם נותנים לסוכן AI לנהל לבד כבר מחר?",
+        status: "sent",
+        reasoning: null,
+        sent_at: hoursAgo(74),
+        engagement: { replies_24h: Math.round(31 * boost) },
+        media: null,
+        created_at: hoursAgo(75),
+      },
+    ],
+    actions: [
+      {
+        id: `demo-mod-1-${chatId.slice(0, 6)}`,
+        action: "delete",
+        target_name: "Spam Account",
+        rule_violated: "No self-promotion without value",
+        reasoning:
+          "Third promotional link with no context this week — removed the message and warned privately.",
+        status: "done",
+        created_at: hoursAgo(20),
+      },
+      {
+        id: `demo-mod-2-${chatId.slice(0, 6)}`,
+        action: "welcome",
+        target_name: "Dana Levi",
+        rule_violated: null,
+        reasoning: "New member welcomed with the pinned intro and this week's discussion thread.",
+        status: "done",
+        created_at: hoursAgo(8),
+      },
+    ],
+    insights: [
+      {
+        id: `demo-ins-1-${chatId.slice(0, 6)}`,
+        kind: "engagement",
+        content:
+          "Yesterday's poll drew 19 votes and 11 replies — the strongest engagement this month.",
+        created_at: hoursAgo(14),
+      },
+      {
+        id: `demo-ins-2-${chatId.slice(0, 6)}`,
+        kind: "topics",
+        content:
+          "Hot topics this week: AI agents for sales teams, WhatsApp automation, hiring a first ML engineer.",
+        created_at: hoursAgo(30),
+      },
+    ],
+    stats,
+    memo: {
+      week_start: dayStr(6),
+      memo: "Engagement is trending up (+38% replies week over week). Discussion questions outperform tips 2:1 — members answer each other, which compounds reach. The Wednesday noon slot is the strongest.",
+      recommendations: [
+        "Keep two posts per week; lead with a discussion question",
+        "Move the practical-tip post to Sunday morning",
+        "Welcome new members within the first hour — it doubles their first-week activity",
+      ],
+      created_at: hoursAgo(20),
+    },
+  };
+}
+
+// --- Command Center: steering chat ------------------------------------------
+export function demoCommandReply(message: string): {
+  reply: string;
+  actions: Array<{ tool: string; summary: string }>;
+} {
+  const m = message.toLowerCase();
+  if (m.includes("week") || m.includes("שבוע") || m.includes("how did")) {
+    return {
+      reply:
+        "Great week for this group 📈 Messages are up 38% and the Wednesday poll was the strongest post this month (31 replies). Discussion questions keep outperforming tips 2:1 — I recommend leading with one every week. Want me to adjust the schedule?",
+      actions: [
+        {
+          tool: "get_group_status",
+          summary: "Pulled the last 7 days of stats and the weekly memo",
+        },
+      ],
+    };
+  }
+  if (m.includes("post") || m.includes("פוסט")) {
+    return {
+      reply:
+        "Done — I planned a post for tomorrow at 09:00 on that topic. It will go through your approval queue first, so you'll see the draft before anything is published.",
+      actions: [{ tool: "plan_post", summary: "Planned a scheduled post for tomorrow 09:00" }],
+    };
+  }
+  return {
+    reply:
+      "Got it — I've updated the group profile accordingly and will apply it starting with the next post. You can see the exact change in the Activity page under Config.",
+    actions: [{ tool: "update_group_profile", summary: "Updated the group's instructions" }],
+  };
+}
+
+// --- Profiles ----------------------------------------------------------------
+const demoFact = (text: string, d: number) => ({ text, at: daysAgo(d) });
+
+export const demoPeople = [
+  {
+    id: "11111111-1111-4111-8111-111111111101",
+    wa_id: "972555000101",
+    display_name: "Noa Peretz",
+    language: "he",
+    sentiment: "curious",
+    funnel_stage: "lead",
+    facts: [
+      demoFact("Runs a boutique marketing agency in Tel Aviv", 4),
+      demoFact("Asked for pricing for the premium package", 2),
+      demoFact("Prefers WhatsApp over email", 2),
+    ],
+    last_seen_at: hoursAgo(2),
+    first_seen_at: daysAgo(5),
+  },
+  {
+    id: "11111111-1111-4111-8111-111111111102",
+    wa_id: "972555000202",
+    display_name: "Amit Dahan",
+    language: "he",
+    sentiment: "satisfied",
+    funnel_stage: "customer",
+    facts: [
+      demoFact("Signed the annual retainer in June", 30),
+      demoFact("Interested in AI tools for his sales team", 6),
+      demoFact("Asked for an interesting AI report", 1),
+    ],
+    last_seen_at: hoursAgo(6),
+    first_seen_at: daysAgo(60),
+  },
+  {
+    id: "11111111-1111-4111-8111-111111111103",
+    wa_id: "972555000303",
+    display_name: "Maya Golan",
+    language: "he",
+    sentiment: "enthusiastic",
+    funnel_stage: "vip",
+    facts: [
+      demoFact("Owner of two fitness studios", 45),
+      demoFact("Renewed early after strong campaign results", 12),
+      demoFact("Wants a monthly performance summary", 3),
+    ],
+    last_seen_at: daysAgo(1),
+    first_seen_at: daysAgo(90),
+  },
+  {
+    id: "11111111-1111-4111-8111-111111111104",
+    wa_id: "972555000404",
+    display_name: "Daniel Katz",
+    language: "en",
+    sentiment: "neutral",
+    funnel_stage: "lead",
+    facts: [
+      demoFact("Found us through the AI Founders group", 1),
+      demoFact("Comparing us with two other agencies", 1),
+    ],
+    last_seen_at: hoursAgo(20),
+    first_seen_at: daysAgo(1),
+  },
+  {
+    id: "11111111-1111-4111-8111-111111111105",
+    wa_id: "972555000505",
+    display_name: "Shir Aloni",
+    language: "he",
+    sentiment: "happy",
+    funnel_stage: "community",
+    facts: [demoFact("Active member in AI Founders — answers other members often", 8)],
+    last_seen_at: daysAgo(2),
+    first_seen_at: daysAgo(40),
+  },
+];
+
+export function demoPersonDetail(personId: string) {
+  const person = demoPeople.find((p) => p.id === personId) ?? demoPeople[0];
+  const timelines: Record<string, Array<[dir: "in" | "out", body: string, h: number]>> = {
+    "972555000101": [
+      ["in", "היי, אשמח לשמוע על החבילות שלכם", 30],
+      ["out", "היי נועה! בשמחה — יש לנו שלוש חבילות ליווי. איזה היקף פעילות יש לכם היום?", 29.9],
+      ["in", "בעיקר סושיאל, בערך 4 קמפיינים בחודש", 29.7],
+      ["out", "נשמע מתאים לחבילה המורחבת. אשלח לך פירוט מסודר בהמשך היום 🙏", 29.6],
+      ["in", "מעולה, תודה!", 2],
+    ],
+    "972555000202": [
+      ["in", "בוקר טוב! יש לך דוח AI מעניין לשלוח לי?", 7],
+      ["out", "בוקר אור! בודק את זה עכשיו — אשלח לך אחד ממש שווה בהקדם.", 6.9],
+      ["out", "בדקתי — מצאתי דוח מעולה על אימוץ AI בארגונים. שולח אותו אליך 👇", 6.8],
+      ["in", "וואו מהיר! תודה רבה", 6.5],
+    ],
+  };
+  const script = timelines[person.wa_id] ?? [
+    ["in", "היי, רציתי לבדוק משהו", 26],
+    ["out", "היי! כאן, איך אפשר לעזור?", 25.9],
+    ["in", "מעולה, אשלח פרטים בהמשך", 25.5],
+  ];
+  return {
+    person,
+    timeline: script.map(([dir, body, h]) => ({
+      direction: dir === "in" ? "inbound" : "outbound",
+      sender_name: dir === "in" ? person.display_name : "Bot",
+      body,
+      created_at: hoursAgo(h),
+    })),
+    intents: [
+      {
+        intent: "Asking about pricing and packages",
+        sentiment: "curious",
+        urgency: "normal",
+        at: hoursAgo(30),
+      },
+      {
+        intent: "Requesting an AI industry report",
+        sentiment: "positive",
+        urgency: "normal",
+        at: hoursAgo(7),
+      },
+    ],
+    groups:
+      person.funnel_stage === "community" || person.funnel_stage === "vip"
+        ? ["AI Founders IL 🚀"]
+        : [],
+  };
+}
+
+export function demoAskAnswer(question: string): string {
+  void question;
+  return "Based on the conversation history: she's a warm lead who asked for premium-package pricing two days ago and prefers WhatsApp over email. Best next step — send the detailed package overview she was promised and offer a short call this week. Her replies come fastest in the morning.";
+}
+
+// --- Activity feed ------------------------------------------------------------
+type DemoStage = {
+  stage: string;
+  status: string;
+  summary: string | null;
+  data: Record<string, unknown>;
+  duration_ms: number | null;
+  created_at: string;
+};
+type DemoActivityEntry = {
+  id: string;
+  ts: string;
+  kind: string;
+  chat_id: string | null;
+  chat_name: string | null;
+  title: string;
+  stages: DemoStage[];
+};
+
+const stage = (
+  s: string,
+  summary: string,
+  h: number,
+  extra: Partial<DemoStage> = {},
+): DemoStage => ({
+  stage: s,
+  status: "ok",
+  summary,
+  data: {},
+  duration_ms: null,
+  created_at: hoursAgo(h),
+  ...extra,
+});
+
+function demoActivityEntries(): DemoActivityEntry[] {
+  return [
+    {
+      id: "demo-act-reply-1",
+      ts: hoursAgo(2),
+      kind: "reply",
+      chat_id: "972555000101@s.whatsapp.net",
+      chat_name: "Noa Peretz",
+      title: "Replied in 24s — pricing question answered from the knowledge base",
+      stages: [
+        stage("received", "DM received — reply target picked 6s after the message", 2.06),
+        stage("context", "Loaded 12 history messages + profile with 3 stored facts", 2.05, {
+          duration_ms: 140,
+        }),
+        stage("intent", "Intent: Asking about pricing | Language: he | Urgency: normal", 2.04, {
+          duration_ms: 1500,
+        }),
+        stage("draft", "Answered from the knowledge base — premium package details", 2.03, {
+          duration_ms: 7200,
+        }),
+        stage("deliver", "Sent 1 message(s)", 2.02, {
+          data: {
+            latency_breakdown: {
+              total_from_message_s: 24,
+              llm_s: 9,
+              queue_wait_s: 8,
+              waited_for_target_s: 4,
+              attempt: 1,
+            },
+          },
+        }),
+      ],
+    },
+    {
+      id: "demo-act-research-1",
+      ts: hoursAgo(6.5),
+      kind: "reply",
+      chat_id: "972555000202@s.whatsapp.net",
+      chat_name: "Amit Dahan",
+      title: "Promise kept: researched the web and delivered the answer in 3m40s",
+      stages: [
+        stage(
+          "research",
+          "Reply promised to check and get back — tracked research job enqueued, answer due within 10 minutes",
+          6.9,
+        ),
+        stage(
+          "research",
+          "Research done — drafted the promised answer (4 web results, 1 KB item)",
+          6.85,
+          { duration_ms: 9200 },
+        ),
+        stage("deliver", "Promised answer delivered 3m40s after the promise", 6.8, {
+          data: { promise_to_answer_s: 220, deadline_met: true },
+        }),
+      ],
+    },
+    {
+      id: "demo-act-post-1",
+      ts: hoursAgo(26),
+      kind: "post",
+      chat_id: AI_FOUNDERS,
+      chat_name: "AI Founders IL 🚀",
+      title: "Scheduled post published — 23 replies in 24h",
+      stages: [stage("post", "Scheduled post published to AI Founders IL — 23 replies in 24h", 26)],
+    },
+    {
+      id: "demo-act-mod-1",
+      ts: hoursAgo(20),
+      kind: "moderation",
+      chat_id: AI_FOUNDERS,
+      chat_name: "AI Founders IL 🚀",
+      title: "Deleted a promotional message and warned the sender privately",
+      stages: [
+        stage(
+          "moderation",
+          "Rule: no self-promotion without value. Third violation this week — message deleted, sender warned in private.",
+          20,
+        ),
+      ],
+    },
+    {
+      id: "demo-act-welcome-1",
+      ts: hoursAgo(8),
+      kind: "welcome",
+      chat_id: AI_FOUNDERS,
+      chat_name: "AI Founders IL 🚀",
+      title: "Welcomed Dana Levi to the group",
+      stages: [
+        stage(
+          "welcome",
+          "Welcomed Dana Levi with the pinned intro and this week's discussion thread",
+          8,
+        ),
+      ],
+    },
+    {
+      id: "demo-act-follow-1",
+      ts: hoursAgo(28),
+      kind: "follow_up",
+      chat_id: "972555000303@s.whatsapp.net",
+      chat_name: "Maya Golan",
+      title: "Follow-up sent: monthly performance summary reminder",
+      stages: [
+        stage(
+          "follow_up",
+          "Lead went quiet after asking for a summary — natural nudge sent, reply received 40 minutes later",
+          28,
+        ),
+      ],
+    },
+    {
+      id: "demo-act-insight-1",
+      ts: hoursAgo(30),
+      kind: "insight",
+      chat_id: AI_FOUNDERS,
+      chat_name: "AI Founders IL 🚀",
+      title: "Weekly insight: discussion questions outperform tips 2:1",
+      stages: [
+        stage(
+          "insight",
+          "Analyzed the week's engagement — recommends leading with discussion questions",
+          30,
+        ),
+      ],
+    },
+    {
+      id: "demo-act-config-1",
+      ts: hoursAgo(45),
+      kind: "config",
+      chat_id: AI_FOUNDERS,
+      chat_name: "AI Founders IL 🚀",
+      title: "Owner updated the posting schedule via Command Center chat",
+      stages: [
+        stage("config", "Added Wednesday 12:30 discussion slot per the owner's instruction", 45),
+      ],
+    },
+    {
+      id: "demo-act-gate-1",
+      ts: hoursAgo(12),
+      kind: "gate",
+      chat_id: AI_FOUNDERS,
+      chat_name: "AI Founders IL 🚀",
+      title: "Group message not addressed to the bot — stayed quiet",
+      stages: [
+        stage(
+          "reply_gate",
+          "No mention, no reply-to-bot, not an owned question — correct call is silence",
+          12,
+          { status: "skip" },
+        ),
+      ],
+    },
+    {
+      id: "demo-act-alert-1",
+      ts: hoursAgo(4),
+      kind: "alert",
+      chat_id: null,
+      chat_name: null,
+      title: "Alert: research promise needs a human",
+      stages: [
+        stage(
+          "error",
+          "No web results and no KB entry for a supplier-pricing question — escalated with an interim update to the contact",
+          4,
+          { status: "error" },
+        ),
+      ],
+    },
+    {
+      id: "demo-act-new-1",
+      ts: hoursAgo(20),
+      kind: "new_contact",
+      chat_id: "972555000404@s.whatsapp.net",
+      chat_name: "Daniel Katz",
+      title: "New contact: Daniel Katz (lead)",
+      stages: [
+        stage("context", "First conversation — profile created, funnel stage set to lead", 20),
+      ],
+    },
+    {
+      id: "demo-act-error-1",
+      ts: hoursAgo(33),
+      kind: "error",
+      chat_id: "972555000101@s.whatsapp.net",
+      chat_name: "Noa Peretz",
+      title: "LLM request timed out — retried and delivered on attempt 2",
+      stages: [
+        stage(
+          "error",
+          "Transient model timeout on attempt 1; the retry answered 50 seconds later. Never-silent held.",
+          33,
+          { status: "error" },
+        ),
+      ],
+    },
+  ];
+}
+
+export function demoActivityFeed(range: "day" | "week" | "month", kind: string) {
+  const horizonH = range === "day" ? 24 : range === "week" ? 24 * 7 : 24 * 30;
+  const all = demoActivityEntries()
+    .filter((e) => now - new Date(e.ts).getTime() <= horizonH * 3_600_000)
+    .sort((a, b) => b.ts.localeCompare(a.ts));
+  const counts: Record<string, number> = {};
+  for (const e of all) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+  const entries = kind === "all" ? all : all.filter((e) => e.kind === kind);
+  return { entries, counts };
 }

@@ -40,6 +40,7 @@ import {
   retryPlannedPost,
   type ManagedGroup,
 } from "@/lib/groups.functions";
+import { DEMO_MODE, demoManagedGroups, demoGroupActivity, demoCommandReply } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "Command Center — WhatsApp Bot" }] }),
@@ -122,13 +123,16 @@ function CommandCenter() {
   const visible = <T,>(list: T[], key: string) =>
     expanded[key] ? list : list.slice(0, PREVIEW_ROWS);
 
-  const { data: groups = [], isLoading } = useQuery({
+  const { data: realGroups = [], isLoading: realLoading } = useQuery({
     queryKey: ["managed-groups"],
     queryFn: () => listFn(),
     // listManagedGroups calls the external Whapi API — don't refetch eagerly.
     staleTime: 30_000,
     refetchInterval: 60_000,
+    enabled: !DEMO_MODE,
   });
+  const groups = DEMO_MODE ? (demoManagedGroups as unknown as ManagedGroup[]) : realGroups;
+  const isLoading = DEMO_MODE ? false : realLoading;
 
   const current: ManagedGroup | undefined = groups.find((g) => g.chat_id === selected);
 
@@ -144,16 +148,21 @@ function CommandCenter() {
     );
   }, [groups, groupSearch]);
 
-  const { data: activity } = useQuery({
+  const { data: realActivity } = useQuery({
     queryKey: ["group-activity", selected],
     queryFn: () => activityFn({ data: { chat_id: selected! } }),
-    enabled: !!selected,
+    enabled: !!selected && !DEMO_MODE,
     refetchInterval: 20000,
   });
+  const activity =
+    DEMO_MODE && selected
+      ? (demoGroupActivity(selected) as unknown as NonNullable<typeof realActivity>)
+      : realActivity;
 
   const sendChat = useMutation({
-    mutationFn: (message: string) =>
-      chatFn({
+    mutationFn: async (message: string) => {
+      if (DEMO_MODE) return demoCommandReply(message);
+      return chatFn({
         data: {
           groupChatId: selected!,
           groupName: current?.whatsapp_name,
@@ -162,7 +171,8 @@ function CommandCenter() {
             { role: "user" as const, content: message },
           ],
         },
-      }),
+      });
+    },
     onSuccess: (res, message) => {
       setChat((c) => [
         ...c,
@@ -176,7 +186,10 @@ function CommandCenter() {
   });
 
   const retryPost = useMutation({
-    mutationFn: (postId: string) => retryFn({ data: { post_id: postId } }),
+    mutationFn: async (postId: string) => {
+      if (DEMO_MODE) return;
+      return retryFn({ data: { post_id: postId } });
+    },
     onSuccess: () => {
       toast.success("Post re-queued — the engine will generate it within a minute");
       qc.invalidateQueries({ queryKey: ["group-activity", selected] });

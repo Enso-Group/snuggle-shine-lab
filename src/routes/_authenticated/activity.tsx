@@ -14,6 +14,7 @@ import {
   type ActivityEntry,
   type ActivityKind,
 } from "@/lib/activity.functions";
+import { DEMO_MODE, demoActivityFeed } from "@/lib/demo";
 import {
   Activity as ActivityIcon,
   AlertTriangle,
@@ -172,11 +173,16 @@ function ActivityPage() {
   const [range, setRange] = useState<"day" | "week" | "month">("day");
   const [kind, setKind] = useState<ActivityKind | "all">("all");
 
-  const { data, isLoading } = useQuery({
+  const { data: realData, isLoading: realLoading } = useQuery({
     queryKey: ["activity", range, kind],
     queryFn: () => listFn({ data: { range, kind } }),
     refetchInterval: 8000,
+    enabled: !DEMO_MODE,
   });
+  const data = DEMO_MODE
+    ? (demoActivityFeed(range, kind) as unknown as NonNullable<typeof realData>)
+    : realData;
+  const isLoading = DEMO_MODE ? false : realLoading;
 
   const entries = data?.entries;
   const counts = data?.counts ?? {};
