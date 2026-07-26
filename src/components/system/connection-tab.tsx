@@ -274,7 +274,10 @@ function DemoDataCard() {
     onSuccess: (r: { created?: Record<string, number> }) => {
       invalidateAll();
       const total = Object.values(r?.created ?? {}).reduce((a, b) => a + b, 0);
-      toast.success(`Demo data seeded (${total} rows) — every page now has content.`);
+      toast.success(
+        `Demo data seeded (${total} rows) — pages now show DEMO content only. Wipe to restore the real view.`,
+        { duration: 8000 },
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -306,7 +309,10 @@ function DemoDataCard() {
         <p className="text-xs text-muted-foreground">
           Seeds realistic demo content across every page — profiles with stored facts, group posts
           (incl. a poll and an image), engagement stats, activity of every kind and pending
-          approvals. Everything is marked and one click removes it. Real data is never touched.
+          approvals. While seeded, the dashboard switches to a <b>demo-only view</b>: real contacts
+          and groups are hidden from every page (the bot keeps answering real messages in the
+          background). Wipe removes the demo rows and brings the real view back. Real data is never
+          modified.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button className="gap-2" onClick={() => seed.mutate()} disabled={seed.isPending}>

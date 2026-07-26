@@ -26,6 +26,44 @@ export const WIPE_PLAN: Array<{ table: string; column: string }> = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type LooseDb = { from(table: string): any };
 
+/**
+ * Presentation mode: while demo data is seeded, dashboard READ paths show
+ * ONLY demo rows so no real contact name or number appears in a recording.
+ * The BOT itself is unaffected — real messages keep being answered; they are
+ * just hidden from the pages until the demo is wiped.
+ * Stored in bot_settings.agent_config.demo_view (set by seed, cleared by
+ * wipe); unknown agent_config keys are ignored by the pipeline.
+ */
+export async function isDemoViewOn(db: LooseDb): Promise<boolean> {
+  try {
+    const { data } = await db
+      .from("bot_settings")
+      .select("agent_config")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return (data?.agent_config as { demo_view?: boolean } | null)?.demo_view === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Merge demo_view into agent_config without clobbering other knobs. */
+export async function setDemoView(db: LooseDb, on: boolean): Promise<void> {
+  const { data } = await db
+    .from("bot_settings")
+    .select("id, agent_config")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!data?.id) return;
+  const config = { ...((data.agent_config as Record<string, unknown>) ?? {}), demo_view: on };
+  await db
+    .from("bot_settings")
+    .update({ agent_config: config, updated_at: new Date().toISOString() })
+    .eq("id", data.id);
+}
+
 export type WipeResult = { removed: Record<string, number>; failed: Record<string, string> };
 
 export async function wipeAll(db: LooseDb): Promise<WipeResult> {

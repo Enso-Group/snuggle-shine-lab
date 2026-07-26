@@ -49,6 +49,21 @@ export const listManagedGroups = createServerFn({ method: "GET" })
     const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
     const { channelOrFilter } = await import("@/lib/agent/channel");
 
+    // Presentation mode: while demo data is seeded, the list shows ONLY the
+    // demo group — no real group name may appear in a recording.
+    const { isDemoViewOn } = await import("./demo-seed");
+    if (await isDemoViewOn(supabaseAdmin as never)) {
+      const { data: demoProfiles } = await supabaseAdmin
+        .from("group_profiles")
+        .select("*")
+        .like("chat_id", "demo-%");
+      return ((demoProfiles ?? []) as unknown as GroupProfileRow[]).map((p) => ({
+        chat_id: p.chat_id,
+        whatsapp_name: p.name ?? p.chat_id,
+        profile: p,
+      }));
+    }
+
     // Disconnected → no groups at all (the live list needs the account anyway).
     const { connected, phone } = await getConnectedChannel();
     if (!connected || !phone) return [];

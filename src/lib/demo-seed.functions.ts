@@ -26,13 +26,16 @@ const daysAhead = (d: number) => new Date(Date.now() + d * 24 * 3_600_000).toISO
 const dateNDaysAgo = (n: number) =>
   new Date(Date.now() - n * 24 * 3_600_000).toISOString().slice(0, 10);
 
-import { wipeAll, type LooseDb } from "./demo-seed";
+import { setDemoView, wipeAll, type LooseDb } from "./demo-seed";
 
 export const wipeDemoData = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { removed, failed } = await wipeAll(supabaseAdmin as unknown as LooseDb);
+    const db = supabaseAdmin as unknown as LooseDb;
+    const { removed, failed } = await wipeAll(db);
+    // Presentation mode off — the dashboard shows real data again.
+    await setDemoView(db, false);
     return { ok: Object.keys(failed).length === 0, removed, failed };
   });
 
@@ -537,6 +540,11 @@ export const seedDemoData = createServerFn({ method: "POST" })
       reason: "Lead considering the extended package — nudged after she went quiet",
       status: "sent",
     });
+
+    // Presentation mode ON: dashboard reads now show demo rows only, so no
+    // real contact name or number can appear in the recording. The bot keeps
+    // handling real traffic in the background; Wipe restores the real view.
+    await setDemoView(admin, true);
 
     return { ok: true, created };
   });

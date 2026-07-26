@@ -36,7 +36,9 @@ describe("parseMedia", () => {
     });
     expect(m?.storage_path).toBe("uploads/123-a.png");
     // Site-served assets carry no storage_path — parse keeps it null.
-    expect(parseMedia({ kind: "image", url: "https://x.test/demo/a.png" })?.storage_path).toBeNull();
+    expect(
+      parseMedia({ kind: "image", url: "https://x.test/demo/a.png" })?.storage_path,
+    ).toBeNull();
   });
 });
 
@@ -104,6 +106,30 @@ describe("whapi media senders", () => {
       "Demo row",
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("demo presentation mode (demo_view flag)", () => {
+  it("seed-view flag round-trips through agent_config without clobbering other knobs", async () => {
+    const { isDemoViewOn, setDemoView } = await import("@/lib/demo-seed");
+    const fake = makeFakeSupa({
+      bot_settings: [
+        {
+          id: "settings-1",
+          agent_config: { follow_ups_enabled: true },
+          created_at: new Date().toISOString(),
+        },
+      ],
+    });
+
+    expect(await isDemoViewOn(fake.client as never)).toBe(false);
+    await setDemoView(fake.client as never, true);
+    expect(await isDemoViewOn(fake.client as never)).toBe(true);
+    // Other knobs survive the merge.
+    const cfg = fake.state.bot_settings[0].agent_config as Record<string, unknown>;
+    expect(cfg.follow_ups_enabled).toBe(true);
+    await setDemoView(fake.client as never, false);
+    expect(await isDemoViewOn(fake.client as never)).toBe(false);
   });
 });
 

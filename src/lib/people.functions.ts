@@ -35,7 +35,14 @@ export const listPeople = createServerFn({ method: "GET" })
       )
       .order("last_seen_at", { ascending: false })
       .limit(200);
-    if (await channelScopeReady(supabaseAdmin)) q = q.or(channelOrFilter(phone));
+    // Presentation mode: only demo profiles on screen while demo data is
+    // seeded — real contacts must never appear in a recording.
+    const { isDemoViewOn } = await import("./demo-seed");
+    if (await isDemoViewOn(supabaseAdmin as never)) {
+      q = q.like("wa_id", "demo-%");
+    } else if (await channelScopeReady(supabaseAdmin)) {
+      q = q.or(channelOrFilter(phone));
+    }
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     return (data ?? []) as PersonListItem[];

@@ -101,6 +101,10 @@ export const listActivity = createServerFn({ method: "GET" })
     if (!connected || !phone) return { entries: [], counts: {} };
     const scoped = await channelScopeReady(supabaseAdmin);
     const since = new Date(Date.now() - RANGES_H[data.range] * 3600_000).toISOString();
+    // Presentation mode: while demo data is seeded, the stream shows demo
+    // entries only — no real chat id or contact appears in a recording.
+    const { isDemoViewOn } = await import("./demo-seed");
+    const demoView = await isDemoViewOn(supabaseAdmin as never);
 
     let peopleQuery = supabaseAdmin
       .from("people")
@@ -108,25 +112,30 @@ export const listActivity = createServerFn({ method: "GET" })
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(100);
-    if (scoped) peopleQuery = peopleQuery.or(channelOrFilter(phone));
+    if (demoView) peopleQuery = peopleQuery.like("wa_id", "demo-%");
+    else if (scoped) peopleQuery = peopleQuery.or(channelOrFilter(phone));
+
+    let decisionsQuery = supabaseAdmin
+      .from("bot_decisions")
+      .select("id, job_id, chat_id, trigger, stage, status, summary, data, duration_ms, created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(600);
+    if (demoView) decisionsQuery = decisionsQuery.like("chat_id", "demo-%");
+
+    let alertsQuery = supabaseAdmin
+      .from("commands_log")
+      .select("id, prompt, result, created_at")
+      .eq("status", "alert")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (demoView) alertsQuery = alertsQuery.like("target_chat_id", "demo-%");
 
     const [decisionsRes, peopleRes, alertsRes] = await Promise.all([
-      supabaseAdmin
-        .from("bot_decisions")
-        .select(
-          "id, job_id, chat_id, trigger, stage, status, summary, data, duration_ms, created_at",
-        )
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(600),
+      decisionsQuery,
       peopleQuery,
-      supabaseAdmin
-        .from("commands_log")
-        .select("id, prompt, result, created_at")
-        .eq("status", "alert")
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(50),
+      alertsQuery,
     ]);
 
     const decisions = decisionsRes.data ?? [];

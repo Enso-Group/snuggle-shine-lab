@@ -70,11 +70,17 @@ export const deleteScheduledMessage = createServerFn({ method: "POST" })
 export const listPendingApprovals = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAdmin])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+    let q = context.supabase
       .from("scheduled_approvals")
       .select("*")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
+    // Presentation mode: only demo approvals while demo data is seeded.
+    const { isDemoViewOn } = await import("./demo-seed");
+    if (await isDemoViewOn(context.supabase as never)) {
+      q = q.like("target_chat_id", "demo-%");
+    }
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     return data ?? [];
   });
