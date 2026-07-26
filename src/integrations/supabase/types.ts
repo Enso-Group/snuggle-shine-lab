@@ -817,6 +817,7 @@ export type Database = {
           engagement: Json
           group_chat_id: string
           id: string
+          media: Json | null
           pillar: string | null
           prompt: string | null
           reasoning: string | null
@@ -834,6 +835,7 @@ export type Database = {
           engagement?: Json
           group_chat_id: string
           id?: string
+          media?: Json | null
           pillar?: string | null
           prompt?: string | null
           reasoning?: string | null
@@ -851,6 +853,7 @@ export type Database = {
           engagement?: Json
           group_chat_id?: string
           id?: string
+          media?: Json | null
           pillar?: string | null
           prompt?: string | null
           reasoning?: string | null
@@ -871,6 +874,7 @@ export type Database = {
           created_at: string
           decided_at: string | null
           id: string
+          media: Json | null
           planned_post_id: string | null
           poll: Json | null
           scheduled_message_id: string | null
@@ -886,6 +890,7 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           id?: string
+          media?: Json | null
           planned_post_id?: string | null
           poll?: Json | null
           scheduled_message_id?: string | null
@@ -901,6 +906,7 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           id?: string
+          media?: Json | null
           planned_post_id?: string | null
           poll?: Json | null
           scheduled_message_id?: string | null
