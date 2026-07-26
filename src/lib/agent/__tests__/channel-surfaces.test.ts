@@ -205,7 +205,12 @@ describe("research resource-request detection", () => {
     const block = buildResearchBlock({
       answer: "סיכום",
       results: [
-        { title: "AI Report 2026", url: "https://example.com/ai-report", content: "תוכן", score: 0.9 },
+        {
+          title: "AI Report 2026",
+          url: "https://example.com/ai-report",
+          content: "תוכן",
+          score: 0.9,
+        },
       ],
     });
     // The old rule forbade URLs outright; the new rule mandates them for

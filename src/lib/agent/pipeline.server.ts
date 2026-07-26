@@ -259,7 +259,8 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // "can't help with that" line instead — one budget-clamped fast-model shot,
   // then a fixed persona-safe Hebrew line if even that fails.
   if (!parts.length) {
-    const dmNeverSilent = !message.isGroup && isDmChatId(job.chat_id) && deps.trigger !== "simulation";
+    const dmNeverSilent =
+      !message.isGroup && isDmChatId(job.chat_id) && deps.trigger !== "simulation";
     logDecision(supabase, {
       ...base,
       stage: "error",

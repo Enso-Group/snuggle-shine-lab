@@ -511,12 +511,13 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
     // job — the search results ARE the verified source here, and the answer
     // must be able to carry their URLs (live complaint: promised links never
     // arrived because the model obeyed the stricter KB rule).
-    const kbBlock = kb.count > 0
-      ? `
+    const kbBlock =
+      kb.count > 0
+        ? `
 
 מאגר הידע העסקי (מקור מאומת נוסף לעובדות):
 ${kb.block}`
-      : "";
+        : "";
     const wantsResource =
       detectsResourceRequest(payload.question) || detectsResourceRequest(payload.source_body);
     const system =

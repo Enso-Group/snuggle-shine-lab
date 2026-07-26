@@ -49,7 +49,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                     ? { ok: true, status: h.status, ms: Date.now() - t0 }
                     : { ok: false, error: String(h.error ?? "").slice(0, 200) };
                 } catch (e) {
-                  probe.whapi = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
+                  probe.whapi = {
+                    ok: false,
+                    error: String((e as Error)?.message ?? e).slice(0, 200),
+                  };
                 }
                 try {
                   const { isTavilyConfigured, tavilySearch } = await import("@/lib/tavily.server");
@@ -71,7 +74,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                     };
                   }
                 } catch (e) {
-                  probe.tavily = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
+                  probe.tavily = {
+                    ok: false,
+                    error: String((e as Error)?.message ?? e).slice(0, 200),
+                  };
                 }
                 try {
                   const { callLLM } = await import("@/lib/llm.server");
@@ -90,7 +96,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                     ms: Date.now() - t0,
                   };
                 } catch (e) {
-                  probe.llm = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) };
+                  probe.llm = {
+                    ok: false,
+                    error: String((e as Error)?.message ?? e).slice(0, 300),
+                  };
                 }
                 // The marker doubles as the DB-write proof (awaited — CF drops
                 // fire-and-forget writes when the response returns).
@@ -102,9 +111,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                   summary: `${MARKER}: llm=${ok(probe.llm) ? "ok" : "FAIL"} tavily=${ok(probe.tavily) ? "ok" : "FAIL"} whapi=${ok(probe.whapi) ? "ok" : "FAIL"}`,
                   data: probe,
                 });
-                probe.db_write = markerErr
-                  ? { ok: false, error: markerErr.message }
-                  : { ok: true };
+                probe.db_write = markerErr ? { ok: false, error: markerErr.message } : { ok: true };
               }
             } catch (e) {
               probe = { error: String((e as Error)?.message ?? e).slice(0, 300) };

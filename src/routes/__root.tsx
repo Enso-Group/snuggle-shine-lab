@@ -78,15 +78,35 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "WhatsApp Bot — Management Dashboard" },
-      { name: "description", content: "Autonomous WhatsApp agent with human approval, transparent reasoning and per-person memory." },
+      {
+        name: "description",
+        content:
+          "Autonomous WhatsApp agent with human approval, transparent reasoning and per-person memory.",
+      },
       { property: "og:title", content: "WhatsApp Bot — Management Dashboard" },
-      { property: "og:description", content: "Autonomous WhatsApp agent with human approval, transparent reasoning and per-person memory." },
+      {
+        property: "og:description",
+        content:
+          "Autonomous WhatsApp agent with human approval, transparent reasoning and per-person memory.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "WhatsApp Bot — Management Dashboard" },
-      { name: "twitter:description", content: "Autonomous WhatsApp agent with human approval, transparent reasoning and per-person memory." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a2203ad5-ea4a-444c-9a9d-1b3b514af30c/id-preview-a309b2d3--0ddd5b7b-cecb-4611-bf28-09cb9c37284d.lovable.app-1782649075237.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a2203ad5-ea4a-444c-9a9d-1b3b514af30c/id-preview-a309b2d3--0ddd5b7b-cecb-4611-bf28-09cb9c37284d.lovable.app-1782649075237.png" },
+      {
+        name: "twitter:description",
+        content:
+          "Autonomous WhatsApp agent with human approval, transparent reasoning and per-person memory.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a2203ad5-ea4a-444c-9a9d-1b3b514af30c/id-preview-a309b2d3--0ddd5b7b-cecb-4611-bf28-09cb9c37284d.lovable.app-1782649075237.png",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a2203ad5-ea4a-444c-9a9d-1b3b514af30c/id-preview-a309b2d3--0ddd5b7b-cecb-4611-bf28-09cb9c37284d.lovable.app-1782649075237.png",
+      },
     ],
     links: [
       {

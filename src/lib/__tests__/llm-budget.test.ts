@@ -122,8 +122,9 @@ describe("callLLM budgetMs", () => {
     // tests in this file already dirtied the static instance.
     vi.resetModules();
     const { callLLM: freshCallLLM } = await import("../llm.server");
-    fetchMock.mockReset().mockImplementation(
-      (_url: string, init: { signal: AbortSignal; body?: unknown }) => {
+    fetchMock
+      .mockReset()
+      .mockImplementation((_url: string, init: { signal: AbortSignal; body?: unknown }) => {
         const model = JSON.parse(String(init.body)).model;
         if (model === "google/gemini-3-flash-preview") {
           // The pinned model stalls — never resolves until aborted.
@@ -142,8 +143,7 @@ describe("callLLM budgetMs", () => {
             { status: 200 },
           ),
         );
-      },
-    );
+      });
     const settled = freshCallLLM(input({ timeoutMs: 5_000, budgetMs: 60_000 }));
     await vi.runAllTimersAsync();
     const res = await settled;
