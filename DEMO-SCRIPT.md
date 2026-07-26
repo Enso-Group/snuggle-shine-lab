@@ -1,92 +1,127 @@
-# Demo Video — Narration Script
+# Demo Narration Script
 
-*(Read this while screen-recording. Before you start: Behind the Scenes → WhatsApp Connection → **Seed demo data**. After recording: **Wipe demo data**.)*
-
----
-
-## Part 1 — The concept (read over the Command Center or a slide)
-
-"Most businesses lose customers in the same place: WhatsApp. Messages arrive at all hours, someone promises to 'check and get back to you' — and then nobody does. Groups go quiet, leads go cold, and the owner becomes a full-time message-answerer.
-
-This system is a full AI employee that lives inside your WhatsApp. Not a menu bot, not canned replies — an agent that reads every message, understands the intent, remembers the person, and answers like a trained team member, in the customer's own language.
-
-What makes it different:
-
-First — **it never goes silent**. Every single message gets an answer. If the AI can't answer, it says so honestly, escalates to a human, and you get an alert. Silence is treated as a system failure.
-
-Second — **it keeps its promises**. When it tells a customer 'I'll check and get back to you', that promise becomes a tracked task with a ten-minute deadline. The system runs real web research in the background, and either delivers the answer within minutes or sends an honest update. No more forgotten follow-ups — ever.
-
-Third — **it remembers people**. Every conversation updates a living profile: who the person is, what they asked for, where they are in your funnel. The next conversation starts with full context, like talking to someone who never forgets.
-
-Fourth — **it runs your groups**. Scheduled posts, native polls, images and files, welcoming new members, moderating spam — with weekly self-analysis that tells you what's working.
-
-And fifth — **you stay in control**. Every decision the bot makes is logged with its reasoning. You can require approval for every message, steer each group in plain language, and watch everything from one dashboard. Let me show you around."
+Screen-recording narration, ~2.5 minutes spoken at a natural pace. The pages
+already show built-in demo data — just log in and follow the page order below.
+(No setup steps needed; demo mode is always on in this build.)
 
 ---
 
-## Part 2 — Page by page
+## English version
 
-### Command Center (home)
+**[Opening — on the Command Center, before clicking anything]**
 
-*(Click a group, show the overview.)*
+What you're looking at is an autonomous WhatsApp agent — a bot that manages a
+real business community on WhatsApp, mostly by itself. It reads every incoming
+message, decides whether and how to answer, remembers who each person is, and
+even runs the group's content calendar. The team stays in control: anything
+sensitive waits for a human click, and every single decision the bot makes is
+logged with its reasoning, so you can always see *why* it did what it did.
 
-"This is the Command Center — one screen per WhatsApp group the bot manages.
+It saves hours of community-management work every day. When it doesn't know
+something, it doesn't make things up — it actually searches the web and comes
+back with a real answer, with a real link. And when it promises someone
+"I'll check and get back to you", that promise becomes a tracked task with a
+ten-minute deadline — it either delivers the answer in minutes or sends an
+honest update. And it talks like a person: it types, it pauses, it answers in
+your language.
 
-At the top: a live engagement chart from the last seven days — messages, active members, replies to the bot's posts. Below it, the bot's own weekly strategy memo: it analyzes what worked and recommends changes — here it noticed discussion questions get twice the replies of tips, so it suggests leading with those.
+**[Command Center]**
 
-On the right, the content pipeline: posts it's preparing, posts waiting for my approval — you can see one has a poll attached and one has an image — and posts already sent, each with its engagement numbers.
+This is the Command Center — one screen per community. On the left, the groups
+the bot manages. For each one you get the bot's current strategy in plain
+words, a live engagement chart, and the content pipeline — what's waiting,
+what's pending approval, and what already went out, including images and
+polls. The best part is this chat box: you steer the bot in plain language —
+"post more about pricing", "how did this week go?" — and it updates its own
+configuration and confirms exactly what changed.
 
-And this chat box? That's how I manage the group — in plain language. I can type 'add a Tuesday morning tip post' or 'be stricter with self-promotion', and the bot updates its own configuration and confirms what changed."
+**[Activity]**
 
-### Activity
+This is the Activity feed — the bot's diary. Every reply, every post, every
+moderation action, every alert, with a timestamp. Open any entry and you see
+the full chain of reasoning: what it understood, what it drafted, and why.
+Nothing the bot does is a black box.
 
-*(Open Activity, expand one reply entry.)*
+**[Profiles]**
 
-"This is the bot's brain, fully transparent. Every action is logged with its reasoning.
+Profiles is the bot's memory of people. For each contact: the facts it
+learned — their business, what they asked about — their mood over time, where
+they are in the funnel, and the full conversation. And down here you can ask
+the AI about any contact — "is she close to buying?" — and get an answer
+grounded in what actually happened in the chat.
 
-Here's a real reply: you can see the whole chain — message received, intent detected, the answer drafted, and delivered — with the exact latency at every step. Replies land in under 30 seconds, timed and paced to feel human.
+**[Approvals]**
 
-Here's the research engine: the bot promised to find something, searched the web for real sources, and delivered the answer three and a half minutes later — the deadline is tracked automatically.
+Approvals is the human-in-the-loop. Messages the bot prefers not to send on
+its own wait here — you can send as-is, edit first, attach an image or a file,
+or reject. One click, and the bot handles the delivery.
 
-And you can see everything else in one stream: moderation actions, member welcomes, follow-ups, weekly insights, configuration changes — and alerts, where the system explicitly tells me when something needs a human."
+**[Behind the Scenes]**
 
-### Profiles
+And Behind the Scenes is the engine room: the bot's personality and writing
+style, the knowledge base it answers from, a simulator where you can test
+conversations safely before going live, the WhatsApp connection itself, who
+has access to this dashboard, and exactly what the AI usage costs — per day
+and per model.
 
-*(Open Profiles, click a person.)*
+**[Closing]**
 
-"Every person the bot talks to gets a living profile. Here's Noa — a lead. The bot has learned she runs a marketing agency, asked about the premium package, prefers WhatsApp over email. These facts were extracted automatically from the conversations, and every future answer uses them.
-
-You see her funnel stage, her full conversation timeline, and I can even ask the AI about her — 'what does Noa need to close?' — and get an answer grounded in her actual history."
-
-### Approvals
-
-*(Open Approvals, show the attachment, approve one.)*
-
-"When I want final say, everything the bot wants to send waits here first.
-
-This one is a reply to a lead — and you can see it comes with an image attached, previewed right here. I can edit the text, replace the attachment — image, video, or a PDF — or add one myself with one click. This one is a group post going out with a native WhatsApp poll.
-
-One click on Send, and it goes out exactly as shown — the file arrives as a real WhatsApp image with the message as its caption."
-
-### Behind the Scenes
-
-*(Open Behind the Scenes, walk the tabs briefly.)*
-
-"And this is the engine room. The bot's personality and language — written in plain text, no code. The knowledge base — the only source it's allowed to state business facts from; if something isn't here, it says it will check rather than invent an answer. A full simulator to test conversations safely. The WhatsApp connection with one-click setup. Who has access to this dashboard. And exactly what the AI usage costs, per day.
-
-One switch turns the whole bot off. One switch routes every message through approvals. It's an employee that works 24/7 — but you hold the keys."
+So: a community manager that works 24/7, researches before it answers, asks
+permission when it matters, and shows its work. That's the system.
 
 ---
 
-## Part 3 — Closing line
+## גרסה עברית
 
-"So that's the system: every message answered, every promise kept, every group managed, every person remembered — with full transparency and full control. It's like hiring your best employee, except this one never sleeps."
+**[פתיחה — על מסך ה-Command Center, לפני שלוחצים]**
 
----
+מה שאתם רואים כאן זה סוכן וואטסאפ אוטונומי — בוט שמנהל קהילה עסקית אמיתית
+בוואטסאפ, רוב הזמן לגמרי לבד. הוא קורא כל הודעה שנכנסת, מחליט אם ואיך לענות,
+זוכר מי כל אדם, ואפילו מנהל את לוח התוכן של הקבוצה. והצוות נשאר בשליטה: כל
+דבר רגיש מחכה לאישור של בן אדם, וכל החלטה של הבוט נרשמת יחד עם הנימוק שלה —
+אז תמיד אפשר לראות *למה* הוא עשה מה שעשה.
 
-## Recording checklist
+זה חוסך שעות של ניהול קהילה כל יום. כשהבוט לא יודע משהו — הוא לא ממציא: הוא
+באמת מחפש באינטרנט וחוזר עם תשובה אמיתית, כולל קישור אמיתי. וכשהוא מבטיח
+למישהו "אבדוק ואחזור אליך" — ההבטחה הזאת הופכת למשימה עם דדליין של עשר דקות:
+או שהתשובה מגיעה תוך דקות, או שנשלח עדכון כן. והוא מתכתב כמו בן אדם: מקליד,
+עוצר, עונה בשפה שלך.
 
-1. Behind the Scenes → WhatsApp Connection → **Seed demo data** (fills every page).
-2. Record following the script order: Command Center → Activity → Profiles → Approvals → Behind the Scenes.
-3. Live-wow moments you can safely show: attach a PDF to an approval (preview appears); approve the poll post; type a steering command in Command Center chat.
-4. After recording: **Wipe demo data** (removes every `demo-` row, nothing real is touched).
+**[Command Center — מרכז השליטה]**
+
+זה מרכז השליטה — מסך אחד לכל קהילה. משמאל הקבוצות שהבוט מנהל. לכל קבוצה
+רואים את האסטרטגיה הנוכחית של הבוט במילים פשוטות, גרף מעורבות חי, ואת צינור
+התוכן — מה ממתין, מה מחכה לאישור ומה כבר יצא, כולל תמונות וסקרים. והחלק הכי
+טוב — תיבת הצ'אט הזאת: מכוונים את הבוט בשפה חופשית — "תפרסם יותר על תמחור",
+"איך היה השבוע?" — והוא מעדכן את ההגדרות של עצמו ומאשר בדיוק מה השתנה.
+
+**[Activity — פעילות]**
+
+זה יומן הפעילות — היומן האישי של הבוט. כל תשובה, כל פוסט, כל פעולת ניהול, כל
+התראה — עם שעה מדויקת. פותחים כל שורה ורואים את שרשרת החשיבה המלאה: מה הוא
+הבין, מה הוא ניסח ולמה. שום דבר כאן הוא לא קופסה שחורה.
+
+**[Profiles — פרופילים]**
+
+פרופילים זה הזיכרון האנושי של הבוט. לכל איש קשר: העובדות שהוא למד — העסק
+שלהם, מה הם שאלו — מצב הרוח לאורך זמן, איפה הם בתהליך המכירה, והשיחה המלאה.
+ולמטה אפשר לשאול את ה-AI על כל איש קשר — "היא קרובה לקנייה?" — ולקבל תשובה
+שמבוססת רק על מה שבאמת קרה בשיחה.
+
+**[Approvals — אישורים]**
+
+אישורים זה המקום של בן האדם בתהליך. הודעות שהבוט מעדיף לא לשלוח לבד מחכות
+כאן — אפשר לשלוח כמו שזה, לערוך קודם, לצרף תמונה או קובץ, או לדחות. קליק
+אחד — והבוט כבר דואג למשלוח.
+
+**[Behind the Scenes — מאחורי הקלעים]**
+
+ומאחורי הקלעים זה חדר המכונות: האישיות וסגנון הכתיבה של הבוט, מאגר הידע שממנו
+הוא עונה, סימולטור שבו בודקים שיחות בבטחה לפני שעולים לאוויר, חיבור הוואטסאפ
+עצמו, מי מורשה להיכנס לדשבורד, וכמה בדיוק עולה השימוש ב-AI — לפי יום ולפי
+מודל.
+
+**[סיום]**
+
+אז: מנהל קהילה שעובד 24/7, בודק לפני שהוא עונה, מבקש רשות כשזה חשוב — ומראה
+את כל העבודה שלו. זו המערכת.
