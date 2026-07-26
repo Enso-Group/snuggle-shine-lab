@@ -709,6 +709,40 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return { ran: true as const };
           });
 
+          // One-shot demo teardown (2026-07-26, Itamar: "take out the demo"):
+          // deletes every `demo-`-marked row left from the earlier server-side
+          // seeding and clears agent_config.demo_view, so the dashboard shows
+          // real data again. Marker-gated — a later deliberate re-seed is
+          // never fought. Runs here because the Lovable DB is reachable only
+          // through the app's own service-role client.
+          const demoWipe = await guarded("demo-wipe", async () => {
+            const MARKER = "Demo wipe v1";
+            const { data: done } = await supabase
+              .from("bot_decisions")
+              .select("id")
+              .eq("stage", "config")
+              .like("summary", `${MARKER}%`)
+              .limit(1)
+              .maybeSingle();
+            if (done) return { ran: false as const, reason: "already wiped" };
+            const { wipeAll, setDemoView } = await import("@/lib/demo-seed");
+            const result = await wipeAll(supabase);
+            await setDemoView(supabase, false);
+            const removedTotal = Object.values(result.removed).reduce((a, b) => a + b, 0);
+            const failedCount = Object.keys(result.failed).length;
+            // Marker AFTER the wipe (awaited): a wall-kill mid-wipe should
+            // retry next sweep — wipeAll is idempotent (delete by marker).
+            const { error: markerErr } = await supabase.from("bot_decisions").insert({
+              trigger: "scheduled",
+              stage: "config",
+              status: failedCount ? "error" : "ok",
+              summary: `${MARKER}: removed ${removedTotal} demo row(s) across ${Object.keys(result.removed).length} table(s)${failedCount ? `, ${failedCount} table(s) FAILED` : ""} — demo view off`,
+              data: result as unknown as Record<string, never>,
+            });
+            if (markerErr) throw new Error(`marker insert failed: ${markerErr.message}`);
+            return { ran: true as const, ...result };
+          });
+
           // One-shot media self-test: proves image/video/document sending
           // works END TO END in production by messaging the connected
           // account's own chat (WhatsApp "message yourself") with the three
@@ -843,6 +877,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             channel,
             dedupe,
             approval_restore: approvalRestore,
+            demo_wipe: demoWipe,
           });
         } catch (e) {
           return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), {
