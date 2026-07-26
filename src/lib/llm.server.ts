@@ -34,6 +34,15 @@ const MODEL_CANDIDATES: Record<LLMRole, string[]> = {
 
 const workingModel = new Map<LLMRole, string>();
 
+// Models that recently TIMED OUT are benched for a few minutes (per-isolate):
+// a stalled model made every caller burn its whole budget re-trying it (live
+// 2026-07-26: gemini-3.1-pro-preview stalled all morning; drafts and research
+// answers died with "LLM request timed out" while healthy fallbacks sat
+// unused). The bench never empties the chain — if everything is cooling down,
+// the full chain is used as-is.
+const TIMEOUT_COOLDOWN_MS = 5 * 60_000;
+const modelCooldownUntil = new Map<string, number>();
+
 export type LLMToolCall = {
   id: string;
   type: "function";
@@ -96,7 +105,11 @@ function candidatesFor(role: LLMRole, overrides?: LLMModelOverrides): string[] {
   const memo = workingModel.get(role);
   if (memo) chain.unshift(memo);
   if (configured) chain.unshift(configured);
-  return [...new Set(chain)];
+  const deduped = [...new Set(chain)];
+  // Skip models benched by a recent timeout — unless that would leave nothing.
+  const now = Date.now();
+  const hot = deduped.filter((m) => (modelCooldownUntil.get(m) ?? 0) <= now);
+  return hot.length ? hot : deduped;
 }
 
 /**
@@ -212,7 +225,8 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
         ));
       } catch (e: unknown) {
         const err = e as Error;
-        lastError = err?.name === "AbortError" ? new Error("LLM request timed out") : err;
+        const timedOut = err?.name === "AbortError";
+        lastError = timedOut ? new Error("LLM request timed out") : err;
         logUsage({
           kind: "llm",
           provider: providerFromModel(model),
@@ -223,6 +237,15 @@ export async function callLLM(input: LLMCallInput): Promise<LLMCallResult> {
           error_message: String(lastError.message),
           meta: { attempt, role: input.role },
         });
+        // A timeout means the model is STALLED, not flaky — retrying it burns
+        // the caller's whole budget for nothing. Bench it and move straight to
+        // the next candidate (no sleep; the timeout itself already cost the
+        // full attempt). Last-candidate timeouts still retry in place: a
+        // degraded tail beats giving up.
+        if (timedOut && model !== models[models.length - 1]) {
+          modelCooldownUntil.set(model, Date.now() + TIMEOUT_COOLDOWN_MS);
+          break; // next candidate model
+        }
         if (attempt < RETRY_DELAYS_MS.length) await sleep(RETRY_DELAYS_MS[attempt]);
         continue;
       }

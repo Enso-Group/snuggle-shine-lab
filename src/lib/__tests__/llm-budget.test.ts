@@ -111,8 +111,46 @@ describe("callLLM budgetMs", () => {
     const err = await runToError(input({ timeoutMs: 40_000, budgetMs: 3_000 }));
     expect(err.message).toBe("LLM request timed out");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // Aborted at 3000ms (the clamped timeout) + the 800ms retry sleep before
-    // the floor check throws — nowhere near the 40s attempt timeout.
-    expect(Date.now() - t0).toBe(3_800);
+    // Aborted at 3000ms (the clamped timeout); the timeout benches the model
+    // and moves to the next candidate with NO retry sleep, whose floor check
+    // throws immediately — nowhere near the 40s attempt timeout.
+    expect(Date.now() - t0).toBe(3_000);
+  });
+
+  it("a timeout benches the model and moves straight to the next candidate", async () => {
+    // Fresh module instance: the bench/memo maps are module state and other
+    // tests in this file already dirtied the static instance.
+    vi.resetModules();
+    const { callLLM: freshCallLLM } = await import("../llm.server");
+    fetchMock.mockReset().mockImplementation(
+      (_url: string, init: { signal: AbortSignal; body?: unknown }) => {
+        const model = JSON.parse(String(init.body)).model;
+        if (model === "google/gemini-3-flash-preview") {
+          // The pinned model stalls — never resolves until aborted.
+          return new Promise((_resolve, reject) => {
+            init.signal.addEventListener("abort", () =>
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+            );
+          });
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+              usage: {},
+            }),
+            { status: 200 },
+          ),
+        );
+      },
+    );
+    const settled = freshCallLLM(input({ timeoutMs: 5_000, budgetMs: 60_000 }));
+    await vi.runAllTimersAsync();
+    const res = await settled;
+    expect(res.content).toBe("ok");
+    expect(res.model).toBe("google/gemini-2.5-flash");
+    // Exactly two fetches: the stalled model is NOT retried in place — one
+    // timeout, then the healthy tail answers.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -11,13 +11,106 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
     handlers: {
       // Read-only health check: queue depth by status, no secret required,
       // no secret values exposed.
-      GET: async () => {
+      GET: async ({ request }) => {
         try {
           const supabase = createClient(
             process.env.SUPABASE_URL!,
             process.env.SUPABASE_SERVICE_ROLE_KEY!,
             { auth: { autoRefreshToken: false, persistSession: false } },
           );
+
+          // ?probe=1 — LIVE integration check: one real Tavily search, one
+          // real fast-LLM call, a Whapi /health call and a DB write, each
+          // reported with latency. This endpoint is unauthenticated, so real
+          // probes are throttled to one per 10 minutes via a decision-row
+          // marker; inside the window the last result is returned instead.
+          let probe: Record<string, unknown> | null = null;
+          const probeRequested = new URL(request.url).searchParams.get("probe") === "1";
+          if (probeRequested) {
+            const MARKER = "Integration probe v1";
+            probe = {};
+            try {
+              const { data: recent } = await supabase
+                .from("bot_decisions")
+                .select("created_at, data")
+                .eq("stage", "config")
+                .like("summary", `${MARKER}%`)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (recent && Date.now() - new Date(recent.created_at).getTime() < 10 * 60_000) {
+                probe = { throttled: true, last_at: recent.created_at, last: recent.data };
+              } else {
+                try {
+                  const { checkHealth } = await import("@/lib/whapi.server");
+                  const t0 = Date.now();
+                  const h = await checkHealth();
+                  probe.whapi = h.ok
+                    ? { ok: true, status: h.status, ms: Date.now() - t0 }
+                    : { ok: false, error: String(h.error ?? "").slice(0, 200) };
+                } catch (e) {
+                  probe.whapi = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
+                }
+                try {
+                  const { isTavilyConfigured, tavilySearch } = await import("@/lib/tavily.server");
+                  if (!isTavilyConfigured()) {
+                    probe.tavily = { ok: false, error: "TAVILY_API_KEY not configured" };
+                  } else {
+                    const t0 = Date.now();
+                    const r = await tavilySearch("WhatsApp Business automation news", {
+                      maxResults: 3,
+                      timeoutMs: 8_000,
+                      budgetMs: 10_000,
+                    });
+                    probe.tavily = {
+                      ok: true,
+                      results: r.results.length,
+                      has_answer: !!r.answer,
+                      top_url: r.results[0]?.url ?? null,
+                      ms: Date.now() - t0,
+                    };
+                  }
+                } catch (e) {
+                  probe.tavily = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
+                }
+                try {
+                  const { callLLM } = await import("@/lib/llm.server");
+                  const t0 = Date.now();
+                  const r = await callLLM({
+                    role: "fast",
+                    source: "integration_probe",
+                    timeoutMs: 10_000,
+                    budgetMs: 12_000,
+                    messages: [{ role: "user", content: "Reply with the single word: OK" }],
+                  });
+                  probe.llm = {
+                    ok: true,
+                    model: r.model,
+                    reply: r.content.slice(0, 20),
+                    ms: Date.now() - t0,
+                  };
+                } catch (e) {
+                  probe.llm = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) };
+                }
+                // The marker doubles as the DB-write proof (awaited — CF drops
+                // fire-and-forget writes when the response returns).
+                const ok = (x: unknown) => !!(x as { ok?: boolean } | null)?.ok;
+                const { error: markerErr } = await supabase.from("bot_decisions").insert({
+                  trigger: "scheduled",
+                  stage: "config",
+                  status: ok(probe.whapi) && ok(probe.tavily) && ok(probe.llm) ? "ok" : "error",
+                  summary: `${MARKER}: llm=${ok(probe.llm) ? "ok" : "FAIL"} tavily=${ok(probe.tavily) ? "ok" : "FAIL"} whapi=${ok(probe.whapi) ? "ok" : "FAIL"}`,
+                  data: probe,
+                });
+                probe.db_write = markerErr
+                  ? { ok: false, error: markerErr.message }
+                  : { ok: true };
+              }
+            } catch (e) {
+              probe = { error: String((e as Error)?.message ?? e).slice(0, 300) };
+            }
+          }
+
           const counts: Record<string, number> = {};
           for (const status of ["pending", "processing", "failed"]) {
             const { count } = await supabase
@@ -414,6 +507,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           return Response.json({
             ok: true,
             info: "Bot-jobs sweeper. POST with x-cron-secret to trigger a run.",
+            ...(probe ? { probe } : {}),
             queue: counts,
             follow_ups_pending: followUpsPending,
             research,

@@ -1,7 +1,7 @@
 // Pipeline orchestrator — runs one inbound_reply job through every stage and
 // logs each decision. Called by the worker (never directly by routes).
 import type { Supa } from "./types";
-import { stripStructuredOutput, type InboundMessage } from "./inbound";
+import { isChannelChatId, isDmChatId, stripStructuredOutput, type InboundMessage } from "./inbound";
 import { loadAgentSettings, gatherContext } from "./context.server";
 import { gapDescription, isSignificantGap } from "./conversation-gap";
 import { logDecision } from "./decisions.server";
@@ -50,6 +50,22 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     chat_id: job.chat_id,
     trigger: deps.trigger,
   };
+
+  // Channels/broadcasts are one-way surfaces — a stale queued job for one
+  // (enqueued before the webhook gate existed) must exit here, cheaply,
+  // before any LLM spend or send attempt.
+  if (isChannelChatId(job.chat_id)) {
+    logDecision(supabase, {
+      job_id: job.id,
+      conversation_id: job.conversation_id,
+      chat_id: job.chat_id,
+      trigger: deps.trigger,
+      stage: "skipped",
+      status: "skip",
+      summary: "Channel/broadcast chat — the bot never replies to one-way surfaces",
+    });
+    return { action: "skipped", reason: "channel chat" };
+  }
 
   const settings = await loadAgentSettings(supabase);
   if (!settings || !settings.enabled) {
@@ -185,13 +201,32 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // the old separate critique call cost a second strong pass per cycle and is
   // gone from the DM path) ---
   t = Date.now();
-  // Retries get a tighter draft budget: attempt 1 already proved this thread
-  // is slow, and a retry that outlives the ~60s request wall dies with no
-  // catch path — the exact silent-death chain from 2026-07-25.
+  // Retries get a tighter draft budget AND lead with the candidate-chain tail
+  // (the fast model that reliably drafts when the pinned strong model stalls):
+  // attempt 1 already proved this thread is slow, and a retry that spends its
+  // whole tight budget timing out on the SAME degraded model dies exactly
+  // like attempt 1 did (live 2026-07-26: gemini-3.1-pro-preview stalled all
+  // morning and a DM died 3/3 with "LLM request timed out"). Same medicine
+  // the research engine's cheapAttempt path uses.
   const draft = await draftReply(
     ctx,
     intent,
-    job.attempts >= 2 ? { timeoutMs: 12_000, budgetMs: 15_000 } : {},
+    job.attempts >= 2
+      ? {
+          timeoutMs: 12_000,
+          budgetMs: 15_000,
+          overrides: {
+            model_strong:
+              (await import("@/lib/llm.server"))
+                .modelCandidates("strong", {
+                  model_strong: settings.model_strong,
+                  model_fast: settings.model_fast,
+                })
+                .at(-1) ?? null,
+            model_fast: settings.model_fast,
+          },
+        }
+      : {},
   );
   // Deterministic safety nets, no LLM: persona-leak scrub, then a final hard
   // gate that strips any part still looking like the model's raw JSON
@@ -224,11 +259,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // "can't help with that" line instead — one budget-clamped fast-model shot,
   // then a fixed persona-safe Hebrew line if even that fails.
   if (!parts.length) {
-    const dmNeverSilent =
-      !message.isGroup &&
-      !job.chat_id.endsWith("@g.us") &&
-      !job.chat_id.endsWith("@simulation") &&
-      deps.trigger !== "simulation";
+    const dmNeverSilent = !message.isGroup && isDmChatId(job.chat_id) && deps.trigger !== "simulation";
     logDecision(supabase, {
       ...base,
       stage: "error",
@@ -745,8 +776,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     const researchEligible =
       !message.isGroup &&
       deps.trigger !== "simulation" &&
-      !job.chat_id.endsWith("@g.us") &&
-      !job.chat_id.endsWith("@simulation") &&
+      isDmChatId(job.chat_id) &&
       settings.agent_config?.research_enabled !== false;
     if (researchEligible) {
       try {

@@ -14,7 +14,12 @@
 // inline — a Cloudflare Worker request can't be held open that long, and doing
 // so used to strand the claimed job under its lock and push replies to minutes.
 import { logDecision } from "./decisions.server";
-import { randomReplyDelayMs, REPLY_TARGET_MIN_MS, type InboundMessage } from "./inbound";
+import {
+  isChannelChatId,
+  randomReplyDelayMs,
+  REPLY_TARGET_MIN_MS,
+  type InboundMessage,
+} from "./inbound";
 import { enqueueInboundReply } from "./queue.server";
 import { processQueuedJobs, type WorkerRunResult } from "./worker.server";
 import type { Json } from "@/integrations/supabase/types";
@@ -43,6 +48,10 @@ const PROCESSING_LEAD_MS = 15_000;
 // "messages are being skipped" without flooding the log.
 const BOT_DISABLED_LOG_THROTTLE_MS = 10 * 60 * 1000;
 const BOT_DISABLED_SUMMARY = "Bot is disabled — inbound messages are being skipped at the webhook";
+// Channels/broadcasts post frequently — one throttled breadcrumb per window,
+// not a log row per post.
+const CHANNEL_SKIP_SUMMARY =
+  "Channel/broadcast post observed — channels are one-way, the bot never replies or stores them";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -57,6 +66,7 @@ export type InboundOutcome = {
     | "group_not_addressed"
     | "moderated"
     | "trivial_ack"
+    | "channel_post"
     | "enqueued";
   conversationId?: string;
   jobId?: string | null;
@@ -72,6 +82,18 @@ export async function handleInboundMessage(
   const { supabase } = deps;
 
   if (!m.body || !m.body.trim()) return { action: "stored_empty" };
+
+  // --- Channel/broadcast gate (BEFORE anything touches the DB) ---
+  // '@newsletter' (WhatsApp Channels) and '@broadcast' (broadcast lists,
+  // status updates) are one-way surfaces the account merely follows. They are
+  // not '@g.us', so without this gate they fall through every group check and
+  // get the full DM treatment: a conversation row, a reply job, and — when
+  // that job dies — the never-silent fallback machinery posting INTO the
+  // channel (live 2026-07-26). Nothing is persisted and no job is enqueued.
+  if (isChannelChatId(m.chatId)) {
+    await logThrottledSkip(deps, m.chatId, null, CHANNEL_SKIP_SUMMARY);
+    return { action: "channel_post" };
+  }
 
   // --- Participation gate ---
   // Look the conversation up but DO NOT create it. A chat is persisted only once
@@ -171,7 +193,7 @@ export async function handleInboundMessage(
 
   const { recordInbound, isStopRequest } = await import("@/lib/anti-ban.server");
   if (!settings.enabled) {
-    await logBotDisabledSkip(deps, m.chatId, convId ?? null);
+    await logThrottledSkip(deps, m.chatId, convId ?? null, BOT_DISABLED_SUMMARY);
     return { action: "bot_disabled", conversationId: convId };
   }
   // Stop request — detected purely from the text so a brand-new chat needn't be
@@ -324,37 +346,39 @@ export async function handleInboundMessage(
   return { action: "enqueued", conversationId: convId, jobId, worker };
 }
 
-// The disabled-bot skip used to leave NO trace outside the server console —
-// an admin staring at a silent bot had nothing in the Activity log to explain
-// it. One row per 10-minute window (looked up by the constant summary text)
-// is enough of a breadcrumb without a row per swallowed message.
-async function logBotDisabledSkip(
+// High-volume skips (disabled bot, channel posts) used to leave NO trace
+// outside the server console — an admin staring at a silent bot had nothing
+// in the Activity log to explain it. One row per 10-minute window per summary
+// (looked up by the constant summary text) is enough of a breadcrumb without
+// a row per swallowed message.
+async function logThrottledSkip(
   deps: AgentDeps,
   chatId: string,
   convId: string | null,
+  summary: string,
 ): Promise<void> {
   try {
     const { data: recent } = await deps.supabase
       .from("bot_decisions")
       .select("id")
-      .eq("summary", BOT_DISABLED_SUMMARY)
+      .eq("summary", summary)
       .gte("created_at", new Date(Date.now() - BOT_DISABLED_LOG_THROTTLE_MS).toISOString())
       .limit(1);
     if (recent?.length) return;
     // AWAITED insert, not the fire-and-forget logDecision: the throttle is a
-    // select-then-insert, and during a disabled-bot burst the async insert
-    // wouldn't be visible to the next message's select — exactly when the
-    // throttle matters. A direct awaited insert closes most of that window.
+    // select-then-insert, and during a burst the async insert wouldn't be
+    // visible to the next message's select — exactly when the throttle
+    // matters. A direct awaited insert closes most of that window.
     await deps.supabase.from("bot_decisions").insert({
       conversation_id: convId,
       chat_id: chatId,
       trigger: deps.trigger,
       stage: "skipped",
       status: "skip",
-      summary: BOT_DISABLED_SUMMARY,
+      summary,
     });
   } catch (e) {
     // Logging must never break inbound handling.
-    console.warn("[inbound] bot-disabled skip log failed:", e);
+    console.warn("[inbound] throttled skip log failed:", e);
   }
 }

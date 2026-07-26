@@ -178,7 +178,7 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
 export async function draftReply(
   ctx: AgentContext,
   intent: IntentAnalysis,
-  opts: { timeoutMs?: number; budgetMs?: number } = {},
+  opts: { timeoutMs?: number; budgetMs?: number; overrides?: LLMModelOverrides } = {},
 ): Promise<DraftResult> {
   const maxParts = ctx.settings.agent_config?.max_reply_parts ?? 3;
 
@@ -237,7 +237,9 @@ export async function draftReply(
     role: "strong",
     source: "agent_draft",
     json: true,
-    overrides: overridesOf(ctx),
+    // Retry attempts pass their own overrides to lead with the chain tail —
+    // the pinned strong model already proved degraded on this thread.
+    overrides: opts.overrides ?? overridesOf(ctx),
     // The draft gets the biggest slice of the 90s SLA. 15s per attempt (not
     // the 25s default) so a second candidate model gets a real shot inside
     // the budget — the pinned strong model is known to stall on long prompts.

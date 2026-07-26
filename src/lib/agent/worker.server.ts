@@ -2,6 +2,7 @@
 // run each through the pipeline. Called inline by the webhook for low latency
 // and by the every-minute sweeper cron for retries and orphan recovery.
 import type { Json } from "@/integrations/supabase/types";
+import { isDmChatId } from "./inbound";
 import { claimJobs, completeJob, deferJob, failJob } from "./queue.server";
 import { logDecision } from "./decisions.server";
 import { PermanentJobError, processInboundJob } from "./pipeline.server";
@@ -177,7 +178,11 @@ export async function sweepDeadReplyJobs(
     if (handled >= max) break;
     const p = row.payload;
     if (p?.fallback_handled) continue;
-    if (row.chat_id.endsWith("@g.us") || row.chat_id.endsWith("@simulation")) continue;
+    // The never-silent contract is DM-only: groups, simulator sandboxes and
+    // channels/broadcasts must never receive the canned fallback (a channel
+    // is a one-way surface — live 2026-07-26 a dead '@newsletter' job reached
+    // this sweep and the fallback machinery fired at a WhatsApp Channel).
+    if (!isDmChatId(row.chat_id)) continue;
 
     // CAS the flag first — one actor per job, ever.
     const { data: claimed } = await deps.supabase
@@ -237,11 +242,9 @@ async function sendPermanentFailureFallback(deps: AgentDeps, job: BotJob): Promi
   try {
     if (job.kind !== "inbound_reply" || !job.conversation_id) return;
     const p = job.payload;
-    const isDm =
-      !p.is_group &&
-      !job.chat_id.endsWith("@g.us") &&
-      !job.chat_id.endsWith("@simulation") &&
-      deps.trigger !== "simulation";
+    // isDmChatId also refuses channels/broadcasts — the canned line must
+    // never be posted into a one-way surface.
+    const isDm = !p.is_group && isDmChatId(job.chat_id) && deps.trigger !== "simulation";
     if (!isDm) return;
 
     // "Bot disabled" is an allowed-silent exception — never send around the

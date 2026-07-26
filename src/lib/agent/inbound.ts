@@ -53,6 +53,32 @@ export type RawWhapiMessage = {
   };
 };
 
+/**
+ * One-way WhatsApp surfaces the bot must never treat as conversations:
+ * Channels ('...@newsletter') and broadcast lists ('...@broadcast', including
+ * 'status@broadcast' status updates). Their posts arrive on the same messages
+ * webhook as real chats, but they are not addressed to the account and cannot
+ * be "replied" to like a DM — live 2026-07-26, a channel post was classified
+ * as a DM (not '@g.us' → isGroup false), got a reply job, wall-died 3x, and
+ * the DM never-silent machinery then tried to send the canned fallback INTO
+ * the channel.
+ */
+export function isChannelChatId(chatId: string | null | undefined): boolean {
+  const id = String(chatId ?? "");
+  return id.endsWith("@newsletter") || id.endsWith("@broadcast");
+}
+
+/**
+ * True only for chats where the DM contract (reply jobs, never-silent
+ * fallbacks, research promises) applies: a person-to-person chat — not a
+ * group, not a channel/broadcast, not a simulator sandbox.
+ */
+export function isDmChatId(chatId: string | null | undefined): boolean {
+  const id = String(chatId ?? "");
+  if (!id) return false;
+  return !id.endsWith("@g.us") && !id.endsWith("@simulation") && !isChannelChatId(id);
+}
+
 /** Extract the fields we care about from a raw Whapi webhook message. */
 export function parseWhapiMessage(m: RawWhapiMessage | null | undefined): InboundMessage | null {
   if (!m) return null;

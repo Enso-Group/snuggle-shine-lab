@@ -207,7 +207,32 @@ export function buildResearchBlock(search: TavilySearchOutcome | null): string {
 תוצאות חיפוש עדכניות מהאינטרנט (המקור לעובדות בתשובה הזו):
 ${search.answer ? `סיכום אוטומטי של תוצאות החיפוש: ${search.answer}\n\n` : ""}${results}
 
-כללי שימוש בתוצאות: הסתמך רק על מה שמופיע כאן או במאגר הידע. אל תמציא פרטים מעבר לזה, ואל תזכיר שביצעת "חיפוש" — פשוט תן את התשובה כמו מישהו שבדק את הנושא. אסור לכלול בתשובה סימוני מקור כמו [1] או כתובות URL מהתוצאות — שתף קישור רק אם הקישור עצמו הוא מה שהלקוח ביקש.`;
+כללי שימוש בתוצאות: הסתמך רק על מה שמופיע כאן או במאגר הידע. אל תמציא פרטים מעבר לזה, ואל תזכיר שביצעת "חיפוש" — פשוט תן את התשובה כמו מישהו שבדק את הנושא. אסור סימוני מקור כמו [1].
+כלל קישורים (חשוב): ההבטחה הייתה לחזור עם משהו קונקרטי. אם הלקוח ביקש קישור, דוח, מאמר, מדריך, סרטון או כל משאב — חובה לכלול בתשובה את כתובת ה-URL המלאה של התוצאה המתאימה ביותר מלמעלה, מועתקת אות-באות (לעולם אל תמציא כתובת ואל תקצר אותה). גם כשלא ביקש קישור במפורש, אם התשובה נשענת על מקור מרכזי אחד — צרף את הקישור שלו בסוף ההודעה האחרונה. אסור לסיים בהבטחה נוספת כמו "אשלח לך קישור" — הקישור נשלח עכשיו או שאין קישור.`;
+}
+
+// ---------------------------------------------------------------------------
+// Resource-request detection — when the contact asked for a THING (a link, a
+// report, an article), the answer must physically contain a URL. Used both in
+// the answer prompt and as a deterministic post-draft net that appends the
+// top search result when the model still returned prose-only.
+// ---------------------------------------------------------------------------
+const RESOURCE_REQUEST_PATTERNS: RegExp[] = [
+  // Hebrew: link / report / article / guide / study / document / video / file
+  new RegExp(`${HB}(קישור|לינק|דוח|דו"ח|מאמר|כתבה|מדריך|מחקר|מסמך|סרטון|קובץ|מצגת)`),
+  // Hebrew: "send me / share / where can I find"
+  new RegExp(`${HB}(תשלח|שלח|תעביר|העבר|תשתף|שתף)\\s`),
+  new RegExp(`${HB}איפה\\s+(אפשר|ניתן|מוצאים|אני)`),
+  // English
+  /\b(link|report|article|guide|study|paper|pdf|resource|whitepaper|video|doc|document|presentation)\b/i,
+  /\b(send|share|forward)\s+(me|it|us|the|a)\b/i,
+  /\bwhere (can|do) i (find|get|read|download)\b/i,
+];
+
+/** True when the text reads as a request for a concrete resource/link. */
+export function detectsResourceRequest(text: string): boolean {
+  if (!text) return false;
+  return RESOURCE_REQUEST_PATTERNS.some((re) => re.test(text));
 }
 
 /**

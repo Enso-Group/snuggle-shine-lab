@@ -24,7 +24,9 @@ import type { Supa } from "./types";
 const MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Version marker in the summary: bump when the rules change so the throttle
 // doesn't suppress the first run of a newer rule set.
-const CLEANUP_SUMMARY_PREFIX = "Non-participated cleanup v3";
+// v4: channel/broadcast ('@newsletter'/'@broadcast') conversations are always
+// deleted — they should never have been stored (2026-07-26 incident).
+const CLEANUP_SUMMARY_PREFIX = "Non-participated cleanup v4";
 const CHUNK = 100;
 
 export type CleanupResult =

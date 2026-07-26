@@ -11,13 +11,15 @@ import { isTavilyConfigured, tavilySearch, type TavilySearchOutcome } from "@/li
 import { loadAgentSettings } from "./context.server";
 import { logDecision } from "./decisions.server";
 import { deliverReply } from "./deliver.server";
-import { loadKnowledge, buildGroundingRules } from "./kb.server";
+import { isChannelChatId } from "./inbound";
+import { loadKnowledge } from "./kb.server";
 import { loadOrCreatePerson, personPromptBlock } from "./people.server";
 import { PERSONA_FALLBACK_LINE } from "./persona";
 import { buildHumanizeRules, buildDateContext } from "./prompts.server";
 import {
   buildResearchBlock,
   buildResearchPayload,
+  detectsResourceRequest,
   interimLineFor,
   parseResearchPayload,
   stripCitationMarkers,
@@ -86,6 +88,9 @@ export async function enqueueResearchJob(
   },
 ): Promise<string | null> {
   try {
+    // Channels/broadcasts never get promises tracked — nothing should ever
+    // be sent into a one-way surface (belt to the inbound/pipeline gates).
+    if (isChannelChatId(args.chatId)) return null;
     const payload = buildResearchPayload({
       question: args.question,
       promisedAtMs: args.promisedAtMs,
@@ -305,6 +310,7 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
   const payload = parseResearchPayload(job.payload);
   if (!payload) return { action: "skipped", reason: "invalid research payload" };
   if (job.chat_id.endsWith("@simulation")) return { action: "skipped", reason: "simulation chat" };
+  if (isChannelChatId(job.chat_id)) return { action: "skipped", reason: "channel chat" };
 
   const settings = await loadAgentSettings(supabase);
   if (!settings || !settings.enabled) return { action: "skipped", reason: "bot disabled" };
@@ -500,19 +506,37 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
     const person = payload.person_wa_id
       ? await loadOrCreatePerson(supabase, payload.person_wa_id)
       : null;
+    // Deliberately NOT buildGroundingRules(kb): its empty-KB variant says
+    // "אסור לציין... קישורים ספציפיים", which contradicts this stage's whole
+    // job — the search results ARE the verified source here, and the answer
+    // must be able to carry their URLs (live complaint: promised links never
+    // arrived because the model obeyed the stricter KB rule).
+    const kbBlock = kb.count > 0
+      ? `
+
+מאגר הידע העסקי (מקור מאומת נוסף לעובדות):
+${kb.block}`
+      : "";
+    const wantsResource =
+      detectsResourceRequest(payload.question) || detectsResourceRequest(payload.source_body);
     const system =
       settings.system_prompt +
       buildHumanizeRules() +
       buildDateContext() +
       personPromptBlock(person) +
-      buildGroundingRules(kb) +
+      kbBlock +
       buildResearchBlock(search) +
       `
 
 משימה: קודם הבטחת ללקוח לבדוק משהו ולחזור אליו — עכשיו בדקת, וזו הודעת ההמשך עם התשובה.
 - ענה ישירות ולעניין על השאלה הפתוחה, בשפה "${payload.language}", בטון טבעי של המשך שיחה ("בדקתי לגבי..."). בלי לפתוח מחדש את כל השיחה ובלי להתנצל על ההמתנה מעבר למילה אחת אם בכלל.
 - עובדות אך ורק מתוצאות החיפוש או ממאגר הידע שלמעלה. אם התוצאות עונות רק חלקית — אמור מה כן ידוע ומה עדיין פתוח.
-- אל תבטיח שוב "אבדוק ואחזור" — זו כבר הודעת החזרה.
+- אל תבטיח שוב "אבדוק ואחזור" — זו כבר הודעת החזרה.${
+        wantsResource
+          ? `
+- הלקוח ביקש משאב קונקרטי (קישור/דוח/מאמר) — התשובה חייבת לכלול כתובת URL מלאה מהתוצאות למעלה.`
+          : ""
+      }
 
 פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", ...], "reasoning": "one short sentence in English"}. הודעה אחת-שתיים קצרות, כמו בוואטסאפ.`;
 
@@ -565,6 +589,16 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
     const { parts: safe } = stripStructuredOutput(personaSafe);
     if (!safe.length) throw new Error("research answer was empty after safety filtering");
     parts = safe.slice(0, 2);
+
+    // Deterministic link guarantee: when the contact asked for a concrete
+    // resource, a prose-only answer is a broken promise no matter how well
+    // written. If the model ignored the link rule, append the best search
+    // result's URL as its own closing message (WhatsApp renders a preview).
+    const hasUrl = parts.some((p) => /https?:\/\//i.test(p));
+    if (wantsResource && !hasUrl && search?.results.length) {
+      const top = [...search.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+      if (top?.url) parts = [...parts, top.url];
+    }
 
     logDecision(supabase, {
       ...base,
@@ -776,6 +810,7 @@ export async function sendOverdueResearchInterims(
     const payload = parseResearchPayload(row.payload);
     if (!payload) continue;
     if (row.chat_id.endsWith("@simulation")) continue;
+    if (isChannelChatId(row.chat_id)) continue;
 
     // FAILED jobs get handled ahead of the interim window: a dead job whose
     // answer never went out is revived ONCE for a cheap final attempt (cached

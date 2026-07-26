@@ -16,6 +16,7 @@
 //   noise on the Profiles page. '@simulation' profiles are simulator
 //   leftovers and are always deleted (cleanupSimulations never touches
 //   people).
+import { isChannelChatId } from "./inbound";
 import { normalizeWaId } from "./wa-id";
 
 export type CleanupPerson = {
@@ -48,6 +49,10 @@ export type CleanupPlan = {
 export function planCleanup(input: CleanupInput): CleanupPlan {
   const keep = new Set<string>();
   for (const c of input.conversations) {
+    // Channels/broadcasts should never have been stored (one-way surfaces) —
+    // rows created before the inbound gate existed are always deleted, even
+    // if a misfired fallback send made them look "participated".
+    if (isChannelChatId(c.whapi_chat_id)) continue;
     // Demo rows (seeded for recordings) are never cleanup candidates — they
     // live until the one-click demo wipe removes them.
     if (c.whapi_chat_id.startsWith("demo-")) {
