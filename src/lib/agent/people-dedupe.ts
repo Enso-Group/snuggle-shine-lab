@@ -93,6 +93,10 @@ export function planPeopleDedupe(rows: DedupePersonRow[]): DedupePlan {
   const deletes: string[] = [];
   const groups = new Map<string, DedupePersonRow[]>();
   for (const row of rows) {
+    // Demo rows (seeded for recordings) are fenced from every merge/rename:
+    // canonicalization would STRIP the demo- marker, breaking the one-click
+    // wipe and risking a collision with a real profile's digits.
+    if (row.wa_id.startsWith("demo-")) continue;
     const canon = normalizeWaId(row.wa_id);
     if (!canon) {
       deletes.push(row.id);
@@ -144,13 +148,13 @@ export function planPeopleDedupe(rows: DedupePersonRow[]): DedupePlan {
         sentiment: firstNonNull(sorted.map((r) => r.sentiment)),
         funnel_stage:
           firstNonNull(
-            sorted.map((r) => (r.funnel_stage && r.funnel_stage !== "unknown" ? r.funnel_stage : null)),
+            sorted.map((r) =>
+              r.funnel_stage && r.funnel_stage !== "unknown" ? r.funnel_stage : null,
+            ),
           ) ?? "unknown",
         facts: unionFacts(sorted.map((r) => (Array.isArray(r.facts) ? r.facts : []))),
         tags: [...new Set(sorted.flatMap((r) => (Array.isArray(r.tags) ? r.tags : [])))],
-        first_seen_at: sorted
-          .map((r) => r.first_seen_at)
-          .reduce((a, b) => (a <= b ? a : b)),
+        first_seen_at: sorted.map((r) => r.first_seen_at).reduce((a, b) => (a <= b ? a : b)),
         last_seen_at: sorted.map((r) => r.last_seen_at).reduce((a, b) => (a >= b ? a : b)),
       },
     });

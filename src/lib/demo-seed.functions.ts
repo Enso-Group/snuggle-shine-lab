@@ -32,8 +32,8 @@ export const wipeDemoData = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const removed = await wipeAll(supabaseAdmin as unknown as LooseDb);
-    return { ok: true, removed };
+    const { removed, failed } = await wipeAll(supabaseAdmin as unknown as LooseDb);
+    return { ok: Object.keys(failed).length === 0, removed, failed };
   });
 
 export const seedDemoData = createServerFn({ method: "POST" })
@@ -525,14 +525,17 @@ export const seedDemoData = createServerFn({ method: "POST" })
       created_at: hoursAgo(4),
     });
 
-    // Pending follow-up (shows under health + proves the follow-up engine)
+    // Follow-up row seeded as SENT: a 'pending' one would be claimed by the
+    // live follow-up engine when it comes due — the demo must display the
+    // capability, never arm it.
     await insert("follow_ups", {
       conversation_id: convIds["972555000101"],
       chat_id: DM("972555000101"),
       person_wa_id: "demo-972555000101",
-      due_at: daysAhead(1),
-      reason: "Lead considering the extended package — nudge if she goes quiet",
-      status: "pending",
+      due_at: hoursAgo(30),
+      sent_at: hoursAgo(29.5),
+      reason: "Lead considering the extended package — nudged after she went quiet",
+      status: "sent",
     });
 
     return { ok: true, created };

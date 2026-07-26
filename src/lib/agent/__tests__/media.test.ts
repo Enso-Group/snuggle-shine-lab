@@ -73,6 +73,27 @@ describe("whapi media senders", () => {
     ).rejects.toThrow("Invalid recipient");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("HARD-refuses demo- targets on every send path — the sanitizer would launder them into real numbers", async () => {
+    // demo-972555000101 digit-strips to a routable Israeli 055 number; the
+    // send layer must refuse the RAW id before sanitization ever runs.
+    const { sendTextMessage, sendPoll } = await import("@/lib/whapi.server");
+    const { sendMediaMessage } = await import("@/lib/media.server");
+    await expect(sendTextMessage("demo-972555000101@s.whatsapp.net", "hi")).rejects.toThrow(
+      "Demo row",
+    );
+    await expect(
+      sendMediaMessage(
+        "demo-972555000101@s.whatsapp.net",
+        { kind: "image", url: "https://x.test/a.png" },
+        "hi",
+      ),
+    ).rejects.toThrow("Demo row");
+    await expect(sendPoll("demo-120363000000000001@g.us", "q", ["a", "b"], 1)).rejects.toThrow(
+      "Demo row",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("demo wipe marker safety", () => {
@@ -96,8 +117,9 @@ describe("demo wipe marker safety", () => {
       ],
     });
 
-    const removed = await wipeAll(fake.client as never);
+    const { removed, failed } = await wipeAll(fake.client as never);
 
+    expect(failed).toEqual({});
     expect(removed.conversations).toBe(1);
     expect(removed.people).toBe(1);
     expect(removed.planned_posts).toBe(1);

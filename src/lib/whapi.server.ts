@@ -65,6 +65,26 @@ function normalizePhoneLocalPart(local: string): string {
   return digits;
 }
 
+/**
+ * HARD demo fence at the lowest send layer. Demo rows carry a `demo-` chat-id
+ * marker, but the phone sanitizer strips non-digits — `demo-972555000101`
+ * would launder into a REAL routable number. Every send entry point refuses
+ * demo targets outright; dashboard flows special-case them BEFORE calling
+ * here so the demo UX still works without a single real send.
+ */
+export function isDemoTarget(chatId: string): boolean {
+  return String(chatId ?? "")
+    .trim()
+    .toLowerCase()
+    .startsWith("demo-");
+}
+
+function assertNotDemoTarget(chatId: string): void {
+  if (isDemoTarget(chatId)) {
+    throw new Error("Demo row — WhatsApp sends are disabled for demo- targets.");
+  }
+}
+
 function sanitizeWhapiTo(chatId: string): string {
   const raw = String(chatId || "").trim();
   if (!raw) return raw;
@@ -79,6 +99,7 @@ function sanitizeWhapiTo(chatId: string): string {
 }
 
 export async function sendTextMessage(chatId: string, body: string) {
+  assertNotDemoTarget(chatId);
   const to = sanitizeWhapiTo(chatId);
   const localPart = to.split("@")[0] ?? "";
   if (!/^[\d-]{9,31}$/.test(localPart)) {
@@ -136,6 +157,7 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
 }
 
 function assertSendableRecipient(chatId: string): string {
+  assertNotDemoTarget(chatId);
   const to = sanitizeWhapiTo(chatId);
   const localPart = to.split("@")[0] ?? "";
   if (!/^[\d-]{9,31}$/.test(localPart)) {
@@ -191,6 +213,7 @@ export async function sendDocumentMessage(
  * 1 = single choice, 0 = voters may pick any number (use pollCount()).
  */
 export async function sendPoll(chatId: string, title: string, options: string[], count = 1) {
+  assertNotDemoTarget(chatId);
   const to = sanitizeWhapiTo(chatId);
   const localPart = to.split("@")[0] ?? "";
   if (!/^[\d-]{9,31}$/.test(localPart)) {

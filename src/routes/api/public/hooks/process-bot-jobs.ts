@@ -84,8 +84,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                 leakScan.leaks += 1;
                 if (!leakScan.last_leak_at) leakScan.last_leak_at = row.created_at;
               }
-              const isGroup = (row.chat_id ?? "").endsWith("@g.us");
-              if (!isGroup && d.latency_breakdown && recentDmReplies.length < 10) {
+              const chatStr = String(row.chat_id ?? "");
+              const isGroup = chatStr.endsWith("@g.us");
+              const isDemo = chatStr.startsWith("demo-");
+              if (!isGroup && !isDemo && d.latency_breakdown && recentDmReplies.length < 10) {
                 recentDmReplies.push({ at: row.created_at, ...d.latency_breakdown });
               }
             }
@@ -328,12 +330,16 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
               .eq("status", "error")
               .order("created_at", { ascending: false })
               .limit(8);
-            debug.error_decisions = (errs ?? []).map((r) => ({
-              at: r.created_at,
-              stage: r.stage,
-              chat: maskChat(r.chat_id),
-              summary: String(r.summary ?? "").slice(0, 220),
-            }));
+            // Seeded demo rows (chat id marked demo-) are staged content for
+            // recordings, never real failures — keep diagnostics honest.
+            debug.error_decisions = (errs ?? [])
+              .filter((r) => !String(r.chat_id ?? "").startsWith("demo-"))
+              .map((r) => ({
+                at: r.created_at,
+                stage: r.stage,
+                chat: maskChat(r.chat_id),
+                summary: String(r.summary ?? "").slice(0, 220),
+              }));
           } catch (e) {
             debug.error_decisions = String((e as Error)?.message ?? e);
           }
@@ -352,7 +358,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             debug.recent_dm_no_reply = (noReply ?? [])
               .filter((r) => {
                 const chat = String(r.chat_id ?? "");
-                return chat !== "" && !chat.endsWith("@g.us");
+                return chat !== "" && !chat.endsWith("@g.us") && !chat.startsWith("demo-");
               })
               .slice(0, 8)
               .map((r) => ({

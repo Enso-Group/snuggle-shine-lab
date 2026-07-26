@@ -280,10 +280,18 @@ function DemoDataCard() {
   });
   const wipe = useMutation({
     mutationFn: () => wipeFn(),
-    onSuccess: (r: { removed?: Record<string, number> }) => {
+    onSuccess: (r: { removed?: Record<string, number>; failed?: Record<string, string> }) => {
       invalidateAll();
       const total = Object.values(r?.removed ?? {}).reduce((a, b) => a + b, 0);
-      toast.success(`Demo data wiped (${total} rows removed).`);
+      const failedTables = Object.keys(r?.failed ?? {});
+      if (failedTables.length) {
+        toast.error(
+          `Wipe incomplete — ${failedTables.join(", ")} failed. Removed ${total} rows; run wipe again.`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(`Demo data wiped (${total} rows removed).`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });

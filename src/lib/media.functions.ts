@@ -39,11 +39,12 @@ export const setApprovalMedia = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const media = data.media ? parseMedia(data.media) : null;
     if (data.media && !media) throw new Error("Invalid attachment");
-    const { error } = await context.supabase
+    const { data: updated, error } = await context.supabase
       .from("scheduled_approvals")
       .update({ media } as never)
       .eq("id", data.id)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .select("id");
     if (error) {
       if (/media/.test(error.message) && /column/i.test(error.message)) {
         throw new Error(
@@ -51,6 +52,9 @@ export const setApprovalMedia = createServerFn({ method: "POST" })
         );
       }
       throw new Error(error.message);
+    }
+    if (!updated?.length) {
+      throw new Error("This approval is no longer pending — the attachment was not saved.");
     }
     return { ok: true, media };
   });

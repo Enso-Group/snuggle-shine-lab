@@ -48,6 +48,12 @@ export type CleanupPlan = {
 export function planCleanup(input: CleanupInput): CleanupPlan {
   const keep = new Set<string>();
   for (const c of input.conversations) {
+    // Demo rows (seeded for recordings) are never cleanup candidates — they
+    // live until the one-click demo wipe removes them.
+    if (c.whapi_chat_id.startsWith("demo-")) {
+      keep.add(c.id);
+      continue;
+    }
     if (input.participatedConvIds.has(c.id) || input.protectedConvIds.has(c.id)) {
       keep.add(c.id);
     }
@@ -68,6 +74,7 @@ export function planCleanup(input: CleanupInput): CleanupPlan {
 
   const personIdsToDelete = input.people
     .filter((p) => {
+      if (p.wa_id.startsWith("demo-")) return false;
       if (p.wa_id.endsWith("@simulation")) return true;
       const canon = normalizeWaId(p.wa_id);
       // Not a person id at all (group id / junk) → never a real profile.

@@ -709,9 +709,21 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     }
 
     // Send: media-with-caption when the post carries an attachment (one
-    // WhatsApp message), else text — then the native tappable poll.
+    // WhatsApp message), else text — then the native tappable poll. The drain
+    // query deliberately omits the media column (it may predate its
+    // migration), so the attachment is fetched here in a FENCED single-row
+    // read — a missing column just means "no media", never a failed post.
     const { parseMedia } = await import("@/lib/media");
-    const postMedia = parseMedia((post as { media?: unknown }).media);
+    let postMediaRaw: unknown = (post as { media?: unknown }).media;
+    if (postMediaRaw === undefined) {
+      const { data: mediaRow } = await supabase
+        .from("planned_posts")
+        .select("media" as never)
+        .eq("id", post.id)
+        .maybeSingle();
+      postMediaRaw = (mediaRow as { media?: unknown } | null)?.media;
+    }
+    const postMedia = parseMedia(postMediaRaw);
     let textSendId: string | null = null;
     if (postMedia) {
       const { sendMediaMessage } = await import("@/lib/media.server");

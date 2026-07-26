@@ -182,7 +182,7 @@ function ApprovalsPage() {
             onSaveEdit={(body) => updateBody.mutate({ id: r.id, body })}
             onAttach={(file) => attach.mutate({ id: r.id, file })}
             onRemoveMedia={() => removeMedia.mutate(r.id)}
-            uploading={attach.isPending}
+            uploading={attach.isPending && attach.variables?.id === r.id}
             pending={approve.isPending || reject.isPending || updateBody.isPending}
           />
         ))}

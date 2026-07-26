@@ -26,18 +26,24 @@ export const WIPE_PLAN: Array<{ table: string; column: string }> = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type LooseDb = { from(table: string): any };
 
-export async function wipeAll(db: LooseDb): Promise<Record<string, number>> {
+export type WipeResult = { removed: Record<string, number>; failed: Record<string, string> };
+
+export async function wipeAll(db: LooseDb): Promise<WipeResult> {
   const removed: Record<string, number> = {};
+  const failed: Record<string, string> = {};
   for (const { table, column } of WIPE_PLAN) {
-    try {
-      const { count } = await db
-        .from(table)
-        .delete({ count: "exact" })
-        .like(column, `${DEMO_MARKER_PREFIX}%`);
-      if (count) removed[table] = count;
-    } catch (e) {
-      console.warn(`[demo] wipe of ${table} skipped:`, e);
+    // supabase-js reports failures via the result object, not by throwing —
+    // read `error` explicitly or a failed delete masquerades as "0 rows".
+    const { count, error } = await db
+      .from(table)
+      .delete({ count: "exact" })
+      .like(column, `${DEMO_MARKER_PREFIX}%`);
+    if (error) {
+      failed[table] = String(error.message ?? error);
+      console.warn(`[demo] wipe of ${table} failed:`, error);
+    } else if (count) {
+      removed[table] = count;
     }
   }
-  return removed;
+  return { removed, failed };
 }

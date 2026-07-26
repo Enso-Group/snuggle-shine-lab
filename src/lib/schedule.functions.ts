@@ -150,13 +150,27 @@ export const approvePending = createServerFn({ method: "POST" })
     const textBody = poll && body.trim() === poll.question.trim() ? "" : body;
     type SendResult = { message?: { id?: string } } | null;
     const { parseMedia, mediaLabel } = await import("./media");
+    const { isDemoTarget } = await import("./whapi.server");
     const media = parseMedia((row as { media?: unknown }).media);
+    // Demo rows (seeded content for recordings) go through every STATE
+    // transition — approved, planned post → sent, mirror — but never a real
+    // WhatsApp call. The sanitizer would strip the demo- marker into a REAL
+    // routable number, so this check runs on the RAW id, and the whapi layer
+    // has its own hard fence as backstop.
+    const demoRow = isDemoTarget(row.target_chat_id);
+    if (demoRow) {
+      log("demo target — skipping all WhatsApp sends");
+      warnings.push("Demo row — nothing was actually sent to WhatsApp.");
+    }
     let textRes: SendResult = null;
     let mediaRes: SendResult = null;
-    if (media) {
+    if (media && !demoRow) {
       // Attachment present: the text rides as the media caption — ONE
       // WhatsApp message, like a human sending a photo with a note. If the
-      // attachment fails, fall back to text so the approval never half-sends.
+      // attachment DEFINITELY failed, fall back to text so the approval never
+      // half-sends. A TIMEOUT is not a failure: the gate may still be
+      // downloading/delivering the file (posting.server learned this live) —
+      // resending text on top risks a double delivery.
       try {
         const { sendMediaMessage } = await import("./media.server");
         mediaRes = (await sendMediaMessage(
@@ -168,13 +182,20 @@ export const approvePending = createServerFn({ method: "POST" })
       } catch (e) {
         const msg = String((e as Error)?.message ?? e);
         log(`MEDIA SEND FAILED: ${msg}`);
-        warnings.push(`The ${media.kind} attachment failed to send: ${msg}`);
-        if (textBody) {
-          textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
-          log(`fallback text sent, whapi id=${textRes?.message?.id ?? "?"}`);
+        const isTimeout = msg.includes("took too long");
+        if (isTimeout) {
+          warnings.push(
+            `The ${media.kind} attachment send timed out — WhatsApp may still deliver it. Check the chat before resending.`,
+          );
+        } else {
+          warnings.push(`The ${media.kind} attachment failed to send: ${msg}`);
+          if (textBody) {
+            textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
+            log(`fallback text sent, whapi id=${textRes?.message?.id ?? "?"}`);
+          }
         }
       }
-    } else if (textBody) {
+    } else if (textBody && !demoRow) {
       textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
       log(`text sent, whapi id=${textRes?.message?.id ?? "?"}`);
     }
@@ -182,7 +203,7 @@ export const approvePending = createServerFn({ method: "POST" })
     // the group, so record the state transition regardless and surface the
     // poll error to the UI instead of aborting half-way.
     let pollRes: SendResult = null;
-    if (poll) {
+    if (poll && !demoRow) {
       try {
         pollRes = (await sendPoll(
           row.target_chat_id,
@@ -313,6 +334,7 @@ export const approvePending = createServerFn({ method: "POST" })
           row.conversation_id &&
           row.source !== "research" &&
           textBody &&
+          !demoRow &&
           !row.target_chat_id.endsWith("@g.us") &&
           !row.target_chat_id.endsWith("@simulation")
         ) {
