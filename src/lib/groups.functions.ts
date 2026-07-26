@@ -76,7 +76,11 @@ export const listManagedGroups = createServerFn({ method: "GET" })
         out.push({ chat_id: p.chat_id, whatsapp_name: p.name ?? p.chat_id, profile: p });
       }
     }
-    return out.sort((a, b) => Number(!!b.profile?.enabled) - Number(!!a.profile?.enabled));
+    // Rank: autonomous groups first, then any group with a taught profile
+    // (incl. DB-only rows like demo/archived groups — otherwise they sink
+    // below every bare WhatsApp group), then the rest.
+    const rank = (g: ManagedGroup) => (g.profile?.enabled ? 2 : g.profile ? 1 : 0);
+    return out.sort((a, b) => rank(b) - rank(a));
   });
 
 const slotSchema = z.object({
