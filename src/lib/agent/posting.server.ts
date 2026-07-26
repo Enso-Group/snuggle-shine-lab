@@ -595,39 +595,39 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     // no time for a second roundtrip before the runtime kills the request,
     // and an unreviewed post beats a dead isolate. Sanitize still runs below.
     if (!storedDraft && Date.now() - claimedAtMs < REVIEW_SKIP_AFTER_MS)
-    try {
-      const review = await callLLM({
-        role: "strong",
-        source: "agent_post_review",
-        json: true,
-        overrides,
-        timeoutMs: REVIEW_TIMEOUT_MS,
-        budgetMs: REVIEW_BUDGET_MS,
-        messages: [
-          {
-            role: "system",
-            content: `אתה עורך תוכן קפדן. בדוק את הפוסט והחזר JSON בלבד: {"ok": true/false, "post": "הגרסה הסופית של הטקסט", "poll": {"question": "...", "options": [...], "multi": false} או null, "note": "what was fixed, in English — or empty"}.
+      try {
+        const review = await callLLM({
+          role: "strong",
+          source: "agent_post_review",
+          json: true,
+          overrides,
+          timeoutMs: REVIEW_TIMEOUT_MS,
+          budgetMs: REVIEW_BUDGET_MS,
+          messages: [
+            {
+              role: "system",
+              content: `אתה עורך תוכן קפדן. בדוק את הפוסט והחזר JSON בלבד: {"ok": true/false, "post": "הגרסה הסופית של הטקסט", "poll": {"question": "...", "options": [...], "multi": false} או null, "note": "what was fixed, in English — or empty"}.
 בדוק: מתאים למטרת הקבוצה ולטון (${profile.tone ?? "מקצועי-חם"}), בשפה ${profile.language}, לא חוזר על פוסטים קודמים, בלי עובדות עסקיות שאינן במאגר הידע, בלי רמז לבוט/AI, אורך וואטסאפ סביר.
 כלל סקרים: אם יש poll — הטקסט אסור שיכיל את שאלת הסקר או את האפשרויות (בלי 1️⃣2️⃣3️⃣ ובלי רשימות אפשרויות בטקסט); הסקר נשלח בנפרד כסקר לחיץ. אם הטקסט מכיל סקר-בטקסט — העבר אותו לשדה poll ונקה את הטקסט. שמור על ה-poll אם הוא תקין. תקן בעצמך אם צריך.`,
-          },
-          {
-            role: "user",
-            content: `הפוסט:\n"""${final}"""\n\nסקר מצורף:\n${poll ? JSON.stringify(poll) : "(אין)"}\n\nפוסטים קודמים:\n${pastPosts.map((p) => p.slice(0, 120)).join("\n") || "(אין)"}${kb.count ? `\n\nמאגר הידע:\n${kb.block}` : ""}`,
-          },
-        ],
-      });
-      const parsed = parseJsonLoose<{
-        ok?: boolean;
-        post?: unknown;
-        poll?: unknown;
-        note?: string;
-      }>(review.content);
-      if (parsed.post !== undefined) final = String(parsed.post ?? "").trim();
-      if (parsed.poll !== undefined) poll = normalizePoll(parsed.poll) ?? poll;
-      reviewNote = String(parsed.note ?? "");
-    } catch (e) {
-      console.warn("[posting] review failed, using draft:", e);
-    }
+            },
+            {
+              role: "user",
+              content: `הפוסט:\n"""${final}"""\n\nסקר מצורף:\n${poll ? JSON.stringify(poll) : "(אין)"}\n\nפוסטים קודמים:\n${pastPosts.map((p) => p.slice(0, 120)).join("\n") || "(אין)"}${kb.count ? `\n\nמאגר הידע:\n${kb.block}` : ""}`,
+            },
+          ],
+        });
+        const parsed = parseJsonLoose<{
+          ok?: boolean;
+          post?: unknown;
+          poll?: unknown;
+          note?: string;
+        }>(review.content);
+        if (parsed.post !== undefined) final = String(parsed.post ?? "").trim();
+        if (parsed.poll !== undefined) poll = normalizePoll(parsed.poll) ?? poll;
+        reviewNote = String(parsed.note ?? "");
+      } catch (e) {
+        console.warn("[posting] review failed, using draft:", e);
+      }
     final = sanitizeParts([final]).parts[0] ?? "";
     if (!final && !poll) throw new Error("post generation returned neither text nor poll");
     const bodyForRecord = [final, poll ? pollAsHistoryText(poll) : ""].filter(Boolean).join("\n\n");
@@ -708,9 +708,18 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       return "cancelled_midflight";
     }
 
-    // Send: text first (when present), then the native tappable poll.
+    // Send: media-with-caption when the post carries an attachment (one
+    // WhatsApp message), else text — then the native tappable poll.
+    const { parseMedia } = await import("@/lib/media");
+    const postMedia = parseMedia((post as { media?: unknown }).media);
     let textSendId: string | null = null;
-    if (final) {
+    if (postMedia) {
+      const { sendMediaMessage } = await import("@/lib/media.server");
+      const sendRes = (await sendMediaMessage(profile.chat_id, postMedia, final || undefined)) as {
+        message?: { id?: string };
+      };
+      textSendId = sendRes?.message?.id ?? null;
+    } else if (final) {
       const sendRes = (await deps.whapi.sendText(profile.chat_id, final)) as {
         message?: { id?: string };
       };
@@ -739,7 +748,12 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       }
     }
 
-    const sentBody = [final, poll && pollSent ? pollAsHistoryText(poll) : ""]
+    const { mediaLabel } = await import("@/lib/media");
+    const sentBody = [
+      final,
+      postMedia ? mediaLabel(postMedia) : "",
+      poll && pollSent ? pollAsHistoryText(poll) : "",
+    ]
       .filter(Boolean)
       .join("\n\n");
     // The stored draft has served its purpose — drop it, and release the

@@ -9,7 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { History, QrCode, Radio, RefreshCw, Wifi, WifiOff, Zap } from "lucide-react";
+import {
+  Clapperboard,
+  Eraser,
+  History,
+  QrCode,
+  Radio,
+  RefreshCw,
+  Sparkles,
+  Wifi,
+  WifiOff,
+  Zap,
+} from "lucide-react";
 import { useWhatsAppConnection, WA_CONNECTION_QUERY_KEY } from "@/hooks/use-connection";
 import {
   enableHistorySync,
@@ -18,6 +29,7 @@ import {
   startWhatsAppReconnect,
   syncDirectChatHistory,
 } from "@/lib/participants.functions";
+import { seedDemoData, wipeDemoData } from "@/lib/demo-seed.functions";
 
 export function ConnectionTab() {
   const qc = useQueryClient();
@@ -240,6 +252,72 @@ export function ConnectionTab() {
           )}
         </CardContent>
       </Card>
+
+      <DemoDataCard />
     </div>
+  );
+}
+
+/**
+ * Demo data for recordings: fills every dashboard page with realistic,
+ * clearly-marked content (all ids carry a `demo-` prefix) and removes it all
+ * with one click. Never touches real conversations.
+ */
+function DemoDataCard() {
+  const qc = useQueryClient();
+  const seedFn = useServerFn(seedDemoData);
+  const wipeFn = useServerFn(wipeDemoData);
+  const invalidateAll = () => qc.invalidateQueries();
+
+  const seed = useMutation({
+    mutationFn: () => seedFn({ data: {} }),
+    onSuccess: (r: { created?: Record<string, number> }) => {
+      invalidateAll();
+      const total = Object.values(r?.created ?? {}).reduce((a, b) => a + b, 0);
+      toast.success(`Demo data seeded (${total} rows) — every page now has content.`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const wipe = useMutation({
+    mutationFn: () => wipeFn(),
+    onSuccess: (r: { removed?: Record<string, number> }) => {
+      invalidateAll();
+      const total = Object.values(r?.removed ?? {}).reduce((a, b) => a + b, 0);
+      toast.success(`Demo data wiped (${total} rows removed).`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Card>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Clapperboard className="size-4 text-primary" />
+          <h3 className="text-sm font-semibold">Demo data (for recordings)</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Seeds realistic demo content across every page — profiles with stored facts, group posts
+          (incl. a poll and an image), engagement stats, activity of every kind and pending
+          approvals. Everything is marked and one click removes it. Real data is never touched.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button className="gap-2" onClick={() => seed.mutate()} disabled={seed.isPending}>
+            <Sparkles className="size-4" />
+            {seed.isPending ? "Seeding…" : "Seed demo data"}
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 text-destructive"
+            onClick={() => {
+              if (window.confirm("Remove all demo rows (anything marked demo-)?")) wipe.mutate();
+            }}
+            disabled={wipe.isPending}
+          >
+            <Eraser className="size-4" />
+            {wipe.isPending ? "Wiping…" : "Wipe demo data"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

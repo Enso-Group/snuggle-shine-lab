@@ -65,6 +65,23 @@ type NotSentPost = {
 // that search exists; "Show all" and search cover everything past the preview.
 const PREVIEW_ROWS = 5;
 
+/** Attachment hint on a post card: image thumbnail, or a 📎 chip for video/file. */
+function PostMediaThumb({ post }: { post: unknown }) {
+  const m = (post as { media?: { kind?: string; url?: string; filename?: string | null } | null })
+    .media;
+  if (!m?.url) return null;
+  if (m.kind === "image") {
+    return (
+      <img src={m.url} alt="" className="mb-1 h-14 w-full rounded object-cover" loading="lazy" />
+    );
+  }
+  return (
+    <Badge variant="outline" className="mb-1 text-[10px]">
+      📎 {m.kind === "video" ? "video" : (m.filename ?? "file")}
+    </Badge>
+  );
+}
+
 function ShowAllToggle({
   total,
   expanded,
@@ -509,9 +526,7 @@ function CommandCenter() {
                 {/* Posts pipeline: three columns side by side (problems first) so unsent,
                     in-preparation and sent posts can be compared without scrolling the page —
                     long lists scroll inside their own column instead. */}
-                {(notSentPosts.length > 0 ||
-                  upcomingPosts.length > 0 ||
-                  sentPosts.length > 0) && (
+                {(notSentPosts.length > 0 || upcomingPosts.length > 0 || sentPosts.length > 0) && (
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                     {/* Failed/cancelled posts stay visible with their reason — never silently dropped */}
                     <Card>
@@ -586,9 +601,7 @@ function CommandCenter() {
                             <ShowAllToggle
                               total={notSentPosts.length}
                               expanded={!!expanded.notSent}
-                              onToggle={() =>
-                                setExpanded((e) => ({ ...e, notSent: !e.notSent }))
-                              }
+                              onToggle={() => setExpanded((e) => ({ ...e, notSent: !e.notSent }))}
                             />
                           </>
                         )}
@@ -623,6 +636,7 @@ function CommandCenter() {
                                       : "generating"}
                                     {p.pillar ? ` · ${p.pillar}` : ""}
                                   </Badge>
+                                  <PostMediaThumb post={p} />
                                   <p className="line-clamp-1">
                                     {p.body ?? p.prompt ?? "(engine will draft this)"}
                                   </p>
@@ -632,9 +646,7 @@ function CommandCenter() {
                             <ShowAllToggle
                               total={upcomingPosts.length}
                               expanded={!!expanded.upcoming}
-                              onToggle={() =>
-                                setExpanded((e) => ({ ...e, upcoming: !e.upcoming }))
-                              }
+                              onToggle={() => setExpanded((e) => ({ ...e, upcoming: !e.upcoming }))}
                             />
                           </>
                         )}
@@ -668,6 +680,7 @@ function CommandCenter() {
                                       ? ` · ${(p.engagement as { replies_24h?: number }).replies_24h} replies in 24h`
                                       : ""}
                                   </p>
+                                  <PostMediaThumb post={p} />
                                   <p className="line-clamp-1 whitespace-pre-wrap">{p.body}</p>
                                 </div>
                               ))}

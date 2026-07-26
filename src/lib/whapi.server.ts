@@ -135,6 +135,56 @@ export async function listAllMessagesByChatId(chatId: string, maxMessages = 2000
   return all;
 }
 
+function assertSendableRecipient(chatId: string): string {
+  const to = sanitizeWhapiTo(chatId);
+  const localPart = to.split("@")[0] ?? "";
+  if (!/^[\d-]{9,31}$/.test(localPart)) {
+    throw new Error(
+      `Invalid recipient for WhatsApp: "${chatId}". Please choose a real contact or group (a phone number or group ID), not a name.`,
+    );
+  }
+  return to;
+}
+
+/**
+ * Send media (image / video / document) with an optional caption. `media` is
+ * a publicly fetchable URL — Whapi downloads and delivers it natively. The
+ * caption rides on the media message itself, so text+attachment is ONE
+ * WhatsApp message, exactly like a human sending a photo with a note.
+ */
+export async function sendImageMessage(chatId: string, mediaUrl: string, caption?: string) {
+  const to = assertSendableRecipient(chatId);
+  return whapi("/messages/image", {
+    method: "POST",
+    body: JSON.stringify({ to, media: mediaUrl, ...(caption ? { caption } : {}) }),
+  });
+}
+
+export async function sendVideoMessage(chatId: string, mediaUrl: string, caption?: string) {
+  const to = assertSendableRecipient(chatId);
+  return whapi("/messages/video", {
+    method: "POST",
+    body: JSON.stringify({ to, media: mediaUrl, ...(caption ? { caption } : {}) }),
+  });
+}
+
+export async function sendDocumentMessage(
+  chatId: string,
+  mediaUrl: string,
+  opts: { caption?: string; filename?: string } = {},
+) {
+  const to = assertSendableRecipient(chatId);
+  return whapi("/messages/document", {
+    method: "POST",
+    body: JSON.stringify({
+      to,
+      media: mediaUrl,
+      ...(opts.caption ? { caption: opts.caption } : {}),
+      ...(opts.filename ? { filename: opts.filename } : {}),
+    }),
+  });
+}
+
 /**
  * Send a native WhatsApp poll (tappable, with live vote counts).
  * WhatsApp requires 2-12 unique options; `count` accepts only 0 or 1 —

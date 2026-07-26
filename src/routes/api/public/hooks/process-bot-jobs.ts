@@ -602,6 +602,89 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return { ran: true as const };
           });
 
+          // One-shot media self-test: proves image/video/document sending
+          // works END TO END in production by messaging the connected
+          // account's own chat (WhatsApp "message yourself") with the three
+          // demo assets served by this very site. Marker-gated — runs exactly
+          // once per version; visible proof lands on the owner's phone and as
+          // a config decision with the Whapi message ids.
+          const mediaSelfTest = await guarded("media-self-test", async () => {
+            const MARKER = "Media send self-test v1";
+            const { data: done } = await supabase
+              .from("bot_decisions")
+              .select("id")
+              .eq("stage", "config")
+              .like("summary", `${MARKER}%`)
+              .limit(1)
+              .maybeSingle();
+            if (done) return { ran: false as const, reason: "already ran" };
+            const { getConnectedChannel } = await import("@/lib/agent/channel.server");
+            const ch = await getConnectedChannel();
+            if (!ch.connected || !ch.phone) return { ran: false as const, reason: "no channel" };
+            // Marker FIRST (awaited): a wall-kill mid-test must never cause
+            // the owner to get spammed with test media on every sweep.
+            const { error: markerErr } = await supabase.from("bot_decisions").insert({
+              trigger: "scheduled",
+              stage: "config",
+              status: "ok",
+              summary: `${MARKER} — sending image/video/document to the owner chat`,
+              data: { started_at: new Date().toISOString() },
+            });
+            if (markerErr) throw new Error(`marker insert failed: ${markerErr.message}`);
+            const selfChat = `${ch.phone}@s.whatsapp.net`;
+            const base = "https://snuggle-shine-lab.lovable.app/demo";
+            const { sendMediaMessage } = await import("@/lib/media.server");
+            const results: Record<string, string> = {};
+            const cases = [
+              {
+                kind: "image" as const,
+                url: `${base}/sample-image.png`,
+                caption: "🧪 Media self-test 1/3 — image",
+              },
+              {
+                kind: "video" as const,
+                url: `${base}/sample-video.mp4`,
+                caption: "🧪 Media self-test 2/3 — video",
+              },
+              {
+                kind: "document" as const,
+                url: `${base}/sample-report.pdf`,
+                caption: "🧪 Media self-test 3/3 — PDF",
+                filename: "sample-report.pdf",
+              },
+            ];
+            for (const c of cases) {
+              try {
+                const res = (await sendMediaMessage(
+                  selfChat,
+                  { kind: c.kind, url: c.url, filename: c.filename ?? null, mime: null },
+                  c.caption,
+                )) as { message?: { id?: string } };
+                results[c.kind] = res?.message?.id ? `sent ${res.message.id}` : "sent (no id)";
+              } catch (e) {
+                results[c.kind] = `FAILED: ${String((e as Error)?.message ?? e).slice(0, 200)}`;
+              }
+            }
+            const failed = Object.values(results).filter((r) => r.startsWith("FAILED"));
+            // Awaited insert — fire-and-forget writes die with the request on
+            // this platform (repo lesson from the cleanup marker).
+            await supabase.from("bot_decisions").insert({
+              trigger: "scheduled",
+              stage: failed.length ? "error" : "config",
+              status: failed.length ? "error" : "ok",
+              summary: `${MARKER} result: ${failed.length ? `${failed.length}/3 FAILED` : "all 3 media types delivered"}`,
+              data: results,
+            });
+            if (failed.length) {
+              const { raiseAdminAlert } = await import("@/lib/anti-ban.server");
+              await raiseAdminAlert(
+                supabase,
+                `Media self-test: ${failed.length}/3 sends failed — ${JSON.stringify(results).slice(0, 400)}`,
+              );
+            }
+            return { ran: true as const, results };
+          });
+
           // The group engine runs FIRST after the job drain: the sweep request
           // only survives ~a minute of wall clock (2026-07-24 evidence:
           // LLM-drafting posts died mid-fetch with their failure handlers
@@ -643,6 +726,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             follow_ups: followUps,
             research_interims: researchInterims,
             dead_jobs: deadJobs,
+            media_self_test: mediaSelfTest,
             groups,
             analytics,
             cleanup,

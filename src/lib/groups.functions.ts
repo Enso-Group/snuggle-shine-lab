@@ -163,15 +163,48 @@ export const getGroupActivity = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ chat_id: z.string().min(5) }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [posts, actions, insights, stats, memo] = await Promise.all([
-      supabaseAdmin
+    // media is fetched tolerantly: the column arrives with the 20260726
+    // migration, and the page must keep working before it is applied. The
+    // typed client can't know about the not-yet-migrated column, so the
+    // result is cast back to the base row shape (+ optional media).
+    type Jsonish = string | number | boolean | null | { [k: string]: Jsonish } | Jsonish[];
+    type PostRow = {
+      id: string;
+      source: string;
+      pillar: string | null;
+      prompt: string | null;
+      body: string | null;
+      status: string;
+      reasoning: string | null;
+      sent_at: string | null;
+      engagement: Jsonish;
+      media?: Jsonish;
+      created_at: string;
+    };
+    type PostsResult = { data: PostRow[] | null; error: { message: string } | null };
+    const fetchPosts = async (): Promise<PostsResult> => {
+      const withMedia = (await supabaseAdmin
         .from("planned_posts")
-        .select("id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, created_at")
+        .select(
+          "id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, media, created_at",
+        )
         .eq("group_chat_id", data.chat_id)
         .order("created_at", { ascending: false })
         // 30, not 10 — the Command Center splits posts into three columns
         // (not sent / in progress / sent) and each needs enough rows to be useful.
-        .limit(30),
+        .limit(30)) as unknown as PostsResult;
+      if (!withMedia.error) return withMedia;
+      return (await supabaseAdmin
+        .from("planned_posts")
+        .select(
+          "id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, created_at",
+        )
+        .eq("group_chat_id", data.chat_id)
+        .order("created_at", { ascending: false })
+        .limit(30)) as unknown as PostsResult;
+    };
+    const [posts, actions, insights, stats, memo] = await Promise.all([
+      fetchPosts(),
       supabaseAdmin
         .from("moderation_actions")
         .select("id, action, target_name, rule_violated, reasoning, status, created_at")

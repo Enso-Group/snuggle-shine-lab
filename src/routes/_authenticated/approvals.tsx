@@ -1,13 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Send, Trash2, Pencil, Check, X, Inbox, CheckCircle2 } from "lucide-react";
+import {
+  Send,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+  Inbox,
+  CheckCircle2,
+  Paperclip,
+  FileText,
+  Loader2,
+} from "lucide-react";
 import { PageHeader, PageContent, EmptyState } from "@/components/page-header";
 import {
   listPendingApprovals,
@@ -15,6 +26,8 @@ import {
   rejectPending,
   updatePendingBody,
 } from "@/lib/schedule.functions";
+import { uploadMedia, setApprovalMedia } from "@/lib/media.functions";
+import type { MediaAttachment } from "@/lib/media";
 import { DEMO_MODE, demoApprovals } from "@/lib/demo";
 
 export const Route = createFileRoute("/_authenticated/approvals")({
@@ -29,6 +42,7 @@ type Approval = {
   body: string;
   source: string;
   created_at: string;
+  media?: MediaAttachment | null;
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -43,6 +57,8 @@ function ApprovalsPage() {
   const approveFn = useServerFn(approvePending);
   const rejectFn = useServerFn(rejectPending);
   const updateFn = useServerFn(updatePendingBody);
+  const uploadFn = useServerFn(uploadMedia);
+  const setMediaFn = useServerFn(setApprovalMedia);
 
   const { data: realRows = [] } = useQuery({
     queryKey: ["scheduled-approvals"],
@@ -97,6 +113,37 @@ function ApprovalsPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const attach = useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      if (DEMO_MODE) return;
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("Could not read the file"));
+        reader.readAsDataURL(file);
+      });
+      const media = await uploadFn({
+        data: { filename: file.name, mime: file.type || "application/octet-stream", dataBase64 },
+      });
+      await setMediaFn({ data: { id, media } });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Attachment added — it will be sent with the message");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const removeMedia = useMutation({
+    mutationFn: async (id: string) => {
+      if (DEMO_MODE) return;
+      return setMediaFn({ data: { id, media: null } });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Attachment removed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <div className="min-h-full">
@@ -133,10 +180,49 @@ function ApprovalsPage() {
             onApprove={(body) => approve.mutate({ id: r.id, body })}
             onReject={() => reject.mutate(r.id)}
             onSaveEdit={(body) => updateBody.mutate({ id: r.id, body })}
+            onAttach={(file) => attach.mutate({ id: r.id, file })}
+            onRemoveMedia={() => removeMedia.mutate(r.id)}
+            uploading={attach.isPending}
             pending={approve.isPending || reject.isPending || updateBody.isPending}
           />
         ))}
       </PageContent>
+    </div>
+  );
+}
+
+function MediaPreview({ media, onRemove }: { media: MediaAttachment; onRemove?: () => void }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-2 space-y-2">
+      {media.kind === "image" && (
+        <img
+          src={media.url}
+          alt={media.filename ?? "attachment"}
+          className="max-h-48 rounded-md object-contain"
+        />
+      )}
+      {media.kind === "video" && (
+        <video src={media.url} controls className="max-h-48 rounded-md" preload="metadata" />
+      )}
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+          {media.kind === "document" && <FileText className="size-3.5 shrink-0" />}
+          <span className="truncate">
+            {media.filename ?? media.url.split("/").pop()} · sent as a WhatsApp {media.kind}
+          </span>
+        </span>
+        {onRemove && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-destructive"
+            onClick={onRemove}
+          >
+            <X className="size-3" />
+            Remove
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -146,16 +232,23 @@ function ApprovalCard({
   onApprove,
   onReject,
   onSaveEdit,
+  onAttach,
+  onRemoveMedia,
+  uploading,
   pending,
 }: {
   row: Approval;
   onApprove: (body?: string) => void;
   onReject: () => void;
   onSaveEdit: (body: string) => void;
+  onAttach: (file: File) => void;
+  onRemoveMedia: () => void;
+  uploading: boolean;
   pending: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(row.body);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   return (
     <Card>
@@ -209,6 +302,8 @@ function ApprovalCard({
           );
         })()}
 
+        {row.media && <MediaPreview media={row.media} onRemove={onRemoveMedia} />}
+
         <div className="flex flex-wrap gap-2">
           {editing ? (
             <>
@@ -259,6 +354,30 @@ function ApprovalCard({
               >
                 <Pencil className="size-3 ms-1" />
                 Edit
+              </Button>
+              <input
+                ref={fileInput}
+                type="file"
+                className="hidden"
+                accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onAttach(f);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileInput.current?.click()}
+                disabled={uploading || pending}
+              >
+                {uploading ? (
+                  <Loader2 className="size-3 ms-1 animate-spin" />
+                ) : (
+                  <Paperclip className="size-3 ms-1" />
+                )}
+                {row.media ? "Replace attachment" : "Attach"}
               </Button>
               <Button
                 size="sm"

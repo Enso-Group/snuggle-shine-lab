@@ -149,8 +149,32 @@ export const approvePending = createServerFn({ method: "POST" })
     // native poll then, so the question doesn't go out twice.
     const textBody = poll && body.trim() === poll.question.trim() ? "" : body;
     type SendResult = { message?: { id?: string } } | null;
+    const { parseMedia, mediaLabel } = await import("./media");
+    const media = parseMedia((row as { media?: unknown }).media);
     let textRes: SendResult = null;
-    if (textBody) {
+    let mediaRes: SendResult = null;
+    if (media) {
+      // Attachment present: the text rides as the media caption — ONE
+      // WhatsApp message, like a human sending a photo with a note. If the
+      // attachment fails, fall back to text so the approval never half-sends.
+      try {
+        const { sendMediaMessage } = await import("./media.server");
+        mediaRes = (await sendMediaMessage(
+          row.target_chat_id,
+          media,
+          textBody || undefined,
+        )) as SendResult;
+        log(`${media.kind} sent, whapi id=${mediaRes?.message?.id ?? "?"}`);
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        log(`MEDIA SEND FAILED: ${msg}`);
+        warnings.push(`The ${media.kind} attachment failed to send: ${msg}`);
+        if (textBody) {
+          textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
+          log(`fallback text sent, whapi id=${textRes?.message?.id ?? "?"}`);
+        }
+      }
+    } else if (textBody) {
       textRes = (await sendTextMessage(row.target_chat_id, textBody)) as SendResult;
       log(`text sent, whapi id=${textRes?.message?.id ?? "?"}`);
     }
@@ -191,7 +215,11 @@ export const approvePending = createServerFn({ method: "POST" })
     const plannedPostId = await resolvePlannedPostId(supabaseAdmin, row as ApprovalRowShape);
     log(`planned post resolved: ${plannedPostId ?? "none"}`);
     if (plannedPostId) {
-      const plannedBody = [textBody, poll && pollRes ? pollAsHistoryText(poll) : ""]
+      const plannedBody = [
+        textBody,
+        media && mediaRes ? mediaLabel(media) : "",
+        poll && pollRes ? pollAsHistoryText(poll) : "",
+      ]
         .filter(Boolean)
         .join("\n\n");
       const { error: postErr } = await supabaseAdmin
@@ -200,7 +228,8 @@ export const approvePending = createServerFn({ method: "POST" })
           body: plannedBody || body,
           status: "sent",
           sent_at: new Date().toISOString(),
-          whapi_message_id: textRes?.message?.id ?? pollRes?.message?.id ?? null,
+          whapi_message_id:
+            mediaRes?.message?.id ?? textRes?.message?.id ?? pollRes?.message?.id ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", plannedPostId)
@@ -210,6 +239,15 @@ export const approvePending = createServerFn({ method: "POST" })
         warnings.push(`Post sent but the dashboard row didn't update: ${postErr.message}`);
       } else {
         log("planned post -> sent");
+      }
+      // Attachment bookkeeping is separate and fenced: the media column may
+      // not be migrated yet, and a missing column must not fail the send.
+      if (media && mediaRes) {
+        const { error: mediaErr } = await supabaseAdmin
+          .from("planned_posts")
+          .update({ media } as never)
+          .eq("id", plannedPostId);
+        if (mediaErr) log(`planned post media column update skipped: ${mediaErr.message}`);
       }
     }
 
@@ -225,7 +263,19 @@ export const approvePending = createServerFn({ method: "POST" })
       conversationId = conv?.id ?? null;
     }
     if (conversationId) {
-      if (textBody) {
+      if (media && mediaRes) {
+        // One mirrored row for the media message (caption included) so the
+        // timeline reads exactly like what the contact received.
+        await supabaseAdmin.from("messages").insert({
+          conversation_id: conversationId,
+          whapi_message_id: mediaRes?.message?.id ?? null,
+          direction: "outbound",
+          sender_name: "Bot",
+          sender_id: "bot",
+          body: [textBody, mediaLabel(media)].filter(Boolean).join("\n"),
+          raw: { send: mediaRes, media } as unknown as Json,
+        });
+      } else if (textBody) {
         await supabaseAdmin.from("messages").insert({
           conversation_id: conversationId,
           whapi_message_id: textRes?.message?.id ?? null,
