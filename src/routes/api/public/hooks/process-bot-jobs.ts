@@ -716,7 +716,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           // once per version; visible proof lands on the owner's phone and as
           // a config decision with the Whapi message ids.
           const mediaSelfTest = await guarded("media-self-test", async () => {
-            const MARKER = "Media send self-test v1";
+            // v2: re-armed 2026-07-26 so the first full sweep after WhatsApp
+            // is reconnected re-proves image/video/PDF delivery end to end
+            // (v1 passed live 2026-07-26 07:26Z before the disconnect).
+            const MARKER = "Media send self-test v2";
             const { data: done } = await supabase
               .from("bot_decisions")
               .select("id")
