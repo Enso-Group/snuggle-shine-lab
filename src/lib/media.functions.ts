@@ -27,6 +27,7 @@ const setMediaSchema = z.object({
     .object({
       kind: z.enum(["image", "video", "document"]),
       url: z.string().url(),
+      storage_path: z.string().max(300).nullish(),
       filename: z.string().max(200).nullish(),
       mime: z.string().max(100).nullish(),
     })

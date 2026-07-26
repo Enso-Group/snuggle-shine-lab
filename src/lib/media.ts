@@ -7,8 +7,15 @@ export type MediaKind = "image" | "video" | "document";
 
 export type MediaAttachment = {
   kind: MediaKind;
-  /** Publicly fetchable URL (Supabase storage or the app's own /demo assets). */
+  /**
+   * Fetchable URL for previews (a time-limited signed URL for bucket
+   * uploads, or a plain URL for site-served assets). Send paths NEVER trust
+   * this directly when storage_path is set — they mint a fresh signed URL at
+   * send time, because the stored one may have expired.
+   */
   url: string;
+  /** Storage object path when the file lives in the (private) media bucket. */
+  storage_path?: string | null;
   filename?: string | null;
   mime?: string | null;
 };
@@ -25,6 +32,7 @@ export function parseMedia(raw: unknown): MediaAttachment | null {
     return {
       kind,
       url,
+      storage_path: m.storage_path ? String(m.storage_path).slice(0, 300) : null,
       filename: m.filename ? String(m.filename).slice(0, 200) : null,
       mime: m.mime ? String(m.mime).slice(0, 100) : null,
     };

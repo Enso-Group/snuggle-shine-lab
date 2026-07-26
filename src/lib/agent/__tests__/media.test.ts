@@ -27,6 +27,17 @@ describe("parseMedia", () => {
       "[document: r.pdf]",
     );
   });
+
+  it("round-trips storage_path (private bucket uploads need it for send-time signing)", () => {
+    const m = parseMedia({
+      kind: "image",
+      url: "https://x.test/signed?token=abc",
+      storage_path: "uploads/123-a.png",
+    });
+    expect(m?.storage_path).toBe("uploads/123-a.png");
+    // Site-served assets carry no storage_path — parse keeps it null.
+    expect(parseMedia({ kind: "image", url: "https://x.test/demo/a.png" })?.storage_path).toBeNull();
+  });
 });
 
 describe("whapi media senders", () => {
