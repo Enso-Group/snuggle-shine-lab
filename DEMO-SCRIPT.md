@@ -1,8 +1,10 @@
 # Demo Narration Script
 
-Screen-recording narration, ~2.5 minutes spoken at a natural pace. The pages
-already show built-in demo data — just log in and follow the page order below.
-(No setup steps needed; demo mode is always on in this build.)
+Screen-recording narration, ~2.5 minutes spoken at a natural pace.
+
+Before recording: set `DEMO_MODE = true` in `src/lib/demo.ts` (one line) and
+deploy — all five pages then show the built-in demo data, no other setup.
+After recording: set it back to `false` to show real data again.
 
 ---
 
