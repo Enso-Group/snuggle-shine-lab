@@ -157,7 +157,27 @@ export const approvePending = createServerFn({ method: "POST" })
     type SendResult = { message?: { id?: string } } | null;
     const { parseMedia, mediaLabel } = await import("./media");
     const { isDemoTarget } = await import("./whapi.server");
-    const media = parseMedia((row as { media?: unknown }).media);
+    let media = parseMedia((row as { media?: unknown }).media);
+    // The generated / steering-chat image lives on the PLANNED POST row; an
+    // approval row without its own attachment must inherit the post's — the
+    // 2026-07-26 lion post shipped TEXT-ONLY because this fallback didn't
+    // exist (approval.media was null while planned_posts.media had the image).
+    if (!media) {
+      try {
+        const linkedPostId = await resolvePlannedPostId(context.supabase, row as ApprovalRowShape);
+        if (linkedPostId) {
+          const { data: postRow } = await context.supabase
+            .from("planned_posts")
+            .select("media" as never)
+            .eq("id", linkedPostId)
+            .maybeSingle();
+          media = parseMedia((postRow as { media?: unknown } | null)?.media);
+          if (media) log("attachment inherited from the linked planned post");
+        }
+      } catch (e) {
+        log(`planned-post media fallback failed: ${String((e as Error)?.message ?? e)}`);
+      }
+    }
     // Demo rows (seeded content for recordings) go through every STATE
     // transition — approved, planned post → sent, mirror — but never a real
     // WhatsApp call. The sanitizer would strip the demo- marker into a REAL

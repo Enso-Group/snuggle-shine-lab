@@ -127,6 +127,7 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
       messages?: unknown;
       reasoning?: unknown;
       open_question?: unknown;
+      image_request?: unknown;
     }>(content);
     const parts = Array.isArray(parsed.messages)
       ? normalizeReplyParts(
@@ -135,14 +136,24 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
         )
       : [];
     if (parts.length) {
-      // Only the strings inside "messages" are ever returned as reply text; the
-      // "reasoning" and "open_question" fields stay internal (decision log /
-      // research job) and are never delivered.
+      // Only the strings inside "messages" are ever returned as reply text;
+      // "reasoning", "open_question" and "image_request" stay internal
+      // (decision log / research job / image generation) and are never
+      // delivered as text.
       const openQuestion =
         typeof parsed.open_question === "string" && parsed.open_question.trim()
           ? parsed.open_question.trim().slice(0, 400)
           : null;
-      return { messages: parts, reasoning: String(parsed.reasoning ?? ""), openQuestion };
+      const imageRequest =
+        typeof parsed.image_request === "string" && parsed.image_request.trim()
+          ? parsed.image_request.trim().slice(0, 1500)
+          : null;
+      return {
+        messages: parts,
+        reasoning: String(parsed.reasoning ?? ""),
+        openQuestion,
+        imageRequest,
+      };
     }
     // Parsed as JSON but without a usable "messages" array: this is the raw
     // envelope, not a reply. Fall through to the leak guard below.
@@ -165,7 +176,12 @@ function parseReplyEnvelope(content: string, maxParts: number, stage: string): D
     if (!plain.length) throw new Error(`${stage} stage returned an empty reply`);
     // openQuestion null: the pipeline's deterministic promise detector still
     // scans the sent text, so a free-form "אבדוק ואחזור" is not lost.
-    return { messages: plain, reasoning: "Free-form output — sent as-is", openQuestion: null };
+    return {
+      messages: plain,
+      reasoning: "Free-form output — sent as-is",
+      openQuestion: null,
+      imageRequest: null,
+    };
   }
 }
 
@@ -222,10 +238,11 @@ export async function draftReply(
 
 כלל מחייב — אף פעם לא שתיקה: לעולם אל תחזיר תשובה ריקה. אם ההודעה עוסקת בנושא שמחוץ לתחום שלנו או לידע שלך — ענה בקצרה ובטבעיות, בסגנון הדמות, שעם זה אתה לא יכול לעזור או שאתה פשוט לא יודע, ואם מתאים החזר את השיחה לתחום שלנו. אל תמציא תשובה ואל תשאיר את האדם בלי מענה.
 
-פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply", "open_question": null או "שאילתת חיפוש"}.
+פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", "הודעה 2..."], "reasoning": "one short sentence in English on why this is the right reply", "open_question": null או "שאילתת חיפוש", "image_request": null או "english image prompt"}.
 - בין 1 ל-${maxParts} הודעות, כמו שאדם כותב בוואטסאפ: קצרות, בלי חומות טקסט.
 - ברוב המקרים הודעה אחת מספיקה. פצל רק אם יש באמת שני חלקים נפרדים (למשל תשובה + שאלת המשך).
-- open_question: אם התשובה שלך מבטיחה לבדוק ולחזור (כי התשובה העובדתית לא נמצאת במאגר הידע או בשיחה) — כתוב כאן שאילתת חיפוש קצרה וממוקדת שתמצא את התשובה, בשפה שבה סביר שהמידע קיים ברשת. אם לא הבטחת לבדוק — null.`;
+- open_question: אם התשובה שלך מבטיחה לבדוק ולחזור (כי התשובה העובדתית לא נמצאת במאגר הידע או בשיחה) — כתוב כאן שאילתת חיפוש קצרה וממוקדת שתמצא את התשובה, בשפה שבה סביר שהמידע קיים ברשת. אם לא הבטחת לבדוק — null.
+- image_request: אם האדם מבקש שתיצור/תכין/תשלח תמונה — יש לך יכולת אמיתית ליצור תמונות, והתמונה תישלח אליו מיד עם ההודעה. אל תתאר במילים איך התמונה תיראה, אל תשלח "פרומפט" כטקסט, ואל תבטיח "אכין בהמשך". כתוב ב-messages כיתוב קצר וטבעי אחד (משפט, כמו שאדם שולח תמונה עם הערה), ומלא כאן פרומפט תמונה מלא באנגלית: נושא, קומפוזיציה, סגנון, תאורה; בלי טקסט/אותיות בתוך התמונה. מותר לכל היותר שאלת הבהרה אחת ורק אם באמת חסר פרט קריטי — אחרת פשוט צור. אם לא ביקש תמונה — null.`;
 
   const messages = [
     { role: "system" as const, content: system },
@@ -283,7 +300,7 @@ export async function consolidateReply(
 
 כללי איכות מחייבים (אין שלב בדיקה אחריך): כל התשובה בשפה ${intent.language} בלבד; עובדות עסקיות רק ממאגר הידע או מהשיחה; טון טבעי לוואטסאפ בלי פתיחים רובוטיים; אסור כל רמז לבוט/AI/מערכת; לעולם לא תשובה ריקה.
 
-פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", ...], "reasoning": "one short sentence in English", "open_question": null או "שאילתת חיפוש אם הבטחת לבדוק ולחזור"}.
+פורמט פלט (חובה): החזר JSON בלבד במבנה {"messages": ["הודעה 1", ...], "reasoning": "one short sentence in English", "open_question": null או "שאילתת חיפוש אם הבטחת לבדוק ולחזור", "image_request": null או "english image prompt אם ביקשו ממך ליצור תמונה — ההודעות הן אז כיתוב קצר לתמונה"}.
 - בין 1 ל-${maxParts} הודעות קצרות וטבעיות.`;
 
   const user = `היסטוריה אחרונה:

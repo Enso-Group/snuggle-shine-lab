@@ -18,6 +18,7 @@ export type DecisionEntry = {
     | "intent"
     | "draft"
     | "critique"
+    | "image"
     | "deliver"
     | "queued_approval"
     | "memory"

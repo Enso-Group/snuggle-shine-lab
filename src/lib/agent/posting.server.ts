@@ -641,6 +641,19 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         .limit(1)
         .maybeSingle();
       if (!adminRole?.user_id) throw new Error("no approval owner");
+      // Fresh media read at queue time: the steering chat may have attached a
+      // generated image AFTER this row was claimed, and the approval row must
+      // carry it — approvePending sends approval.media as the WhatsApp image
+      // (2026-07-26 lion post shipped text-only over exactly this gap).
+      const { parseMedia: parseApprovalMedia } = await import("@/lib/media");
+      const { data: freshMediaRow } = await supabase
+        .from("planned_posts")
+        .select("media" as never)
+        .eq("id", post.id)
+        .maybeSingle();
+      const approvalMedia = parseApprovalMedia(
+        (freshMediaRow as { media?: unknown } | null)?.media,
+      );
       const approvalRow = {
         user_id: adminRole.user_id,
         target_chat_id: profile.chat_id,
@@ -648,6 +661,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         body: final || poll!.question,
         source: "group_post",
         status: "pending",
+        ...(approvalMedia ? { media: approvalMedia } : {}),
       };
       const { error: apprErr } = await supabase
         .from("scheduled_approvals")
@@ -714,8 +728,12 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     // migration), so the attachment is fetched here in a FENCED single-row
     // read — a missing column just means "no media", never a failed post.
     const { parseMedia } = await import("@/lib/media");
-    let postMediaRaw: unknown = (post as { media?: unknown }).media;
-    if (postMediaRaw === undefined) {
+    // ALWAYS a fresh single-row read, never the row snapshot from claim time:
+    // the steering chat can attach a generated image seconds after the claim,
+    // and a stale null here silently ships the post without its image. A
+    // missing column (pre-migration) just means "no media", never a failure.
+    let postMediaRaw: unknown;
+    {
       const { data: mediaRow } = await supabase
         .from("planned_posts")
         .select("media" as never)

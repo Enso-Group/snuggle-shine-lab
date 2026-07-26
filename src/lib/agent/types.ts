@@ -167,6 +167,13 @@ export type DraftResult = {
    * that would answer the open question. Drives the research-promise job.
    */
   openQuestion: string | null;
+  /**
+   * Set when the person asked for an image to be created: a complete English
+   * image-generation prompt. The pipeline generates the image and sends it
+   * with the messages as its caption — the model must never describe the
+   * would-be image or hand the user a raw prompt instead.
+   */
+  imageRequest: string | null;
 };
 
 export type CritiqueResult = {

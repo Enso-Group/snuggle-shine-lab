@@ -215,6 +215,18 @@ export const commandChat = createServerFn({ method: "POST" })
         .eq("id", post.id)
         .in("status", ["planned", "queued_approval"]);
       if (error) return JSON.stringify({ ok: false, error: error.message });
+      // If the post is already parked in Approvals, mirror the attachment onto
+      // the approval row too — approvePending sends approval.media, and the
+      // Approvals card previews it.
+      try {
+        await supabaseAdmin
+          .from("scheduled_approvals")
+          .update({ media: generated.attachment } as never)
+          .eq("planned_post_id", post.id)
+          .eq("status", "pending");
+      } catch (e) {
+        console.warn("[command] approval media mirror failed:", e);
+      }
       const summary = `AI image generated for the pending post (${generated.model})`;
       actions.push({ tool: "generate_post_image", summary });
       logDecision(supabaseAdmin, {

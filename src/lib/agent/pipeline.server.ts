@@ -1,5 +1,7 @@
 // Pipeline orchestrator — runs one inbound_reply job through every stage and
 // logs each decision. Called by the worker (never directly by routes).
+import type { Json } from "@/integrations/supabase/types";
+import type { MediaAttachment } from "@/lib/media";
 import type { Supa } from "./types";
 import { isChannelChatId, isDmChatId, stripStructuredOutput, type InboundMessage } from "./inbound";
 import { loadAgentSettings, gatherContext } from "./context.server";
@@ -241,6 +243,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   // The final envelope's "I promised to check" flag — replaced along with the
   // parts when consolidation rewrites the reply.
   let openQuestion = draft.openQuestion;
+  const imageRequest = draft.imageRequest;
   logDecision(supabase, {
     ...base,
     stage: "draft",
@@ -376,6 +379,53 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
 
   let joined = parts.join("\n\n");
 
+  // --- Stage: image (the person asked for a created image) ---
+  // Runs BEFORE the approval gate so the approval row carries the attachment
+  // and an approve sends image+caption together. DM-only, never simulation.
+  // A generation failure THROWS so the queue retries — the model must never
+  // paper over a missing image with a description or a raw prompt (live
+  // 2026-07-26, Yona: the bot improvised prompt-text answers for lack of a
+  // real image action).
+  let imageMedia: MediaAttachment | null = null;
+  let imageGenMs = 0;
+  if (
+    imageRequest &&
+    !message.isGroup &&
+    isDmChatId(job.chat_id) &&
+    deps.trigger !== "simulation"
+  ) {
+    t = Date.now();
+    try {
+      const { generateImage } = await import("@/lib/image-gen.server");
+      const generated = await generateImage(imageRequest, {
+        source: "dm_image_gen",
+        timeoutMs: 25_000,
+        budgetMs: 30_000,
+      });
+      imageMedia = generated.attachment;
+      imageGenMs = Date.now() - t;
+      logDecision(supabase, {
+        ...base,
+        stage: "image",
+        summary: `Image generated for the reply (${generated.model})`,
+        data: {
+          model: generated.model,
+          prompt: imageRequest.slice(0, 300),
+          storage_path: generated.attachment.storage_path ?? null,
+        },
+        duration_ms: imageGenMs,
+      });
+    } catch (e) {
+      logDecision(supabase, {
+        ...base,
+        stage: "error",
+        status: "error",
+        summary: `Image generation failed — the reply attempt will retry: ${String((e as Error)?.message ?? e).slice(0, 160)}`,
+      });
+      throw e;
+    }
+  }
+
   // --- Approval gate (global toggle, or the agent itself asked to escalate) ---
   if (settings.require_approval_all || intent.escalate) {
     const ownerUserId = await findApprovalOwner(supabase);
@@ -396,14 +446,17 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       body: joined,
       source: "ai_reply",
       status: "pending",
-    });
+      // The generated image rides on the approval — approve sends it as a
+      // WhatsApp image with the text as caption.
+      ...(imageMedia ? { media: imageMedia } : {}),
+    } as never);
     logDecision(supabase, {
       ...base,
       stage: "queued_approval",
       summary: intent.escalate
         ? `Escalated to human approval — ${intent.escalate_reason ?? "escalation"}`
         : "Approval-all mode is on — awaiting human approval",
-      data: { draft: joined, escalated: intent.escalate },
+      data: { draft: joined, escalated: intent.escalate, has_image: !!imageMedia },
     });
     if (intent.escalate && ctx.groupProfile?.owner_dm) {
       const { notifyOwner } = await import("./moderation.server");
@@ -734,20 +787,57 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   t = Date.now();
   try {
     // Deliver marker first: the correlated crash-retry dedup above needs
-    // proof of exactly what this attempt was about to send.
-    p.deliver_started = { at: Date.now(), first_part: parts[0] };
+    // proof of exactly what this attempt was about to send. For image sends
+    // the marker mirrors the stored body shape (caption + media label) so a
+    // crash-retry can find the row and skip the duplicate send.
+    const { mediaLabel: markerLabel } = await import("@/lib/media");
+    p.deliver_started = {
+      at: Date.now(),
+      first_part: imageMedia
+        ? [joined, markerLabel(imageMedia)].filter(Boolean).join("\n")
+        : parts[0],
+    };
     await supabase
       .from("bot_jobs")
       .update({ payload: p, updated_at: new Date().toISOString() })
       .eq("id", job.id);
-    const delivery = await deliverReply(supabase, deps.whapi, ctx, parts, {
-      humanPacing: deps.humanPacing,
-      botName: settings.bot_name,
-    });
+    let delivery: { parts: string[]; sentMessageIds: Array<string | null> };
+    if (imageMedia) {
+      // Image reply: ONE WhatsApp image message with the drafted text as its
+      // caption — never text plus a separate image (the anti-ban min-gap
+      // would block the second send). Bypasses deliverReply (text-only).
+      if (message.messageId) await deps.whapi.markRead(message.messageId).catch(() => {});
+      await deps.whapi.presence(job.chat_id, "typing", 3).catch(() => {});
+      const { sendMediaMessage } = await import("@/lib/media.server");
+      const { mediaLabel } = await import("@/lib/media");
+      const sendRes = (await sendMediaMessage(job.chat_id, imageMedia, joined || undefined)) as {
+        message?: { id?: string };
+      };
+      const whapiId = sendRes?.message?.id ?? null;
+      await supabase.from("messages").insert({
+        conversation_id: job.conversation_id,
+        whapi_message_id: whapiId,
+        direction: "outbound",
+        sender_name: settings.bot_name || "Bot",
+        sender_id: "bot",
+        body: [joined, mediaLabel(imageMedia)].filter(Boolean).join("\n"),
+        raw: sendRes as Json,
+      });
+      const { recordOutbound } = await import("@/lib/anti-ban.server");
+      await recordOutbound(supabase, job.conversation_id, joined || mediaLabel(imageMedia));
+      delivery = { parts: [joined || mediaLabel(imageMedia)], sentMessageIds: [whapiId] };
+    } else {
+      delivery = await deliverReply(supabase, deps.whapi, ctx, parts, {
+        humanPacing: deps.humanPacing,
+        botName: settings.bot_name,
+      });
+    }
     logDecision(supabase, {
       ...base,
       stage: "deliver",
-      summary: `Sent ${delivery.parts.length} message(s)`,
+      summary: imageMedia
+        ? "Sent a generated image with its caption"
+        : `Sent ${delivery.parts.length} message(s)`,
       data: {
         parts: delivery.parts,
         whapi_ids: delivery.sentMessageIds,
@@ -760,6 +850,7 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
           webhook_delivery_s: p.received_at ? Math.round((p.received_at - p.ts) / 1000) : null,
           queue_wait_s: p.received_at ? Math.round((processStartAt - p.received_at) / 1000) : null,
           llm_s: Math.round(llmMs / 1000),
+          ...(imageMedia ? { image_gen_s: Math.round(imageGenMs / 1000) } : {}),
           waited_for_target_s: Math.round(waitedForTargetMs / 1000),
           attempt: job.attempts,
         },

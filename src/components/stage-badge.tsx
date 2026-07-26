@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 export const STAGE_LABELS: Record<string, { label: string; cls: string }> = {
   received: { label: "Received", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400" },
   reply_gate: { label: "Reply gate", cls: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
+  image: { label: "Image", cls: "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-400" },
   context: { label: "Context", cls: "bg-slate-500/15 text-slate-600 dark:text-slate-400" },
   intent: { label: "Intent", cls: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400" },
   draft: { label: "Draft", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
