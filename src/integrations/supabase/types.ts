@@ -566,6 +566,7 @@ export type Database = {
           purpose: string | null
           reply_to_questions: boolean
           reply_when_mentioned: boolean
+          require_approval: boolean | null
           rules: Json
           tone: string | null
           updated_at: string
@@ -592,6 +593,7 @@ export type Database = {
           purpose?: string | null
           reply_to_questions?: boolean
           reply_when_mentioned?: boolean
+          require_approval?: boolean | null
           rules?: Json
           tone?: string | null
           updated_at?: string
@@ -618,6 +620,7 @@ export type Database = {
           purpose?: string | null
           reply_to_questions?: boolean
           reply_when_mentioned?: boolean
+          require_approval?: boolean | null
           rules?: Json
           tone?: string | null
           updated_at?: string
