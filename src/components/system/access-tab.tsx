@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Mail, MailPlus, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Mail, MailPlus, MessageCircle, Plus, ShieldCheck, Smartphone, Trash2, Users } from "lucide-react";
 import { EmptyState } from "@/components/page-header";
 import { listInvitedEmails, addInvitedEmail, removeInvitedEmail } from "@/lib/invites.functions";
 import { listAllUsers, type ManagedUser } from "@/lib/users.functions";
+import { listWaAdmins, addWaAdmin, removeWaAdmin } from "@/lib/wa-admins.functions";
+import type { WaAdmin } from "@/lib/agent/wa-admins";
 import { isAdminEmail } from "@/lib/admin";
 
 export function AccessTab() {
@@ -75,6 +77,7 @@ export function AccessTab() {
 
   return (
     <div className="space-y-4">
+      <WhatsAppAdminsCard />
       <Card>
         <CardContent className="p-5">
           <div className="mb-3 flex items-center gap-2">
@@ -213,5 +216,132 @@ export function AccessTab() {
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * WhatsApp admins: phone numbers that get MANAGEMENT MODE when they DM the
+ * bot (operate it in natural language — posts, approvals, settings, status)
+ * plus proactive updates (pending approvals, errors, activity digests).
+ * Verified by phone number only — display names are never trusted.
+ */
+function WhatsAppAdminsCard() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listWaAdmins);
+  const addFn = useServerFn(addWaAdmin);
+  const removeFn = useServerFn(removeWaAdmin);
+
+  const [phone, setPhone] = useState("");
+  const [label, setLabel] = useState("");
+
+  const { data: admins = [] } = useQuery({
+    queryKey: ["wa-admins"],
+    queryFn: () => listFn() as Promise<WaAdmin[]>,
+    refetchInterval: 30000,
+  });
+
+  const add = useMutation({
+    mutationFn: () => addFn({ data: { phone, label } }),
+    onSuccess: (next) => {
+      qc.setQueryData(["wa-admins"], next);
+      setPhone("");
+      setLabel("");
+      toast.success("WhatsApp admin added");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (p: string) => removeFn({ data: { phone: p } }),
+    onSuccess: (next) => {
+      qc.setQueryData(["wa-admins"], next);
+      toast.success("WhatsApp admin removed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const busy = add.isPending || remove.isPending;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!phone.trim() || !label.trim()) return;
+    add.mutate();
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <MessageCircle className="size-4 text-primary" />
+          <h3 className="text-sm font-semibold">WhatsApp admins</h3>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          These numbers can operate the bot by chatting with it on WhatsApp (create posts,
+          approve or reject pending items, change settings, ask for status) and receive
+          proactive updates. Identity is verified by phone number — everyone else gets the
+          regular bot.
+        </p>
+        <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            type="tel"
+            placeholder="Phone (05… or 9725…)"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            dir="ltr"
+            className="sm:w-48"
+          />
+          <Input
+            placeholder="Name / label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="sm:flex-1"
+          />
+          <Button type="submit" disabled={busy || !phone.trim() || !label.trim()} className="gap-2">
+            <Plus className="size-4" />
+            Add admin
+          </Button>
+        </form>
+
+        {admins.length > 0 && (
+          <div className="mt-4 divide-y rounded-lg border">
+            {admins.map((a) => (
+              <div key={a.phone} className="flex items-center gap-3 p-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Smartphone className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{a.label}</p>
+                  <p className="text-xs text-muted-foreground" dir="ltr">
+                    +{a.phone}
+                    {a.added_at ? ` · added ${new Date(a.added_at).toLocaleDateString("en-GB")}` : ""}
+                  </p>
+                </div>
+                <Badge variant="default" className="gap-1 text-xs">
+                  <ShieldCheck className="size-3" />
+                  WhatsApp admin
+                </Badge>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-8 shrink-0 text-destructive"
+                  title="Remove WhatsApp admin"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Remove ${a.label} (+${a.phone}) from the WhatsApp admins? They immediately lose management access and stop receiving updates.`,
+                      )
+                    )
+                      remove.mutate(a.phone);
+                  }}
+                  disabled={busy}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

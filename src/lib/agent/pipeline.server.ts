@@ -497,18 +497,43 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       });
       return { action: "failed", error: "no approval owner" };
     }
-    await supabase.from("scheduled_approvals").insert({
-      user_id: ownerUserId,
-      conversation_id: job.conversation_id,
-      target_chat_id: job.chat_id,
-      target_name: p.chat_name || p.sender_name || job.chat_id,
-      body: joined,
-      source: "ai_reply",
-      status: "pending",
-      // The generated image rides on the approval — approve sends it as a
-      // WhatsApp image with the text as caption.
-      ...(imageMedia ? { media: imageMedia } : {}),
-    } as never);
+    const { data: approvalIns } = await supabase
+      .from("scheduled_approvals")
+      .insert({
+        user_id: ownerUserId,
+        conversation_id: job.conversation_id,
+        target_chat_id: job.chat_id,
+        target_name: p.chat_name || p.sender_name || job.chat_id,
+        body: joined,
+        source: "ai_reply",
+        status: "pending",
+        // The generated image rides on the approval — approve sends it as a
+        // WhatsApp image with the text as caption.
+        ...(imageMedia ? { media: imageMedia } : {}),
+      } as never)
+      .select("id")
+      .maybeSingle();
+    // Approvals are IMMEDIATE-tier news for the WhatsApp admins: they can
+    // approve/reject right from the chat by referencing the short id.
+    // Simulation must never ping real phones.
+    if (deps.trigger !== "simulation") {
+      try {
+        const { notifyWaAdmins } = await import("./admin-notify.server");
+        const shortId = approvalIns?.id ? String(approvalIns.id).slice(0, 8) : null;
+        await notifyWaAdmins(
+          supabase,
+          [
+            `🕓 תשובה חדשה ממתינה לאישור`,
+            `אל: ${p.chat_name || p.sender_name || job.chat_id}`,
+            `טיוטה: ${joined.slice(0, 250)}`,
+            ...(shortId ? [`אפשר לאשר או לדחות כאן — למשל "אשר ${shortId}".`] : []),
+          ].join("\n"),
+          { whapi: deps.whapi },
+        );
+      } catch (e) {
+        console.warn("[pipeline] admin approval notify failed:", e);
+      }
+    }
     logDecision(supabase, {
       ...base,
       stage: "queued_approval",

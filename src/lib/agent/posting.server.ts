@@ -699,6 +699,26 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
           updated_at: new Date().toISOString(),
         })
         .eq("id", post.id);
+      // A queued group post is IMMEDIATE-tier news for the WhatsApp admins —
+      // they can approve it from the chat without opening the dashboard.
+      if (deps.trigger !== "simulation") {
+        try {
+          const { isDemoTarget } = await import("@/lib/whapi.server");
+          const { notifyWaAdmins } = await import("./admin-notify.server");
+          if (!isDemoTarget(profile.chat_id)) await notifyWaAdmins(
+            supabase,
+            [
+              `🕓 פוסט חדש ממתין לאישור`,
+              `קבוצה: ${profile.name ?? profile.chat_id}`,
+              `תוכן: ${(final || poll?.question || "").slice(0, 250)}`,
+              `אפשר לאשר או לדחות כאן — פשוט תכתוב לי.`,
+            ].join("\n"),
+            { whapi: deps.whapi },
+          );
+        } catch (e) {
+          console.warn("[posting] admin approval notify failed:", e);
+        }
+      }
       return "queued_approval";
     }
 

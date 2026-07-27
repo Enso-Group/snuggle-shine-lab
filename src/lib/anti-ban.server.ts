@@ -216,4 +216,14 @@ export async function raiseAdminAlert(
   } catch (e) {
     console.error("[anti-ban] raiseAdminAlert failed", e);
   }
+  // Errors are IMMEDIATE-tier admin news: also DM the WhatsApp admins (if any
+  // are configured). notifyWaAdmins throttles identical texts and never
+  // throws, so a crash loop can't flood anyone and a notify failure can't
+  // break the alerting caller.
+  try {
+    const { notifyWaAdmins } = await import("./agent/admin-notify.server");
+    await notifyWaAdmins(supabaseAdmin, `⚠️ ${message.slice(0, 1500)}`);
+  } catch (e) {
+    console.error("[anti-ban] admin WhatsApp notify failed", e);
+  }
 }

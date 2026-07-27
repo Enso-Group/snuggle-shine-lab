@@ -128,6 +128,10 @@ export async function processQueuedJobs(
 
 async function runJob(deps: AgentDeps, job: BotJob): Promise<PipelineOutcome> {
   if (job.kind === "inbound_reply") return processInboundJob(deps, job);
+  if (job.kind === "admin_command") {
+    const { processAdminCommandJob } = await import("./admin-command.server");
+    return processAdminCommandJob(deps, job);
+  }
   if (job.kind === RESEARCH_JOB_KIND) {
     const { processResearchJob } = await import("./research.server");
     return processResearchJob(deps, job);

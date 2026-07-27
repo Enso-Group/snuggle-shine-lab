@@ -191,6 +191,52 @@ export async function handleInboundMessage(
     return { action: "stored_stale", conversationId: convId };
   }
 
+  // --- WhatsApp admin management mode ---
+  // A DM from a phone on the admin list (Users & Access page) is a management
+  // command, not persona traffic — it routes to the admin agent and NEVER
+  // reaches the reply pipeline. Recognition is by canonical phone digits of
+  // the chat id only (findWaAdmin; display names are spoofable). Placement
+  // matters: AFTER the stale-horizon check (a replayed old admin command must
+  // never re-execute) and BEFORE the enabled/stop/trivial gates (an admin
+  // must be able to say "turn the bot on" while it's disabled, and their
+  // messages must never be swallowed as trivial or as a stop request).
+  if (!m.isGroup && deps.trigger !== "simulation") {
+    const { findWaAdmin } = await import("./wa-admins");
+    const admin = findWaAdmin(settings.agent_config?.wa_admins, m.chatId);
+    if (admin) {
+      const persisted = await persistChat();
+      if (persisted.duplicate) return { action: "duplicate", conversationId: persisted.id };
+      convId = persisted.id;
+      if (!convId) return { action: "stored_empty" };
+      const { enqueueAdminCommand } = await import("./admin-command.server");
+      const jobId = await enqueueAdminCommand(supabase, {
+        chatId: m.chatId,
+        conversationId: convId,
+        adminLabel: admin.label,
+        payload: {
+          whapi_message_id: m.messageId,
+          body: m.body,
+          sender_id: m.senderId,
+          sender_name: m.senderName,
+          ts: m.ts,
+        },
+      });
+      logDecision(supabase, {
+        job_id: jobId,
+        conversation_id: convId,
+        chat_id: m.chatId,
+        trigger: deps.trigger,
+        stage: "received",
+        summary: `Management-mode message from WhatsApp admin ${admin.label} accepted`,
+        data: { admin_mode: true, body_preview: m.body.slice(0, 120) },
+      });
+      // Admins expect console-speed answers, not human-timing delays — drain
+      // this chat's queue inline; the sweeper covers us if this request dies.
+      const worker = await processQueuedJobs(deps, { chatId: m.chatId, max: 1 });
+      return { action: "enqueued", conversationId: convId, jobId, worker };
+    }
+  }
+
   const { recordInbound, isStopRequest } = await import("@/lib/anti-ban.server");
   if (!settings.enabled) {
     await logThrottledSkip(deps, m.chatId, convId ?? null, BOT_DISABLED_SUMMARY);

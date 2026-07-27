@@ -1062,11 +1062,19 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             const { runAnalytics } = await import("@/lib/agent/analytics.server");
             return runAnalytics(deps);
           });
+          // Batched WhatsApp-admin digest (posts sent, replies, new contacts)
+          // — one message per ~30min window; approvals and errors ping
+          // immediately from their own paths, this covers the routine rest.
+          const adminDigest = await guarded("admin-digest", async () => {
+            const { sendAdminDigest } = await import("@/lib/agent/admin-notify.server");
+            return sendAdminDigest(deps);
+          });
 
           return Response.json({
             ok: true,
             claimed: run.claimed,
             results: run.results.map((r) => ({ jobId: r.jobId, action: r.outcome.action })),
+            admin_digest: adminDigest,
             follow_ups: followUps,
             research_interims: researchInterims,
             dead_jobs: deadJobs,

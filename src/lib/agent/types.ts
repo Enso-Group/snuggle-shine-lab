@@ -36,6 +36,11 @@ export type AgentConfig = {
   follow_ups_enabled?: boolean;
   /** Track "I'll check and get back" promises with 10-min research jobs (default true). */
   research_enabled?: boolean;
+  /**
+   * WhatsApp admins (Users & Access page): phone numbers whose DMs run in
+   * management mode and who receive proactive updates. See agent/wa-admins.ts.
+   */
+  wa_admins?: Array<{ phone: string; label: string; added_at?: string }>;
 };
 
 /** Everything Whapi-shaped the pipeline touches, so simulation can stub it. */
@@ -99,6 +104,13 @@ export type InboundJobPayload = {
    * never bows out to a newer "send it already" nudge.
    */
   image_media?: import("@/lib/media").MediaAttachment | null;
+  /** admin_command jobs: label of the verified admin (for logging/display). */
+  admin_label?: string;
+  /**
+   * admin_command jobs: CAS'd true before the tool loop starts — a retry
+   * after a wall-kill must never replay side-effectful tools.
+   */
+  admin_started?: boolean;
 };
 
 export type BotJob = {
