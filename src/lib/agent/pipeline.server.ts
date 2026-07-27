@@ -477,8 +477,16 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     }
   }
 
-  // --- Approval gate (global toggle, or the agent itself asked to escalate) ---
-  if (settings.require_approval_all || intent.escalate) {
+  // --- Approval gate ---
+  // Group replies obey the GROUP's own approval toggle (it fully overrides
+  // the global setting in both directions; groups without a profile follow
+  // the global). DMs follow the global toggle. Escalation (the agent itself
+  // flagging a sensitive case for a human) parks the reply regardless — it
+  // is a per-message safety valve, not the approval setting.
+  const requiresApproval = message.isGroup
+    ? (await import("./groups.server")).groupRequiresApproval(ctx.groupProfile, settings)
+    : settings.require_approval_all;
+  if (requiresApproval || intent.escalate) {
     const ownerUserId = await findApprovalOwner(supabase);
     if (!ownerUserId) {
       logDecision(supabase, {
@@ -506,7 +514,9 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       stage: "queued_approval",
       summary: intent.escalate
         ? `Escalated to human approval — ${intent.escalate_reason ?? "escalation"}`
-        : "Approval-all mode is on — awaiting human approval",
+        : message.isGroup && ctx.groupProfile?.require_approval != null
+          ? "This group requires approval — awaiting human approval"
+          : "Approval-all mode is on — awaiting human approval",
       data: { draft: joined, escalated: intent.escalate, has_image: !!imageMedia },
     });
     if (intent.escalate && ctx.groupProfile?.owner_dm) {

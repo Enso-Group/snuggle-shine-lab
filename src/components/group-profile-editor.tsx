@@ -25,6 +25,7 @@ type Slot = { day: number | null; time: string; pillar?: string; prompt?: string
 
 type FormState = {
   enabled: boolean;
+  requireApproval: boolean;
   instructions: string;
   purpose: string;
   audience: string;
@@ -48,9 +49,12 @@ type FormState = {
   ownerDm: string;
 };
 
-function profileToForm(p: GroupProfileRow | null): FormState {
+function profileToForm(p: GroupProfileRow | null, globalRequireApproval: boolean): FormState {
   return {
     enabled: p?.enabled ?? false,
+    // The group's own toggle wins; a group that never set one starts from the
+    // global setting (and saving makes it explicit from then on).
+    requireApproval: p?.require_approval ?? globalRequireApproval,
     instructions: p?.instructions ?? "",
     purpose: p?.purpose ?? "",
     audience: p?.audience ?? "",
@@ -86,17 +90,20 @@ export function GroupProfileEditor({
   chatId,
   whatsappName,
   profile,
+  globalRequireApproval = false,
 }: {
   chatId: string;
   whatsappName: string;
   profile: GroupProfileRow | null;
+  /** The global approval setting — only the DEFAULT for groups without a toggle. */
+  globalRequireApproval?: boolean;
 }) {
   const qc = useQueryClient();
   const saveFn = useServerFn(saveGroupProfile);
-  const [form, setForm] = useState<FormState>(() => profileToForm(profile));
+  const [form, setForm] = useState<FormState>(() => profileToForm(profile, globalRequireApproval));
 
   useEffect(() => {
-    setForm(profileToForm(profile));
+    setForm(profileToForm(profile, globalRequireApproval));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, profile?.updated_at]);
 
@@ -126,6 +133,7 @@ export function GroupProfileEditor({
           reply_when_mentioned: form.replyWhenMentioned,
           reply_to_questions: form.replyToQuestions,
           allow_reactive_posts: form.allowReactive,
+          require_approval: form.requireApproval,
           escalation_rules: form.escalationRules,
           kpis: form.kpis,
           owner_dm: form.ownerDm,
@@ -155,6 +163,22 @@ export function GroupProfileEditor({
               </p>
             </div>
             <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border bg-muted/20 p-3">
+            <div>
+              <p className="text-sm font-medium">Require approval</p>
+              <p className="text-xs text-muted-foreground">
+                {form.requireApproval
+                  ? "ON — everything the bot sends to this group waits for your approval first."
+                  : "OFF — messages to this group send immediately."}{" "}
+                This toggle overrides the global approval setting for this group.
+              </p>
+            </div>
+            <Switch
+              checked={form.requireApproval}
+              onCheckedChange={(v) => set("requireApproval", v)}
+            />
           </div>
 
           <div>

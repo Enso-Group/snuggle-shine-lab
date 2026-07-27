@@ -28,6 +28,8 @@ export type GroupProfileRow = {
   reply_when_mentioned: boolean;
   reply_to_questions: boolean;
   allow_reactive_posts: boolean;
+  /** Per-group approval override; null/absent = follow the global setting. */
+  require_approval?: boolean | null;
   escalation_rules: string | null;
   kpis: string | null;
   owner_dm: string | null;
@@ -136,6 +138,8 @@ export const saveGroupProfile = createServerFn({ method: "POST" })
         reply_when_mentioned: z.boolean().default(true),
         reply_to_questions: z.boolean().default(false),
         allow_reactive_posts: z.boolean().default(false),
+        /** Per-group approval override; omitted = leave as-is. */
+        require_approval: z.boolean().optional(),
         escalation_rules: z.string().max(2000).optional(),
         kpis: z.string().max(1000).optional(),
         owner_dm: z.string().max(40).optional(),
@@ -173,6 +177,23 @@ export const saveGroupProfile = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Per-group approval toggle — separate FENCED write (the column arrives
+    // with the 20260727 migration; a missing column must not fail the save).
+    if (typeof data.require_approval === "boolean") {
+      const { error: apprErr } = await supabaseAdmin
+        .from("group_profiles")
+        .update({ require_approval: data.require_approval } as never)
+        .eq("chat_id", data.chat_id);
+      if (apprErr) {
+        if (/require_approval/.test(apprErr.message) && /column/i.test(apprErr.message)) {
+          throw new Error(
+            "The per-group approval toggle needs the migration — apply supabase/migrations/20260727090000_group_require_approval.sql in Lovable first.",
+          );
+        }
+        throw new Error(apprErr.message);
+      }
+      (row as unknown as Record<string, unknown>).require_approval = data.require_approval;
+    }
     return row as unknown as GroupProfileRow;
   });
 

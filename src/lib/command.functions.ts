@@ -25,7 +25,7 @@ const TOOLS = [
     function: {
       name: "update_group_profile",
       description:
-        "Apply changes to the group's management profile. Pass ONLY the fields to change. Allowed fields: enabled, instructions, purpose, audience, tone, language, content_pillars (string[]), posting_schedule ([{day:0-6|null,time:'HH:MM',pillar?,prompt?}]), rules (string[]), forbidden_topics (string[]), moderation ({enabled,delete_violations,warn_limit,remove_limit}), welcome ({enabled,hint}), reply_when_mentioned, reply_to_questions, allow_reactive_posts, escalation_rules, kpis. Content fields (rules, instructions, pillars…) should be written in the group's language.",
+        "Apply changes to the group's management profile. Pass ONLY the fields to change. Allowed fields: enabled, instructions, purpose, audience, tone, language, content_pillars (string[]), posting_schedule ([{day:0-6|null,time:'HH:MM',pillar?,prompt?}]), rules (string[]), forbidden_topics (string[]), moderation ({enabled,delete_violations,warn_limit,remove_limit}), welcome ({enabled,hint}), reply_when_mentioned, reply_to_questions, allow_reactive_posts, require_approval (per-group approval toggle: true = every send to this group waits for human approval, false = sends immediately — overrides the global setting), escalation_rules, kpis. Content fields (rules, instructions, pillars…) should be written in the group's language.",
       parameters: {
         type: "object",
         properties: { patch: { type: "object", description: "Partial profile object" } },

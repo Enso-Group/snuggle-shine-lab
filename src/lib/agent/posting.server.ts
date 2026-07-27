@@ -632,8 +632,10 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     if (!final && !poll) throw new Error("post generation returned neither text nor poll");
     const bodyForRecord = [final, poll ? pollAsHistoryText(poll) : ""].filter(Boolean).join("\n\n");
 
-    // Approval gate.
-    if (settings.require_approval_all) {
+    // Approval gate — the GROUP's toggle is the only thing that matters for
+    // this group; the global setting applies only when the group never set one.
+    const { groupRequiresApproval } = await import("./groups.server");
+    if (groupRequiresApproval(profile, settings)) {
       const { data: adminRole } = await supabase
         .from("user_roles")
         .select("user_id")

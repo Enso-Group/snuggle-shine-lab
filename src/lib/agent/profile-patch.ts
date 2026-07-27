@@ -24,6 +24,7 @@ export type ProfilePatch = Partial<{
   reply_when_mentioned: boolean;
   reply_to_questions: boolean;
   allow_reactive_posts: boolean;
+  require_approval: boolean;
   escalation_rules: string;
   kpis: string;
 }>;
@@ -60,7 +61,8 @@ export function sanitizeProfilePatch(raw: unknown): PatchResult {
       case "enabled":
       case "reply_when_mentioned":
       case "reply_to_questions":
-      case "allow_reactive_posts": {
+      case "allow_reactive_posts":
+      case "require_approval": {
         if (typeof value === "boolean") {
           patch[key] = value;
           applied.push(key);

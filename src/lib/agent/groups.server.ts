@@ -39,10 +39,29 @@ export type GroupProfile = {
   reply_when_mentioned: boolean;
   reply_to_questions: boolean;
   allow_reactive_posts: boolean;
+  /**
+   * Per-group approval override. true = every send to this group waits for
+   * approval; false = sends go out immediately; null = never set (or column
+   * not migrated yet) → the global require_approval_all applies. An explicit
+   * value fully overrides the global setting in BOTH directions.
+   */
+  require_approval: boolean | null;
   escalation_rules: string | null;
   kpis: string | null;
   owner_dm: string | null;
 };
+
+/**
+ * THE single decision point for "does a send to this group need approval".
+ * The group's explicit toggle is the only thing that matters for the group;
+ * the global setting is only the fallback for groups that never set one.
+ */
+export function groupRequiresApproval(
+  profile: { require_approval?: boolean | null } | null | undefined,
+  settings: { require_approval_all: boolean },
+): boolean {
+  return profile?.require_approval ?? settings.require_approval_all;
+}
 
 function toStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : [];
@@ -70,6 +89,7 @@ function rowToProfile(data: Record<string, unknown>): GroupProfile {
     reply_when_mentioned: data.reply_when_mentioned !== false,
     reply_to_questions: data.reply_to_questions === true,
     allow_reactive_posts: data.allow_reactive_posts === true,
+    require_approval: typeof data.require_approval === "boolean" ? data.require_approval : null,
     escalation_rules: (data.escalation_rules as string) ?? null,
     kpis: (data.kpis as string) ?? null,
     owner_dm: (data.owner_dm as string) ?? null,
