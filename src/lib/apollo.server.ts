@@ -8,11 +8,14 @@
 // fails a research attempt — the other sources still answer.
 //
 // Configure with the APOLLO_API_KEY secret (Lovable Settings → Secrets;
-// .env.local locally). Endpoint: POST https://api.apollo.io/v1/mixed_people_search
-// with the key in the `x-api-key` header — the same integration the sourcing
-// feature uses.
+// .env.local locally). Endpoint per Apollo's docs (verified 2026-07-28):
+// POST https://api.apollo.io/api/v1/mixed_people/api_search with the key in
+// the `x-api-key` header. The old guessed path (/v1/mixed_people_search)
+// does not exist — it 404'd in production. NOTES from the docs: this search
+// endpoint needs a MASTER API key, consumes no credits, and never returns
+// emails/phone numbers (those need the separate enrichment endpoints).
 
-const APOLLO_SEARCH_URL = "https://api.apollo.io/v1/mixed_people_search";
+export const APOLLO_SEARCH_URL = "https://api.apollo.io/api/v1/mixed_people/api_search";
 const REQUEST_TIMEOUT_MS = 12_000;
 
 export type ApolloPerson = {
@@ -35,7 +38,7 @@ export function isApolloConfigured(): boolean {
  * shown to the manager when a research surface reports its tool status.
  */
 export const APOLLO_SETUP_HINT =
-  "Apollo is not connected: set the APOLLO_API_KEY secret (Lovable → Settings → Secrets; get the key at app.apollo.io → Settings → Integrations → API). The endpoint (api.apollo.io/v1/mixed_people_search) is already wired in.";
+  "Apollo is not connected: set the APOLLO_API_KEY secret (Lovable → Settings → Secrets; create a MASTER API key at app.apollo.io → Settings → Integrations → API — the people-search endpoint rejects non-master keys). The endpoint (api.apollo.io/api/v1/mixed_people/api_search) is already wired in.";
 
 /** Raw Apollo person — only the fields we read. */
 type RawApolloPerson = {

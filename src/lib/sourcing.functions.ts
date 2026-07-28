@@ -37,22 +37,20 @@ function makeSignal(ms: number): AbortSignal {
 // ---------------------------------------------------------------------------
 // Apollo.io people search — uses reveal_personal_emails + reveal_phone_number
 // ---------------------------------------------------------------------------
-async function apolloSearch(
-  name: string,
-  company?: string,
-): Promise<Partial<EnrichedCandidate>> {
+async function apolloSearch(name: string, company?: string): Promise<Partial<EnrichedCandidate>> {
   const key = process.env.APOLLO_API_KEY;
   if (!key) return {};
   try {
-    const res = await fetch("https://api.apollo.io/v1/mixed_people_search", {
+    // Correct path per Apollo docs (the old /v1/mixed_people_search 404'd).
+    // NOTE: the search endpoint never returns emails/phones — the reveal_*
+    // params belong to the enrichment endpoints and are ignored here.
+    const res = await fetch("https://api.apollo.io/api/v1/mixed_people/api_search", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key },
       body: JSON.stringify({
         q_keywords: [name, company].filter(Boolean).join(" "),
         person_names: [name],
         ...(company ? { organization_names: [company] } : {}),
-        reveal_personal_emails: true,
-        reveal_phone_number: true,
         page: 1,
         per_page: 5,
       }),
@@ -214,10 +212,12 @@ export const enrichCandidate = createServerFn({ method: "POST" })
 export const scanGroupsForCandidates = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
   .inputValidator((d: unknown) =>
-    z.object({
-      description: z.string().min(3).max(2000),
-      groupIds: z.array(z.string()).optional(),
-    }).parse(d),
+    z
+      .object({
+        description: z.string().min(3).max(2000),
+        groupIds: z.array(z.string()).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }): Promise<RawCandidate[]> => {
     const { listGroups, listMessagesByChatId } = await import("./whapi.server");
@@ -255,7 +255,9 @@ export const scanGroupsForCandidates = createServerFn({ method: "POST" })
         const lines = (g.messages ?? [])
           .map((m: any) => {
             // Whapi message format: from_name is the sender's display name
-            const body = String(m.text?.body ?? m.body ?? m.caption ?? "").trim().slice(0, 300);
+            const body = String(m.text?.body ?? m.body ?? m.caption ?? "")
+              .trim()
+              .slice(0, 300);
             if (!body) return null;
             const sender = m.from_me
               ? "Me"
@@ -321,7 +323,10 @@ ${groupBlocks.slice(0, 15000)}`;
 
     try {
       // Strip possible markdown fences
-      const clean = aiReply.replace(/```json?\s*/gi, "").replace(/```/g, "").trim();
+      const clean = aiReply
+        .replace(/```json?\s*/gi, "")
+        .replace(/```/g, "")
+        .trim();
       const jsonMatch = clean.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
         console.warn("[sourcing] AI returned no JSON array. Raw:", aiReply.slice(0, 400));
@@ -340,7 +345,9 @@ ${groupBlocks.slice(0, 15000)}`;
           role: c.role ? String(c.role).trim() : undefined,
           groupName: String(c.groupName || ""),
           groupId: String(c.groupId || ""),
-          sourceMessage: String(c.sourceMessage || "").trim().slice(0, 120),
+          sourceMessage: String(c.sourceMessage || "")
+            .trim()
+            .slice(0, 120),
         }));
       console.log("[sourcing] found", results.length, "candidates");
       return results;

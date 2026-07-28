@@ -249,7 +249,9 @@ export const askAboutPerson = createServerFn({ method: "POST" })
       (async () => {
         const { isTavilyConfigured, tavilySearch } = await import("@/lib/tavily.server");
         if (!isTavilyConfigured()) throw new Error("TAVILY_API_KEY not configured");
-        return tavilySearch(researchQuery, { maxResults: 5, timeoutMs: 10_000, budgetMs: 14_000 });
+        // Dashboard call — it can afford a patient search (a 10s timeout hit
+        // live 2026-07-28 while Tavily was slow; the fn's own wall is ~60s).
+        return tavilySearch(researchQuery, { maxResults: 5, timeoutMs: 15_000, budgetMs: 20_000 });
       })(),
       (async () => {
         const { isApifyConfigured, xSearch } = await import("@/lib/apify-x.server");

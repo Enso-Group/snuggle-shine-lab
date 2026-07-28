@@ -265,6 +265,191 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             }
           }
 
+          // ?probe=researchdiag — direct production test calls for the whole
+          // research stack: per tool, the EXACT request (URL, key present —
+          // never the key itself), raw status, latency and a body snippet.
+          // For Apollo the old wrong path is probed too so the 404 evidence
+          // is on record next to the fixed path's result. Throttled to one
+          // real run per 10 minutes (unauthenticated endpoint, paid APIs).
+          if (probeParam === "researchdiag") {
+            const MARKER = "Research diag v1";
+            try {
+              const { data: recent } = await supabase
+                .from("bot_decisions")
+                .select("created_at, data")
+                .eq("stage", "config")
+                .like("summary", `${MARKER}%`)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (recent && Date.now() - new Date(recent.created_at).getTime() < 10 * 60_000) {
+                probe = { throttled: true, last_at: recent.created_at, last: recent.data };
+              } else {
+                const diag: Record<string, unknown> = {};
+                // --- Tavily: one direct call, generous timeout, measured ---
+                {
+                  const url = "https://api.tavily.com/search";
+                  const keyPresent = !!process.env.TAVILY_API_KEY;
+                  const t0 = Date.now();
+                  if (!keyPresent) {
+                    diag.tavily = {
+                      url,
+                      key_present: false,
+                      error: "TAVILY_API_KEY not set in production",
+                    };
+                  } else {
+                    try {
+                      const ctrl = new AbortController();
+                      const timer = setTimeout(() => ctrl.abort(), 20_000);
+                      const res = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${process.env.TAVILY_API_KEY}`,
+                        },
+                        body: JSON.stringify({
+                          query: "Gigi Levy-Weiss NFX investor",
+                          search_depth: "basic",
+                          max_results: 5,
+                          include_answer: true,
+                          include_images: true,
+                          include_image_descriptions: true,
+                        }),
+                        signal: ctrl.signal,
+                      });
+                      const bodyText = await res.text();
+                      clearTimeout(timer);
+                      let parsed: { results?: unknown[]; images?: unknown[]; answer?: unknown } =
+                        {};
+                      try {
+                        parsed = JSON.parse(bodyText);
+                      } catch {
+                        /* snippet below carries the evidence */
+                      }
+                      diag.tavily = {
+                        url,
+                        key_present: true,
+                        status: res.status,
+                        ms: Date.now() - t0,
+                        results: Array.isArray(parsed.results) ? parsed.results.length : null,
+                        images: Array.isArray(parsed.images) ? parsed.images.length : null,
+                        has_answer: typeof parsed.answer === "string" && !!parsed.answer,
+                        top_result:
+                          Array.isArray(parsed.results) && parsed.results[0]
+                            ? {
+                                title: String(
+                                  (parsed.results[0] as { title?: unknown }).title ?? "",
+                                ).slice(0, 120),
+                                url: String((parsed.results[0] as { url?: unknown }).url ?? ""),
+                              }
+                            : null,
+                        ...(res.ok ? {} : { body_snippet: bodyText.slice(0, 300) }),
+                      };
+                    } catch (e) {
+                      diag.tavily = {
+                        url,
+                        key_present: true,
+                        ms: Date.now() - t0,
+                        error:
+                          (e as Error)?.name === "AbortError"
+                            ? "timed out after 20s"
+                            : String((e as Error)?.message ?? e).slice(0, 200),
+                      };
+                    }
+                  }
+                }
+                // --- Apollo: fixed path AND the old wrong path, side by side ---
+                {
+                  const keyPresent = !!process.env.APOLLO_API_KEY;
+                  const attempt = async (url: string): Promise<Record<string, unknown>> => {
+                    const t0 = Date.now();
+                    try {
+                      const ctrl = new AbortController();
+                      const timer = setTimeout(() => ctrl.abort(), 15_000);
+                      const res = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "x-api-key": process.env.APOLLO_API_KEY ?? "",
+                        },
+                        body: JSON.stringify({
+                          q_keywords: "Gigi Levy-Weiss NFX",
+                          person_names: ["Gigi Levy-Weiss"],
+                          page: 1,
+                          per_page: 1,
+                        }),
+                        signal: ctrl.signal,
+                      });
+                      const bodyText = await res.text();
+                      clearTimeout(timer);
+                      let people: unknown[] = [];
+                      try {
+                        const parsed = JSON.parse(bodyText) as { people?: unknown[] };
+                        if (Array.isArray(parsed.people)) people = parsed.people;
+                      } catch {
+                        /* snippet carries it */
+                      }
+                      const first = people[0] as
+                        | { name?: unknown; title?: unknown; organization?: { name?: unknown } }
+                        | undefined;
+                      return {
+                        url,
+                        status: res.status,
+                        ms: Date.now() - t0,
+                        matches: people.length,
+                        first_match: first
+                          ? {
+                              name: String(first.name ?? "").slice(0, 80),
+                              title: String(first.title ?? "").slice(0, 120),
+                              company: String(first.organization?.name ?? "").slice(0, 80),
+                            }
+                          : null,
+                        ...(res.ok ? {} : { body_snippet: bodyText.slice(0, 300) }),
+                      };
+                    } catch (e) {
+                      return {
+                        url,
+                        ms: Date.now() - t0,
+                        error:
+                          (e as Error)?.name === "AbortError"
+                            ? "timed out after 15s"
+                            : String((e as Error)?.message ?? e).slice(0, 200),
+                      };
+                    }
+                  };
+                  if (!keyPresent) {
+                    diag.apollo = {
+                      key_present: false,
+                      error: "APOLLO_API_KEY not set in production",
+                    };
+                  } else {
+                    const { APOLLO_SEARCH_URL } = await import("@/lib/apollo.server");
+                    diag.apollo = {
+                      key_present: true,
+                      fixed_path: await attempt(APOLLO_SEARCH_URL),
+                      old_wrong_path: await attempt("https://api.apollo.io/v1/mixed_people_search"),
+                    };
+                  }
+                }
+                await supabase.from("bot_decisions").insert({
+                  trigger: "scheduled",
+                  stage: "config",
+                  status: "ok",
+                  summary: `${MARKER}: direct Tavily + Apollo test calls from production`,
+                  data: diag,
+                });
+                probe = diag;
+              }
+            } catch (e) {
+              probe = {
+                research_diag: {
+                  ok: false,
+                  error: String((e as Error)?.message ?? e).slice(0, 300),
+                },
+              };
+            }
+          }
+
           // ?probe=models — read-only: the gateway's LIVE model catalog, the
           // authoritative answer to "which models (image? video?) exist here".
           // Model ids only, no secrets. Also probes one video-model id so the

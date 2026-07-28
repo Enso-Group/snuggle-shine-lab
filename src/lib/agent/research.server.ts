@@ -42,10 +42,12 @@ import type {
   Supa,
 } from "./types";
 
-// The answer draft's slice of a worker attempt. Search (≤12s budget incl.
+// The answer draft's slice of a worker attempt. Search (≤14s budget incl.
 // retry) + draft (≤25s) + pacing (≤6s) stays inside the ~60s request wall.
-const SEARCH_TIMEOUT_MS = 7_000;
-const SEARCH_BUDGET_MS = 12_000;
+// 9s per attempt, not 7 — Tavily with include_images was measured slower and
+// a timed-out search costs a whole retry cycle (live 2026-07-28).
+const SEARCH_TIMEOUT_MS = 9_000;
+const SEARCH_BUDGET_MS = 14_000;
 // X/Twitter runs IN PARALLEL with Tavily, so its budget rides inside the same
 // search slice of the wall — it never adds wall time, only breadth.
 const X_SEARCH_TIMEOUT_MS = 10_000;
