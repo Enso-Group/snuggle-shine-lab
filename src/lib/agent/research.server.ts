@@ -8,7 +8,9 @@
 // off, waiting out the anti-ban min-gap, or dead.
 import { isApifyConfigured, xSearch, type XSearchOutcome } from "@/lib/apify-x.server";
 import { callLLM, modelCandidates } from "@/lib/llm.server";
+import { mediaLabel } from "@/lib/media";
 import { isTavilyConfigured, tavilySearch, type TavilySearchOutcome } from "@/lib/tavily.server";
+import type { Json } from "@/integrations/supabase/types";
 import { loadAgentSettings } from "./context.server";
 import { logDecision } from "./decisions.server";
 import { deliverReply } from "./deliver.server";
@@ -211,9 +213,16 @@ async function persistPayload(supabase: Supa, jobId: string, payload: ResearchJo
 }
 
 /** Bodies an already-sent answer could have been recorded under: the pipeline
- * sends part-by-part, the approval flow sends the parts joined. */
-function answerBodyCandidates(parts: string[]): string[] {
-  return [...new Set([parts[0], parts.join("\n\n")])].filter(Boolean);
+ * sends part-by-part, the approval flow sends the parts joined, and a media
+ * send mirrors as caption + "[image: …]" label in one row. */
+function answerBodyCandidates(
+  parts: string[],
+  media?: import("@/lib/media").MediaAttachment | null,
+): string[] {
+  const joined = parts.join("\n\n");
+  const bodies = [parts[0], joined];
+  if (media) bodies.push([joined, mediaLabel(media)].filter(Boolean).join("\n"));
+  return [...new Set(bodies)].filter(Boolean);
 }
 
 /**
@@ -380,7 +389,7 @@ export async function processResearchJob(deps: AgentDeps, job: BotJob): Promise<
       .select("id")
       .eq("conversation_id", job.conversation_id)
       .eq("direction", "outbound")
-      .in("body", answerBodyCandidates(payload.answer_parts))
+      .in("body", answerBodyCandidates(payload.answer_parts, payload.media_attachment))
       .gt("created_at", job.created_at)
       .limit(1);
     if (sent?.length) return { action: "skipped", reason: "answer already delivered" };
@@ -670,6 +679,68 @@ ${kb.block}`
     await persistPayload(supabase, job.id, payload);
   }
 
+  // --- Media-from-search: when the person asked for a real photo/video/file,
+  // try to deliver the ACTUAL file the research surfaced (Tavily image
+  // results, tweet media, direct file links) — downloaded, byte-validated and
+  // re-hosted before it is ever attached. Runs at most once per job
+  // (media_checked survives retries/deferrals); a failed lookup just means a
+  // text answer, never a broken send.
+  {
+    const { detectsMediaRequest, collectMediaCandidates, fetchFirstUsableMedia } =
+      await import("./research-media.server");
+    const askText = `${payload.question} ${payload.source_body}`;
+    if (!payload.media_checked && detectsMediaRequest(askText)) {
+      const t = Date.now();
+      try {
+        const candidates = collectMediaCandidates(
+          search ?? payload.search_results ?? null,
+          xResults ?? payload.x_results ?? null,
+        );
+        const preferKind = /וידאו|וידיאו|סרטון|video|clip/i.test(askText)
+          ? ("video" as const)
+          : /pdf|דוח|דו"ח|מסמך|קובץ|מצגת|document|file|report/i.test(askText)
+            ? ("document" as const)
+            : ("image" as const);
+        const stored = candidates.length
+          ? await fetchFirstUsableMedia(candidates, { budgetMs: 10_000, preferKind })
+          : null;
+        payload.media_checked = true;
+        if (stored) {
+          payload.media_attachment = stored.attachment;
+          payload.media_source = stored.sourceUrl;
+          // The source link is part of the honest caption — appended as its
+          // own closing part unless the answer already carries it, and cached
+          // WITH the answer so crash-retry dedup matches what was sent.
+          if (!parts.some((p) => p.includes(stored.sourceUrl))) {
+            parts = [...parts, stored.sourceUrl];
+          }
+          payload.answer_parts = parts;
+        }
+        await persistPayload(supabase, job.id, payload);
+        logDecision(supabase, {
+          ...base,
+          trigger: "research",
+          stage: "research",
+          summary: stored
+            ? `Found a real ${stored.attachment.kind} in the research results — validated and attached to the answer`
+            : `Media was requested but no usable file survived validation (${candidates.length} candidate(s)) — answering with text and links only`,
+          data: {
+            candidates: candidates.length,
+            attached: stored ? stored.attachment.kind : null,
+            source_url: stored?.sourceUrl ?? null,
+            storage_path: stored?.attachment.storage_path ?? null,
+          },
+          duration_ms: Date.now() - t,
+        });
+      } catch (e) {
+        // Never let media plumbing kill a drafted answer.
+        payload.media_checked = true;
+        await persistPayload(supabase, job.id, payload).catch(() => {});
+        console.warn("[research] media lookup failed:", e);
+      }
+    }
+  }
+
   const joined = parts.join("\n\n");
 
   // Re-load the conversation before the guard: sends since this attempt
@@ -702,7 +773,10 @@ ${kb.block}`
           body: joined,
           source: "research",
           status: "pending",
-        })
+          // A found real-media file rides on the approval — approve sends it
+          // as a WhatsApp image/video/document with the text as caption.
+          ...(payload.media_attachment ? { media: payload.media_attachment } : {}),
+        } as never)
         .select("id")
         .single();
       // A failed insert must THROW so the queue retries in seconds — marking
@@ -790,10 +864,44 @@ ${kb.block}`
 
   // --- Deliver ---
   const ctx = researchCtx(settings, freshConv, payload);
-  const delivery = await deliverReply(supabase, deps.whapi, ctx, parts, {
-    humanPacing: deps.humanPacing,
-    botName: settings.bot_name,
-  });
+  let delivery: { parts: string[]; sentMessageIds: Array<string | null> };
+  if (payload.media_attachment) {
+    // Found-media answer: ONE WhatsApp media message with the whole answer
+    // (incl. the source link) as its caption — mirrors the reply pipeline's
+    // image send, which bypasses text-only deliverReply.
+    await deps.whapi.presence(job.chat_id, "typing", 3).catch(() => {});
+    const { sendMediaMessage } = await import("@/lib/media.server");
+    const sendRes = (await sendMediaMessage(
+      job.chat_id,
+      payload.media_attachment,
+      joined || undefined,
+    )) as { message?: { id?: string } };
+    const whapiId = sendRes?.message?.id ?? null;
+    await supabase.from("messages").insert({
+      conversation_id: job.conversation_id,
+      whapi_message_id: whapiId,
+      direction: "outbound",
+      sender_name: settings.bot_name || "Bot",
+      sender_id: "bot",
+      body: [joined, mediaLabel(payload.media_attachment)].filter(Boolean).join("\n"),
+      raw: sendRes as Json,
+    });
+    const { recordOutbound } = await import("@/lib/anti-ban.server");
+    await recordOutbound(
+      supabase,
+      job.conversation_id,
+      joined || mediaLabel(payload.media_attachment),
+    );
+    delivery = {
+      parts: [joined || mediaLabel(payload.media_attachment)],
+      sentMessageIds: [whapiId],
+    };
+  } else {
+    delivery = await deliverReply(supabase, deps.whapi, ctx, parts, {
+      humanPacing: deps.humanPacing,
+      botName: settings.bot_name,
+    });
+  }
   const latencyS = Math.round((Date.now() - payload.promised_at) / 1000);
   const deadlineMet = Date.now() <= payload.deadline_at;
   logDecision(supabase, {
@@ -876,7 +984,7 @@ export async function sendOverdueResearchInterims(
             .select("id")
             .eq("conversation_id", row.conversation_id)
             .eq("direction", "outbound")
-            .in("body", answerBodyCandidates(payload.answer_parts))
+            .in("body", answerBodyCandidates(payload.answer_parts, payload.media_attachment))
             .gt("created_at", row.created_at)
             .limit(1)
         ).data?.length;
@@ -963,7 +1071,7 @@ export async function sendOverdueResearchInterims(
         .select("id")
         .eq("conversation_id", row.conversation_id)
         .eq("direction", "outbound")
-        .in("body", answerBodyCandidates(payload.answer_parts))
+        .in("body", answerBodyCandidates(payload.answer_parts, payload.media_attachment))
         .gt("created_at", row.created_at)
         .limit(1);
       if (sentRow?.length) continue;

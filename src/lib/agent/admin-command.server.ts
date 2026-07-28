@@ -385,7 +385,8 @@ function buildTools(
       type: "function",
       function: {
         name: "reject_pending",
-        description: "Reject a pending item by its short id — nothing is sent, linked post cancelled.",
+        description:
+          "Reject a pending item by its short id — nothing is sent, linked post cancelled.",
         parameters: {
           type: "object",
           properties: { id: { type: "string" } },
@@ -426,11 +427,27 @@ function buildTools(
       function: {
         name: "web_research",
         description:
-          "Live web search (Tavily) for questions that need fresh outside information. Returns sources; cite the URLs you use.",
+          "Live web search (Tavily) for questions that need fresh outside information. Returns sources AND related image URLs; cite the URLs you use. To actually attach a found image to a post, call attach_web_media.",
         parameters: {
           type: "object",
           properties: { query: { type: "string" } },
           required: ["query"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "attach_web_media",
+        description:
+          "Search the web (Tavily images + X media) for a REAL photo/video/PDF matching the query, download and validate it, and attach it to the group's most recent unsent post — the post then goes out as media with the text as caption, with the source link appended. Use when the admin wants a real image from the web rather than an AI-generated one. Honest failure: reports when nothing usable was found.",
+        parameters: {
+          type: "object",
+          properties: {
+            group: { type: "string" },
+            query: { type: "string", description: "What to search for" },
+          },
+          required: ["group", "query"],
         },
       },
     },
@@ -442,15 +459,14 @@ function buildTools(
   ): Promise<{ chat_id: string; name: string | null } | { error: string }> {
     const q = String(ref ?? "").trim();
     if (!q) return { error: "empty group reference" };
-    const { data: profiles } = await supabase
-      .from("group_profiles")
-      .select("chat_id, name");
+    const { data: profiles } = await supabase.from("group_profiles").select("chat_id, name");
     const all = profiles ?? [];
-    const exact = all.find((g) => g.chat_id === q || (g.name ?? "").toLowerCase() === q.toLowerCase());
+    const exact = all.find(
+      (g) => g.chat_id === q || (g.name ?? "").toLowerCase() === q.toLowerCase(),
+    );
     if (exact) return exact;
     const matches = all.filter(
-      (g) =>
-        g.chat_id.includes(q) || (g.name ?? "").toLowerCase().includes(q.toLowerCase()),
+      (g) => g.chat_id.includes(q) || (g.name ?? "").toLowerCase().includes(q.toLowerCase()),
     );
     if (matches.length === 1) return matches[0];
     if (matches.length === 0) {
@@ -463,7 +479,9 @@ function buildTools(
 
   /** Resolve a short approval id (8+ chars) to the full pending row id. */
   async function resolveApprovalId(ref: string): Promise<string | { error: string }> {
-    const q = String(ref ?? "").trim().toLowerCase();
+    const q = String(ref ?? "")
+      .trim()
+      .toLowerCase();
     if (q.length < 6) return { error: "id too short — use at least the 8 leading characters" };
     const { data: pending } = await supabase
       .from("scheduled_approvals")
@@ -505,15 +523,17 @@ function buildTools(
             .select("id", { count: "exact", head: true })
             .eq("status", "error")
             .gte("created_at", dayAgo),
-          supabase
-            .from("group_profiles")
-            .select("chat_id, enabled"),
+          supabase.from("group_profiles").select("chat_id, enabled"),
         ]);
         let connection: unknown = { connected: false };
         try {
           const { checkHealth } = await import("@/lib/whapi.server");
           const health = await checkHealth();
-          connection = { ok: health.ok, status: health.status ?? null, user: health.userName ?? null };
+          connection = {
+            ok: health.ok,
+            status: health.status ?? null,
+            user: health.userName ?? null,
+          };
         } catch (e) {
           connection = { connected: false, error: String((e as Error)?.message ?? e) };
         }
@@ -619,10 +639,14 @@ function buildTools(
           scheduled_for: new Date().toISOString(),
         });
         if (error) return JSON.stringify({ ok: false, error: error.message });
-        logAction("plan_post", `planned a post in ${group.name ?? group.chat_id}: ${prompt.slice(0, 100)}`, {
-          chat_id: group.chat_id,
-          prompt,
-        });
+        logAction(
+          "plan_post",
+          `planned a post in ${group.name ?? group.chat_id}: ${prompt.slice(0, 100)}`,
+          {
+            chat_id: group.chat_id,
+            prompt,
+          },
+        );
         return JSON.stringify({
           ok: true,
           note: "post queued — the engine publishes it within ~1 minute (or routes it to Approvals)",
@@ -786,6 +810,112 @@ function buildTools(
         return JSON.stringify(outcome).slice(0, 10_000);
       }
 
+      case "attach_web_media": {
+        const group = await resolveGroup(String(args.group ?? ""));
+        if ("error" in group) return JSON.stringify(group);
+        const query = String(args.query ?? "").trim();
+        if (!query) return JSON.stringify({ ok: false, error: "empty query" });
+        const { data: post } = await supabase
+          .from("planned_posts")
+          .select("id, prompt, body, status")
+          .eq("group_chat_id", group.chat_id)
+          .in("status", ["planned", "queued_approval"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!post) {
+          return JSON.stringify({
+            ok: false,
+            error: "no unsent post to attach media to — plan_post first",
+          });
+        }
+        // Search both sources, then download+validate+re-host the first real
+        // file. xSearch failure is additive-only, exactly like the research
+        // engine treats it.
+        const { isTavilyConfigured, tavilySearch } = await import("@/lib/tavily.server");
+        const { isApifyConfigured, xSearch } = await import("@/lib/apify-x.server");
+        if (!isTavilyConfigured()) {
+          return JSON.stringify({ ok: false, error: "TAVILY_API_KEY not configured" });
+        }
+        const [tv, xs] = await Promise.allSettled([
+          tavilySearch(query, { maxResults: 5, timeoutMs: 8_000, budgetMs: 10_000 }),
+          isApifyConfigured()
+            ? xSearch(query, { maxItems: 8, timeoutMs: 9_000, budgetMs: 10_000 })
+            : Promise.resolve(null),
+        ]);
+        const { collectMediaCandidates, fetchFirstUsableMedia } =
+          await import("./research-media.server");
+        const candidates = collectMediaCandidates(
+          tv.status === "fulfilled" ? tv.value : null,
+          xs.status === "fulfilled" ? xs.value : null,
+        );
+        const preferKind = /וידאו|וידיאו|סרטון|video|clip/i.test(query)
+          ? ("video" as const)
+          : /pdf|דוח|דו"ח|מסמך|document|report/i.test(query)
+            ? ("document" as const)
+            : ("image" as const);
+        const stored = candidates.length
+          ? await fetchFirstUsableMedia(candidates, { budgetMs: 12_000, preferKind })
+          : null;
+        if (!stored) {
+          return JSON.stringify({
+            ok: false,
+            found: false,
+            candidates_tried: candidates.length,
+            note: "no usable real media survived download+validation — tell the admin honestly; generate_post_image is the AI alternative",
+          });
+        }
+        // Attach to the post + mirror to its pending approval; append the
+        // source link to the post body so the caption credits the origin.
+        const appendSource = (body: unknown) => {
+          const b = String(body ?? "").trim();
+          return b && !b.includes(stored.sourceUrl) ? `${b}\n\nמקור: ${stored.sourceUrl}` : b;
+        };
+        const { error } = await supabase
+          .from("planned_posts")
+          .update({
+            media: stored.attachment,
+            ...(post.body ? { body: appendSource(post.body) } : {}),
+            updated_at: new Date().toISOString(),
+          } as never)
+          .eq("id", post.id)
+          .in("status", ["planned", "queued_approval"]);
+        if (error) return JSON.stringify({ ok: false, error: error.message });
+        try {
+          const { data: appr } = await supabase
+            .from("scheduled_approvals")
+            .select("id, body")
+            .eq("planned_post_id", post.id)
+            .eq("status", "pending")
+            .maybeSingle();
+          if (appr) {
+            await supabase
+              .from("scheduled_approvals")
+              .update({ media: stored.attachment, body: appendSource(appr.body) } as never)
+              .eq("id", appr.id);
+          }
+        } catch (e) {
+          console.warn("[admin] approval media mirror failed:", e);
+        }
+        logAction(
+          "attach_web_media",
+          `attached a real ${stored.attachment.kind} from web search to the pending post in ${group.name ?? group.chat_id}`,
+          {
+            chat_id: group.chat_id,
+            planned_post_id: post.id,
+            query,
+            source_url: stored.sourceUrl,
+            storage_path: stored.attachment.storage_path,
+          },
+        );
+        return JSON.stringify({
+          ok: true,
+          kind: stored.attachment.kind,
+          source_url: stored.sourceUrl,
+          note: "real media downloaded, validated and attached — the post will send it with the text as caption",
+        });
+      }
+
       default:
         return JSON.stringify({ error: "unknown tool" });
     }
@@ -806,5 +936,8 @@ export async function supersedeAdminJobsForChat(supabase: Supa, chatId: string):
     .eq("chat_id", chatId)
     .eq("kind", ADMIN_COMMAND_JOB_KIND)
     .eq("status", "pending");
-  await supersedeJobsByIds(supabase, (data ?? []).map((r) => r.id));
+  await supersedeJobsByIds(
+    supabase,
+    (data ?? []).map((r) => r.id),
+  );
 }

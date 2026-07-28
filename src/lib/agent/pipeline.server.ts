@@ -203,6 +203,71 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
   const { loadKnowledge } = await import("./kb.server");
   ctx.kb = await loadKnowledge(supabase, `${message.body} ${intent.intent}`);
 
+  // --- Stage: pre-reply research (live tools, model-flagged) ---
+  // When the intent stage judged the message needs fresh outside information,
+  // Tavily + X run NOW (in parallel, tightly budgeted) and the draft answers
+  // from the results directly — instead of the old only-path of promising to
+  // check and getting back minutes later. Failure or empty results simply
+  // fall through to the normal draft; the open_question machinery remains the
+  // safety net. Results are cached on the job so retries never pay twice.
+  if (
+    intent.web_search &&
+    deps.trigger !== "simulation" &&
+    settings.agent_config?.research_enabled !== false
+  ) {
+    t = Date.now();
+    const cached = p.pre_research?.query === intent.web_search ? p.pre_research : null;
+    try {
+      let tavilyOut = cached?.tavily ?? null;
+      let xOut = cached?.x ?? null;
+      if (!cached) {
+        const { isTavilyConfigured, tavilySearch } = await import("@/lib/tavily.server");
+        const { isApifyConfigured, xSearch } = await import("@/lib/apify-x.server");
+        // Retries run cheap: Tavily only, tighter budget — the attempt must
+        // fit the request wall together with the draft.
+        const cheap = job.attempts >= 2;
+        const [tv, xs] = await Promise.allSettled([
+          isTavilyConfigured()
+            ? tavilySearch(intent.web_search, {
+                maxResults: 5,
+                timeoutMs: cheap ? 5_000 : 8_000,
+                budgetMs: cheap ? 6_000 : 10_000,
+              })
+            : Promise.resolve(null),
+          !cheap && isApifyConfigured()
+            ? xSearch(intent.web_search, { maxItems: 8, timeoutMs: 9_000, budgetMs: 10_000 })
+            : Promise.resolve(null),
+        ]);
+        tavilyOut = tv.status === "fulfilled" ? tv.value : null;
+        xOut = xs.status === "fulfilled" ? xs.value : null;
+        // Cache immediately (awaited): a wall-kill from here on costs the
+        // retry nothing — it drafts straight from the cached results.
+        p.pre_research = { query: intent.web_search, tavily: tavilyOut, x: xOut };
+        await supabase
+          .from("bot_jobs")
+          .update({ payload: p, updated_at: new Date().toISOString() })
+          .eq("id", job.id);
+      }
+      const { buildResearchBlock, buildXBlock } = await import("./research");
+      const block = `${buildResearchBlock(tavilyOut)}${buildXBlock(xOut)}`;
+      if (block) ctx.research = block;
+      logDecision(supabase, {
+        ...base,
+        stage: "research",
+        summary: `Pre-reply research ran for "${intent.web_search.slice(0, 100)}" — ${tavilyOut?.results.length ?? 0} web result(s), ${xOut?.results.length ?? 0} X post(s)${cached ? " (cached from a previous attempt)" : ""}`,
+        data: {
+          query: intent.web_search,
+          tavily_results: tavilyOut?.results.length ?? 0,
+          x_results: xOut?.results.length ?? 0,
+          cached: !!cached,
+        },
+        duration_ms: Date.now() - t,
+      });
+    } catch (e) {
+      console.warn("[pipeline] pre-reply research failed (drafting without it):", e);
+    }
+  }
+
   // --- Stage: draft (the ONE strong call — quality rules live in its prompt;
   // the old separate critique call cost a second strong pass per cycle and is
   // gone from the DM path) ---
@@ -438,6 +503,25 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     isDmChatId(job.chat_id) &&
     deps.trigger !== "simulation"
   ) {
+    // Wall guard: generation legitimately takes 10-30s. When this attempt has
+    // already burned most of the request wall (slow draft, research round), a
+    // generation started now dies wall-killed with NO catch path — the job
+    // rots under its claim lock and fails 3/3 as "worker lock expired" (live
+    // 2026-07-26). Defer instead: the attempt is refunded and the next tick
+    // reruns the cycle with a fresh wall.
+    if (Date.now() - processStartAt > 28_000) {
+      logDecision(supabase, {
+        ...base,
+        stage: "image",
+        status: "skip",
+        summary: `Image generation needs a fresh request — ${Math.round((Date.now() - processStartAt) / 1000)}s of the wall already spent; deferring the job`,
+      });
+      return {
+        action: "deferred",
+        reason: "image gen needs a fresh wall",
+        runAfterMs: Date.now() + 1_000,
+      };
+    }
     t = Date.now();
     try {
       const { generateImage } = await import("@/lib/image-gen.server");

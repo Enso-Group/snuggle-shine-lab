@@ -50,6 +50,7 @@ export async function analyzeIntent(ctx: AgentContext): Promise<IntentAnalysis> 
     escalate_reason: null,
     context_relation: "continuation",
     context_reason: null,
+    web_search: null,
   };
 
   // DM after a real gap: same fast-model call also judges whether the message
@@ -60,8 +61,9 @@ export async function analyzeIntent(ctx: AgentContext): Promise<IntentAnalysis> 
   const gapText = judgeGap ? gapDescription(ctx.gapSinceLastMs!) : "";
 
   const system = `אתה מנתח הודעות נכנסות בוואטסאפ עבור צוות עסקי. נתח את ההודעה האחרונה בהקשר השיחה והחזר JSON בלבד, בלי טקסט נוסף, במבנה:
-{"intent": "מה האדם באמת רוצה, במשפט קצר", "language": "קוד שפה של ההודעה האחרונה: he/en/ru/ar/...", "urgency": "low/normal/high", "sentiment": "מצב רגשי במילה-שתיים", "goal": "מה איש מקצוע מצטיין היה מנסה להשיג בתשובה הזו", "escalate": true/false, "escalate_reason": "אם escalate=true — סיבה קצרה, אחרת null"${judgeGap ? `, "context_relation": "continuation" או "fresh", "context_reason": "short English reason"` : ""}}
-escalate=true רק אם יש איום משפטי, דרישת החזר כספי, נושא רגיש/משברי, או בקשה מפורשת לדבר עם בן אדם.${
+{"intent": "מה האדם באמת רוצה, במשפט קצר", "language": "קוד שפה של ההודעה האחרונה: he/en/ru/ar/...", "urgency": "low/normal/high", "sentiment": "מצב רגשי במילה-שתיים", "goal": "מה איש מקצוע מצטיין היה מנסה להשיג בתשובה הזו", "escalate": true/false, "escalate_reason": "אם escalate=true — סיבה קצרה, אחרת null", "web_search": null או "שאילתת חיפוש קצרה"${judgeGap ? `, "context_relation": "continuation" או "fresh", "context_reason": "short English reason"` : ""}}
+escalate=true רק אם יש איום משפטי, דרישת החזר כספי, נושא רגיש/משברי, או בקשה מפורשת לדבר עם בן אדם.
+web_search: מלא שאילתה רק כשתשובה טובה דורשת מידע עדכני או חיצוני שכנראה לא נמצא אצלנו — חדשות, נתונים עדכניים, מידע על אדם/חברה/מוצר חיצוניים, בקשה לתמונה/סרטון/קובץ אמיתיים מהרשת. כתוב את השאילתה בשפה שבה המידע כנראה קיים ברשת. לשיחת חולין, שאלות על העסק שלנו או המשך שיחה רגיל — null.${
     judgeGap
       ? `
 context_relation — ההודעה החדשה הגיעה אחרי הפסקה של ${gapText}. שפוט לפי התוכן וההפסקה יחד:
@@ -106,6 +108,10 @@ ${judgeGap ? `\n(עברו ${gapText} מאז ההודעה האחרונה בשיח
       // default when the model omits the field or wasn't asked.
       context_relation: judgeGap && parsed.context_relation === "fresh" ? "fresh" : "continuation",
       context_reason: judgeGap && parsed.context_reason ? String(parsed.context_reason) : null,
+      web_search:
+        typeof parsed.web_search === "string" && parsed.web_search.trim()
+          ? parsed.web_search.trim().slice(0, 300)
+          : null,
     };
   } catch (e) {
     console.warn(
@@ -219,6 +225,9 @@ export async function draftReply(
     groupPromptBlock(ctx.groupProfile) +
     personPromptBlock(ctx.person) +
     buildGroundingRules(ctx.kb ?? { block: "", count: 0 }) +
+    // Live pre-reply research (already carries its own usage rules) — when
+    // present, the draft answers FROM it now instead of promising to check.
+    (ctx.research ?? "") +
     gapBlock +
     `
 

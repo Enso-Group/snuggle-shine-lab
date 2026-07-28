@@ -18,6 +18,12 @@ const BUDGET_MS = 12_000;
 // Bounds the per-search cost as well as the response size.
 const DEFAULT_MAX_TWEETS = 10;
 
+export type XTweetMedia = {
+  type: "photo" | "video";
+  /** Direct media URL (photo file / video variant) — a candidate for sending. */
+  url: string;
+};
+
 export type XTweet = {
   text: string;
   url: string;
@@ -27,6 +33,9 @@ export type XTweet = {
   date: string | null;
   likes: number | null;
   retweets: number | null;
+  /** Photos/videos attached to the tweet — feed the media-from-search path.
+   * Optional: cached payloads and older fixtures predate the field. */
+  media?: XTweetMedia[];
 };
 
 export type XSearchOutcome = {
@@ -47,7 +56,58 @@ type RawTweet = {
   likeCount?: unknown;
   retweetCount?: unknown;
   author?: { userName?: unknown; name?: unknown } | null;
+  media?: unknown;
+  photos?: unknown;
+  videos?: unknown;
+  extendedEntities?: { media?: unknown } | null;
 };
+
+/**
+ * Pull attached photos/videos out of a raw tweet. The actor has shipped
+ * several shapes over time (media[] / photos[] / videos[] /
+ * extendedEntities.media[] with media_url_https + video_info.variants) —
+ * each is read best-effort; anything unrecognized is simply skipped.
+ * Exported for unit tests.
+ */
+export function parseTweetMedia(t: RawTweet): XTweetMedia[] {
+  const out: XTweetMedia[] = [];
+  const push = (type: "photo" | "video", url: unknown) => {
+    const u = String(url ?? "");
+    if (/^https?:\/\//.test(u) && !out.some((m) => m.url === u)) out.push({ type, url: u });
+  };
+  const readEntity = (m: unknown) => {
+    if (!m || typeof m !== "object") return;
+    const e = m as {
+      type?: unknown;
+      media_url_https?: unknown;
+      url?: unknown;
+      video_info?: { variants?: unknown } | null;
+      variants?: unknown;
+    };
+    const variants = (e.video_info?.variants ?? e.variants) as
+      Array<{ url?: unknown; content_type?: unknown; bitrate?: unknown }> | undefined;
+    if (Array.isArray(variants) && variants.length) {
+      // Highest-bitrate mp4 variant is the sendable file.
+      const mp4s = variants
+        .filter((v) => String(v?.content_type ?? "").includes("mp4") && v?.url)
+        .sort((a, b) => Number(b?.bitrate ?? 0) - Number(a?.bitrate ?? 0));
+      if (mp4s[0]?.url) push("video", mp4s[0].url);
+      return;
+    }
+    if (String(e.type ?? "") === "video") return; // video without variants — nothing sendable
+    push("photo", e.media_url_https ?? e.url);
+  };
+  for (const list of [t.extendedEntities?.media, t.media]) {
+    if (Array.isArray(list)) list.forEach(readEntity);
+  }
+  if (Array.isArray(t.photos)) {
+    t.photos.forEach((p) =>
+      push("photo", typeof p === "string" ? p : ((p as { url?: unknown })?.url ?? "")),
+    );
+  }
+  if (Array.isArray(t.videos)) t.videos.forEach(readEntity);
+  return out.slice(0, 4);
+}
 
 /** Pure item mapper — exported for unit tests. */
 export function parseTweetItems(items: unknown): XTweet[] {
@@ -64,6 +124,7 @@ export function parseTweetItems(items: unknown): XTweet[] {
         date: typeof t.createdAt === "string" ? t.createdAt : null,
         likes: Number.isFinite(Number(t.likeCount)) ? Number(t.likeCount) : null,
         retweets: Number.isFinite(Number(t.retweetCount)) ? Number(t.retweetCount) : null,
+        media: parseTweetMedia(t),
       };
     })
     .filter((t) => t.url && t.text);

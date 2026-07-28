@@ -227,7 +227,75 @@ export const askAboutPerson = createServerFn({ method: "POST" })
       )
       .join("\n");
 
-    const system = `You are the manager's analyst for one WhatsApp contact. Answer the manager's questions about this person in English, concisely (2-6 sentences), grounded STRICTLY in the stored data below. Quote the contact's own words (any language) when useful. If the data is insufficient to answer, say exactly what is missing — never invent.
+    // --- LIVE research: all three tools run in parallel on every question,
+    // scoped to the contact. Tavily (web) + Apify (X/Twitter) search the name
+    // plus the manager's question; Apollo looks the person up in its B2B
+    // graph. Each tool's failure/absence is reported honestly in the tool
+    // status line — never silently skipped.
+    const name = (p.display_name ?? "").trim();
+    // Company hint from stored facts sharpens Apollo/web matches.
+    const companyFact = p.facts
+      .map((f) =>
+        f.text.match(/(?:works? at|company|from|-מ|עובד ב|עובדת ב|חברת)\s+([\w"'&.-]{2,40})/i),
+      )
+      .find(Boolean);
+    const companyHint = companyFact?.[1] ?? null;
+    const researchQuery = [name, companyHint, data.question]
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 300);
+
+    const [tavilyRes, xRes, apolloRes] = await Promise.allSettled([
+      (async () => {
+        const { isTavilyConfigured, tavilySearch } = await import("@/lib/tavily.server");
+        if (!isTavilyConfigured()) throw new Error("TAVILY_API_KEY not configured");
+        return tavilySearch(researchQuery, { maxResults: 5, timeoutMs: 10_000, budgetMs: 14_000 });
+      })(),
+      (async () => {
+        const { isApifyConfigured, xSearch } = await import("@/lib/apify-x.server");
+        if (!isApifyConfigured()) throw new Error("APIFY_API_KEY not configured");
+        if (!name) throw new Error("contact has no name to search on X");
+        return xSearch(name, { maxItems: 8, timeoutMs: 18_000, budgetMs: 20_000 });
+      })(),
+      (async () => {
+        const { isApolloConfigured, apolloPeopleSearch } = await import("@/lib/apollo.server");
+        if (!isApolloConfigured()) throw new Error("not configured");
+        if (!name) throw new Error("contact has no name for an Apollo lookup");
+        return apolloPeopleSearch({ name, company: companyHint }, { maxResults: 3 });
+      })(),
+    ]);
+
+    const { buildResearchBlock, buildXBlock } = await import("@/lib/agent/research");
+    const { buildApolloBlock, APOLLO_SETUP_HINT, isApolloConfigured } =
+      await import("@/lib/apollo.server");
+    const tavily = tavilyRes.status === "fulfilled" ? tavilyRes.value : null;
+    const x = xRes.status === "fulfilled" ? xRes.value : null;
+    const apollo = apolloRes.status === "fulfilled" ? apolloRes.value : null;
+    const failMsg = (r: PromiseSettledResult<unknown>) =>
+      r.status === "rejected"
+        ? String((r.reason as Error)?.message ?? r.reason).slice(0, 120)
+        : null;
+
+    const toolStatus = [
+      tavily
+        ? `Tavily web search: ${tavily.results.length} result(s)`
+        : `Tavily web search FAILED: ${failMsg(tavilyRes)}`,
+      x
+        ? `X/Twitter (Apify): ${x.results.length} post(s)`
+        : `X/Twitter (Apify) FAILED: ${failMsg(xRes)}`,
+      apollo
+        ? `Apollo B2B lookup: ${apollo.people.length} profile match(es)`
+        : isApolloConfigured()
+          ? `Apollo lookup FAILED: ${failMsg(apolloRes)}`
+          : APOLLO_SETUP_HINT,
+    ].join("\n");
+
+    const liveBlocks = `${buildResearchBlock(tavily)}${buildXBlock(x)}${buildApolloBlock(apollo)}`;
+
+    const system = `You are the manager's research analyst for one WhatsApp contact. Answer the manager's questions about this person in English, concisely, grounded in (a) the STORED DATA from our own conversations and (b) the LIVE RESEARCH that was just run with real tools (web search, X/Twitter, Apollo). Cite source URLs from the research when you rely on them. Live matches may be a different person with the same name — say so when the identification is uncertain. If neither the stored data nor the research answers the question, say exactly what is missing — never invent.
+
+LIVE TOOL RUN STATUS (report failures honestly if the manager asks about research coverage)
+${toolStatus}
 
 CONTACT PROFILE
 Name: ${p.display_name ?? "unknown"} | WA id: ${p.wa_id}
@@ -242,16 +310,30 @@ INTENT / SENTIMENT HISTORY (newest first)
 ${intentsBlock}
 
 CONVERSATION TIMELINE (oldest first)
-${timelineBlock || "(no direct 1:1 conversation)"}`;
+${timelineBlock || "(no direct 1:1 conversation)"}
+${liveBlocks || "\n(LIVE RESEARCH returned no usable results this run — answer from stored data and say research came up empty.)"}`;
 
     const res = await callLLM({
       role: "strong",
       source: "profile_chat",
+      timeoutMs: 18_000,
+      budgetMs: 25_000,
       messages: [
         { role: "system", content: system },
         ...data.history.map((h) => ({ role: h.role, content: h.content })),
         { role: "user", content: data.question },
       ],
     });
-    return { answer: res.content.trim() || "I could not produce an answer from the stored data." };
+    const answer = res.content.trim() || "I could not produce an answer from the stored data.";
+    // Compact, honest footer: which tools actually ran on this question.
+    const footer = [
+      `🔎 ${tavily ? `Web ${tavily.results.length}` : "Web ✗"}`,
+      x ? `X ${x.results.length}` : "X ✗",
+      apollo
+        ? `Apollo ${apollo.people.length}`
+        : isApolloConfigured()
+          ? "Apollo ✗"
+          : "Apollo not connected (APOLLO_API_KEY missing)",
+    ].join(" · ");
+    return { answer: `${answer}\n\n${footer}` };
   });

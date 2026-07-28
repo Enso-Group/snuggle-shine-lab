@@ -75,6 +75,185 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             }
           }
 
+          // ?probe=dmimage — END-TO-END proof of the DM image pipeline, step
+          // by step: generate via the gateway → store in the media bucket →
+          // mint a signed URL → send as a real WhatsApp image to the OWNER's
+          // own chat (message-yourself). Marker-gated per version — repeated
+          // calls return the stored trace instead of spending credits/sends.
+          if (probeParam === "dmimage") {
+            const MARKER = "DM image self-test v1";
+            try {
+              const { data: done } = await supabase
+                .from("bot_decisions")
+                .select("created_at, data")
+                .eq("stage", "config")
+                .like("summary", `${MARKER}%`)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (done) {
+                probe = { dm_image: { already_ran: true, at: done.created_at, last: done.data } };
+              } else {
+                const trace: Record<string, unknown> = {};
+                const step = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+                  const t0 = Date.now();
+                  try {
+                    const out = await fn();
+                    trace[label] = { ok: true, ms: Date.now() - t0 };
+                    return out;
+                  } catch (e) {
+                    trace[label] = {
+                      ok: false,
+                      ms: Date.now() - t0,
+                      error: String((e as Error)?.message ?? e).slice(0, 300),
+                    };
+                    throw e;
+                  }
+                };
+                try {
+                  const ch = await step("1_channel", async () => {
+                    const { getConnectedChannel } = await import("@/lib/agent/channel.server");
+                    const c = await getConnectedChannel();
+                    if (!c.connected || !c.phone) throw new Error("no connected WhatsApp channel");
+                    return c;
+                  });
+                  const generated = await step("2_generate", async () => {
+                    const { generateImage } = await import("@/lib/image-gen.server");
+                    return generateImage(
+                      "A cozy, photorealistic golden retriever puppy sitting in a sunlit garden, shallow depth of field, no text or letters in the image.",
+                      { source: "dm_image_selftest", timeoutMs: 30_000, budgetMs: 35_000 },
+                    );
+                  });
+                  trace["2_generate"] = {
+                    ...(trace["2_generate"] as Record<string, unknown>),
+                    model: generated.model,
+                    storage_path: generated.attachment.storage_path,
+                  };
+                  const sendRes = await step("3_send_whatsapp", async () => {
+                    const { sendMediaMessage } = await import("@/lib/media.server");
+                    return (await sendMediaMessage(
+                      `${ch.phone}@s.whatsapp.net`,
+                      generated.attachment,
+                      "🧪 DM image self-test — this exact pipeline (generate → store → sign → send) serves DM image requests.",
+                    )) as { message?: { id?: string } };
+                  });
+                  trace["3_send_whatsapp"] = {
+                    ...(trace["3_send_whatsapp"] as Record<string, unknown>),
+                    whapi_message_id: sendRes?.message?.id ?? null,
+                  };
+                  trace.ok = true;
+                } catch {
+                  trace.ok = false;
+                }
+                await supabase.from("bot_decisions").insert({
+                  trigger: "scheduled",
+                  stage: "config",
+                  status: trace.ok ? "ok" : "error",
+                  summary: `${MARKER}: ${trace.ok ? "image generated AND delivered to the owner chat" : "FAILED — see step trace"}`,
+                  data: trace,
+                });
+                probe = { dm_image: trace };
+              }
+            } catch (e) {
+              probe = {
+                dm_image: { ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) },
+              };
+            }
+          }
+
+          // ?probe=researchmedia — END-TO-END proof of media-from-search:
+          // Tavily search (with images) → candidate collection → download +
+          // byte-validation → re-host in the bucket → real WhatsApp image to
+          // the owner chat with caption + source link. Marker-gated per
+          // version, same as the other one-shot probes.
+          if (probeParam === "researchmedia") {
+            const MARKER = "Research media self-test v1";
+            try {
+              const { data: done } = await supabase
+                .from("bot_decisions")
+                .select("created_at, data")
+                .eq("stage", "config")
+                .like("summary", `${MARKER}%`)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (done) {
+                probe = {
+                  research_media: { already_ran: true, at: done.created_at, last: done.data },
+                };
+              } else {
+                const trace: Record<string, unknown> = {};
+                try {
+                  const { getConnectedChannel } = await import("@/lib/agent/channel.server");
+                  const ch = await getConnectedChannel();
+                  if (!ch.connected || !ch.phone) throw new Error("no connected WhatsApp channel");
+                  const { tavilySearch, isTavilyConfigured } = await import("@/lib/tavily.server");
+                  if (!isTavilyConfigured()) throw new Error("TAVILY_API_KEY not configured");
+                  let t0 = Date.now();
+                  const search = await tavilySearch("Tel Aviv skyline photo", {
+                    maxResults: 5,
+                    timeoutMs: 8_000,
+                    budgetMs: 10_000,
+                  });
+                  trace.search = {
+                    ok: true,
+                    ms: Date.now() - t0,
+                    results: search.results.length,
+                    images: search.images?.length ?? 0,
+                  };
+                  const { collectMediaCandidates, fetchFirstUsableMedia } =
+                    await import("@/lib/agent/research-media.server");
+                  const candidates = collectMediaCandidates(search, null);
+                  t0 = Date.now();
+                  const stored = await fetchFirstUsableMedia(candidates, {
+                    budgetMs: 15_000,
+                    preferKind: "image",
+                  });
+                  trace.fetch_validate = {
+                    ok: !!stored,
+                    ms: Date.now() - t0,
+                    candidates: candidates.length,
+                    kind: stored?.attachment.kind ?? null,
+                    storage_path: stored?.attachment.storage_path ?? null,
+                    source_url: stored?.sourceUrl ?? null,
+                  };
+                  if (!stored) throw new Error("no candidate survived download+validation");
+                  t0 = Date.now();
+                  const { sendMediaMessage } = await import("@/lib/media.server");
+                  const sendRes = (await sendMediaMessage(
+                    `${ch.phone}@s.whatsapp.net`,
+                    stored.attachment,
+                    `🧪 Research-media self-test — a REAL image found by web search, validated and re-sent.\nמקור: ${stored.sourceUrl}`,
+                  )) as { message?: { id?: string } };
+                  trace.send = {
+                    ok: true,
+                    ms: Date.now() - t0,
+                    whapi_message_id: sendRes?.message?.id ?? null,
+                  };
+                  trace.ok = true;
+                } catch (e) {
+                  trace.ok = false;
+                  trace.error = String((e as Error)?.message ?? e).slice(0, 300);
+                }
+                await supabase.from("bot_decisions").insert({
+                  trigger: "scheduled",
+                  stage: "config",
+                  status: trace.ok ? "ok" : "error",
+                  summary: `${MARKER}: ${trace.ok ? "search → validate → deliver all passed" : "FAILED — see trace"}`,
+                  data: trace,
+                });
+                probe = { research_media: trace };
+              }
+            } catch (e) {
+              probe = {
+                research_media: {
+                  ok: false,
+                  error: String((e as Error)?.message ?? e).slice(0, 300),
+                },
+              };
+            }
+          }
+
           // ?probe=models — read-only: the gateway's LIVE model catalog, the
           // authoritative answer to "which models (image? video?) exist here".
           // Model ids only, no secrets. Also probes one video-model id so the

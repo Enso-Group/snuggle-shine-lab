@@ -43,6 +43,7 @@ describe("parseTweetItems", () => {
       date: "2026-07-25T14:00:00.000Z",
       likes: 320,
       retweets: 41,
+      media: [],
     });
   });
 

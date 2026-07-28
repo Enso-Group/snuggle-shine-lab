@@ -20,11 +20,34 @@ export type TavilyResult = {
   score: number | null;
 };
 
+export type TavilyImage = {
+  url: string;
+  description: string | null;
+};
+
 export type TavilySearchOutcome = {
   /** Tavily's own synthesized answer, when include_answer returned one. */
   answer: string | null;
   results: TavilyResult[];
+  /** Related images (include_images) — candidates for real-media sending.
+   * Optional: cached payloads and older fixtures predate the field. */
+  images?: TavilyImage[];
 };
+
+/** Parse Tavily's images field — plain URL strings or {url, description}. */
+export function parseTavilyImages(raw: unknown): TavilyImage[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((img) => {
+      if (typeof img === "string") return { url: img, description: null };
+      const o = img as { url?: unknown; description?: unknown } | null;
+      return {
+        url: String(o?.url ?? ""),
+        description: o?.description ? String(o.description).slice(0, 300) : null,
+      };
+    })
+    .filter((img) => /^https?:\/\//.test(img.url));
+}
 
 export function isTavilyConfigured(): boolean {
   return !!process.env.TAVILY_API_KEY;
@@ -68,6 +91,10 @@ export async function tavilySearch(
           search_depth: "basic",
           max_results: opts.maxResults ?? 5,
           include_answer: true,
+          // Images ride along at no extra latency — they feed the
+          // media-from-search sending path (research-media.server.ts).
+          include_images: true,
+          include_image_descriptions: true,
         }),
         signal: ctrl.signal,
       });
@@ -100,6 +127,7 @@ export async function tavilySearch(
       let data: {
         answer?: unknown;
         results?: Array<{ title?: unknown; url?: unknown; content?: unknown; score?: unknown }>;
+        images?: unknown;
       };
       try {
         data = JSON.parse(bodyText);
@@ -141,6 +169,7 @@ export async function tavilySearch(
       return {
         answer: typeof data.answer === "string" && data.answer.trim() ? data.answer.trim() : null,
         results,
+        images: parseTavilyImages(data.images),
       };
     } catch (e: unknown) {
       clearTimeout(timer);

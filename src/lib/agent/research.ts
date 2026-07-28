@@ -54,6 +54,16 @@ export type ResearchJobPayload = {
   x_results?: XSearchOutcome | null;
   /** Set when the watchdog revived a failed job for one cheap final attempt. */
   revived?: boolean;
+  /**
+   * A REAL file found by the research (Tavily image / tweet media / direct
+   * link), already validated + re-hosted in the media bucket. Cached so a
+   * deferred/retried send never re-downloads, and so the approval row can
+   * carry it. media_source is the human-facing origin link for the caption.
+   */
+  media_attachment?: import("@/lib/media").MediaAttachment | null;
+  media_source?: string | null;
+  /** Set once media lookup ran (found or not) — never re-fetch on retries. */
+  media_checked?: boolean;
 };
 
 /**
@@ -112,6 +122,7 @@ export function parseResearchPayload(raw: unknown): ResearchJobPayload | null {
           ? {
               answer: typeof p.search_results.answer === "string" ? p.search_results.answer : null,
               results: Array.isArray(p.search_results.results) ? p.search_results.results : [],
+              images: Array.isArray(p.search_results.images) ? p.search_results.images : [],
             }
           : null,
       x_results:
@@ -119,6 +130,10 @@ export function parseResearchPayload(raw: unknown): ResearchJobPayload | null {
           ? { results: Array.isArray(p.x_results.results) ? p.x_results.results : [] }
           : null,
       revived: p.revived === true,
+      media_attachment:
+        p.media_attachment && typeof p.media_attachment === "object" ? p.media_attachment : null,
+      media_source: p.media_source ? String(p.media_source) : null,
+      media_checked: p.media_checked === true,
     };
   } catch {
     return null;

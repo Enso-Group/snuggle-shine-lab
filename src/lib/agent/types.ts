@@ -104,6 +104,16 @@ export type InboundJobPayload = {
    * never bows out to a newer "send it already" nudge.
    */
   image_media?: import("@/lib/media").MediaAttachment | null;
+  /**
+   * Pre-reply research results (Tavily + X), cached the moment the search
+   * succeeds so a wall-killed attempt's retry drafts from them instead of
+   * paying for another search round.
+   */
+  pre_research?: {
+    query: string;
+    tavily: import("@/lib/tavily.server").TavilySearchOutcome | null;
+    x: import("@/lib/apify-x.server").XSearchOutcome | null;
+  } | null;
   /** admin_command jobs: label of the verified admin (for logging/display). */
   admin_label?: string;
   /**
@@ -159,6 +169,13 @@ export type AgentContext = {
    * the earlier thread.
    */
   freshStart?: { gap: string; reason: string } | null;
+  /**
+   * Live pre-reply research (Tavily/X prompt blocks), injected by the
+   * pipeline when the intent stage judged the message needs fresh outside
+   * information — the draft grounds itself in these instead of promising to
+   * check later.
+   */
+  research?: string | null;
 };
 
 export type IntentAnalysis = {
@@ -176,6 +193,12 @@ export type IntentAnalysis = {
    */
   context_relation: "continuation" | "fresh";
   context_reason: string | null;
+  /**
+   * Short search query when the message needs fresh outside information
+   * (news, prices, a person/company, facts beyond the KB) — the pipeline
+   * then runs live research BEFORE drafting. null/absent = answerable as-is.
+   */
+  web_search?: string | null;
 };
 
 export type DraftResult = {
