@@ -81,7 +81,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           // own chat (message-yourself). Marker-gated per version — repeated
           // calls return the stored trace instead of spending credits/sends.
           if (probeParam === "dmimage") {
-            const MARKER = "DM image self-test v1";
+            // v2: re-armed 2026-07-28 to prove the OpenAI-first image chain
+            // (gpt-image-2 on /v1/images/generations) end to end — v1 passed
+            // via gemini when gemini still led the chain.
+            const MARKER = "DM image self-test v2";
             try {
               const { data: done } = await supabase
                 .from("bot_decisions")

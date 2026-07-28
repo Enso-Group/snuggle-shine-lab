@@ -5,10 +5,10 @@
 // data URL on the assistant message. Video generation is NOT supported by the
 // gateway (checked 2026-07-26) — this module is images only, by design.
 //
-// Model chain: OpenAI first (Itamar standardized on GPT — "use only gpt 5.5"
-// for text), gemini image models as resilience fallbacks. Unknown-model
-// errors advance the chain, the working model is memoized per isolate, and
-// every call is logged to ai_usage_log.
+// Model chain: OpenAI image models first (Itamar standardized on GPT), one
+// gemini model as the emergency fallback. Unknown-model errors advance the
+// chain, the working model is memoized per isolate, and every call is logged
+// to ai_usage_log.
 import type { MediaAttachment } from "./media";
 
 const GATEWAY_CHAT_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
@@ -21,13 +21,16 @@ const BUDGET_MS = 50_000;
 // Endpoint per family (confirmed by Lovable's assistant 2026-07-26):
 // gemini image models take messages+modalities on chat/completions; the
 // openai/gpt-image-* models exist ONLY on /v1/images/generations with the
-// OpenAI shape (prompt/quality). Gemini leads — proven live at ~13s — and the
-// OpenAI models are real fallbacks now that they're called correctly.
+// OpenAI shape (prompt/quality).
+// ORDER IS A PRODUCT DECISION (Itamar 2026-07-28, reaffirming "only GPT"):
+// OpenAI image models lead — gpt-5.5 itself is text-only, so gpt-image-2 /
+// gpt-image-1-mini are the GPT-family image models. Gemini stays ONLY as the
+// last-resort emergency fallback, because the DM contract ("a real image or
+// a retry, never silence") outranks model preference when OpenAI is down.
 const IMAGE_MODEL_CANDIDATES: Array<{ model: string; endpoint: "chat" | "images" }> = [
-  { model: "google/gemini-3.1-flash-image", endpoint: "chat" },
   { model: "openai/gpt-image-2", endpoint: "images" },
   { model: "openai/gpt-image-1-mini", endpoint: "images" },
-  { model: "google/gemini-2.5-flash-image", endpoint: "chat" },
+  { model: "google/gemini-3.1-flash-image", endpoint: "chat" },
 ];
 
 let workingImageModel: string | null = null;
