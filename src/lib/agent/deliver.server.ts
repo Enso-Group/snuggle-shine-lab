@@ -3,7 +3,14 @@
 // and record every outbound row. Pacing is skipped in simulation.
 import type { Json } from "@/integrations/supabase/types";
 import type { Supa } from "./types";
-import { interPartDelayMs, MAX_DM_PACING_MS, planPacing, typingSecondsFor } from "./inbound";
+import {
+  interPartDelayMs,
+  isDmChatId,
+  MAX_DM_PACING_MS,
+  planPacing,
+  typingSecondsFor,
+} from "./inbound";
+import { logDecision } from "./decisions.server";
 import type { AgentContext, WhapiPort } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -16,7 +23,102 @@ const MAX_TOTAL_PACING_MS = 12_000;
 export type DeliveryResult = {
   sentMessageIds: Array<string | null>;
   parts: string[];
+  /** Set when the send-layer approval guard queued the message instead. */
+  queuedApprovalId?: string | null;
 };
+
+/**
+ * Queue a bot-initiated 1-on-1 message for human approval instead of sending
+ * it. THE enforcement primitive behind the global approval toggle (which
+ * covers private chats only — rule 2026-07-28): every DM send path funnels
+ * through it when the toggle is on, including the canned lines that used to
+ * bypass approval by design. Dedupes against an identical pending approval so
+ * retries never stack duplicates. Returns the approval row id (or null when
+ * queuing itself failed — the caller's error handling owns that).
+ */
+export async function queueDmForApproval(
+  supabase: Supa,
+  args: {
+    conversationId: string | null;
+    chatId: string;
+    targetName: string | null;
+    body: string;
+    /** For the immediate WhatsApp-admin ping; omit in tests. */
+    whapi?: WhapiPort;
+  },
+): Promise<string | null> {
+  // Identical pending approval already queued (crash-retry, watchdog re-run)
+  // → that row is the decision; never stack a duplicate.
+  const { data: existing } = await supabase
+    .from("scheduled_approvals")
+    .select("id")
+    .eq("target_chat_id", args.chatId)
+    .eq("status", "pending")
+    .eq("body", args.body)
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return String(existing.id);
+
+  const { data: adminRole } = await supabase
+    .from("user_roles")
+    .select("user_id")
+    .eq("role", "admin")
+    .limit(1)
+    .maybeSingle();
+  let ownerUserId: string | null = adminRole?.user_id ?? null;
+  if (!ownerUserId) {
+    const {
+      data: { users },
+    } = await supabase.auth.admin.listUsers({ perPage: 1 });
+    ownerUserId = users?.[0]?.id ?? null;
+  }
+  if (!ownerUserId) return null;
+
+  const { data: row, error } = await supabase
+    .from("scheduled_approvals")
+    .insert({
+      user_id: ownerUserId,
+      conversation_id: args.conversationId,
+      target_chat_id: args.chatId,
+      target_name: args.targetName ?? args.chatId,
+      body: args.body,
+      source: "ai_reply",
+      status: "pending",
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !row?.id) {
+    console.error("[deliver] approval queue insert failed:", error?.message);
+    return null;
+  }
+  logDecision(supabase, {
+    conversation_id: args.conversationId,
+    chat_id: args.chatId,
+    trigger: "inbound",
+    stage: "queued_approval",
+    summary:
+      "Send-layer guard: private-chat approval mode is on — the message was queued for approval instead of sent",
+    data: { draft: args.body, approval_id: String(row.id), guard: "send_layer" },
+  });
+  if (args.whapi) {
+    try {
+      const { notifyWaAdmins } = await import("./admin-notify.server");
+      await notifyWaAdmins(
+        supabase,
+        [
+          `🕓 הודעה פרטית ממתינה לאישור`,
+          `אל: ${args.targetName ?? args.chatId}`,
+          `טיוטה: ${args.body.slice(0, 250)}`,
+          `אפשר לאשר או לדחות כאן — למשל "אשר ${String(row.id).slice(0, 8)}".`,
+        ].join("\n"),
+        { whapi: args.whapi },
+      );
+    } catch (e) {
+      console.warn("[deliver] admin approval notify failed:", e);
+    }
+  }
+  return String(row.id);
+}
 
 export async function deliverReply(
   supabase: Supa,
@@ -25,6 +127,23 @@ export async function deliverReply(
   parts: string[],
   opts: { humanPacing: boolean; botName: string },
 ): Promise<DeliveryResult> {
+  // SERVER-SIDE APPROVAL GUARD, at the send layer itself: with the global
+  // (private-chats) approval toggle on, NO bot-initiated 1-on-1 message
+  // leaves without a human decision — including the canned lines that used
+  // to bypass the gate by design (escalation holding line, never-silent
+  // fallbacks, research interims; live 2026-07-28: "קיבלתי — אני בודק את
+  // זה" went straight out). Groups never hit this guard — they are governed
+  // exclusively by their own per-group toggle, upstream.
+  if (!ctx.message.isGroup && isDmChatId(ctx.message.chatId) && ctx.settings.require_approval_all) {
+    const approvalId = await queueDmForApproval(supabase, {
+      conversationId: ctx.conversation.id || null,
+      chatId: ctx.message.chatId,
+      targetName: ctx.conversation.name ?? ctx.message.senderName ?? null,
+      body: parts.join("\n\n"),
+      whapi,
+    });
+    return { sentMessageIds: [], parts, queuedApprovalId: approvalId };
+  }
   let pacingBudgetMs = MAX_TOTAL_PACING_MS;
   // DMs: plan ALL pacing up front against the MAX_DM_PACING_MS cap, scaling
   // every delay down proportionally when the natural formula exceeds it — the

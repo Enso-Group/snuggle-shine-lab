@@ -59,14 +59,14 @@ export type GroupProfile = {
 
 /**
  * THE single decision point for "does a send to this group need approval".
- * The group's explicit toggle is the only thing that matters for the group;
- * the global setting is only the fallback for groups that never set one.
+ * RULE (2026-07-28): groups are governed EXCLUSIVELY by their own toggle —
+ * the global require_approval_all covers 1-on-1 chats only and has no effect
+ * on groups. No toggle (null / no profile) = no approval needed.
  */
 export function groupRequiresApproval(
   profile: { require_approval?: boolean | null } | null | undefined,
-  settings: { require_approval_all: boolean },
 ): boolean {
-  return profile?.require_approval ?? settings.require_approval_all;
+  return profile?.require_approval ?? false;
 }
 
 function toStringArray(v: unknown): string[] {

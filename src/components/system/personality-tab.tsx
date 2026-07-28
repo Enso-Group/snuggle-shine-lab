@@ -103,9 +103,11 @@ export function PersonalityTab() {
           </div>
           <div className="flex items-center justify-between rounded-md border border-amber-500/50 bg-amber-50/30 p-3 dark:bg-amber-950/10">
             <div>
-              <Label>Require approval for every outgoing message</Label>
+              <Label>Require approval for private (1-on-1) messages</Label>
               <p className="text-xs text-muted-foreground">
-                Everything the bot wants to send goes to Approvals first — your safety net.
+                Every 1-on-1 message the bot wants to send — replies, follow-ups, holding lines —
+                goes to Approvals first. Groups are not affected: each group follows only its own
+                "Require approval" toggle in Command Center.
               </p>
             </div>
             <Switch checked={requireApprovalAll} onCheckedChange={setRequireApprovalAll} />

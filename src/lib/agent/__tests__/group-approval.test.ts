@@ -1,35 +1,26 @@
-// Per-group approval toggle: the group's explicit setting fully overrides the
-// global require_approval_all in BOTH directions; only groups that never set
-// one follow the global. This matrix is the contract the posting engine and
-// the group-reply pipeline both gate on.
+// Per-group approval toggle — RULE (2026-07-28): groups are governed
+// EXCLUSIVELY by their own toggle; the global require_approval_all covers
+// private chats only and has NO effect on groups. This matrix is the contract
+// the posting engine and the group-reply pipeline both gate on.
 import { describe, expect, it } from "vitest";
 
 import { groupRequiresApproval } from "../groups.server";
 import { sanitizeProfilePatch } from "../profile-patch";
 
 describe("groupRequiresApproval", () => {
-  const globalOn = { require_approval_all: true };
-  const globalOff = { require_approval_all: false };
-
-  it("group ON overrides global OFF (send waits for approval)", () => {
-    expect(groupRequiresApproval({ require_approval: true }, globalOff)).toBe(true);
+  it("group ON → send waits for approval", () => {
+    expect(groupRequiresApproval({ require_approval: true })).toBe(true);
   });
 
-  it("group OFF overrides global ON (send goes out immediately)", () => {
-    expect(groupRequiresApproval({ require_approval: false }, globalOn)).toBe(false);
+  it("group OFF → send goes out immediately", () => {
+    expect(groupRequiresApproval({ require_approval: false })).toBe(false);
   });
 
-  it("group toggle agrees with global — same answer", () => {
-    expect(groupRequiresApproval({ require_approval: true }, globalOn)).toBe(true);
-    expect(groupRequiresApproval({ require_approval: false }, globalOff)).toBe(false);
-  });
-
-  it("no explicit toggle (null / missing / no profile) falls back to global", () => {
-    expect(groupRequiresApproval({ require_approval: null }, globalOn)).toBe(true);
-    expect(groupRequiresApproval({ require_approval: null }, globalOff)).toBe(false);
-    expect(groupRequiresApproval({}, globalOn)).toBe(true);
-    expect(groupRequiresApproval(null, globalOn)).toBe(true);
-    expect(groupRequiresApproval(undefined, globalOff)).toBe(false);
+  it("no explicit toggle (null / missing / no profile) → NO approval — the global setting never applies to groups", () => {
+    expect(groupRequiresApproval({ require_approval: null })).toBe(false);
+    expect(groupRequiresApproval({})).toBe(false);
+    expect(groupRequiresApproval(null)).toBe(false);
+    expect(groupRequiresApproval(undefined)).toBe(false);
   });
 });
 

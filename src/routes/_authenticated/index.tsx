@@ -111,18 +111,6 @@ function CommandCenter() {
   const activityFn = useServerFn(getGroupActivity);
   const chatFn = useServerFn(commandChat);
   const retryFn = useServerFn(retryPlannedPost);
-  const settingsFn = useServerFn(getBotSettings);
-  // Global approval setting — only the fallback/default for groups that never
-  // set their own toggle (and the source of the list's "approval" badge).
-  const { data: botSettings } = useQuery({
-    queryKey: ["bot-settings-global-approval"],
-    queryFn: () => settingsFn(),
-    staleTime: 30_000,
-    enabled: !DEMO_MODE,
-  });
-  const globalRequireApproval =
-    (botSettings as { require_approval_all?: boolean } | null | undefined)?.require_approval_all ===
-    true;
   const qc = useQueryClient();
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -778,7 +766,6 @@ function CommandCenter() {
                   chatId={selected}
                   whatsappName={current?.whatsapp_name ?? selected}
                   profile={current?.profile ?? null}
-                  globalRequireApproval={globalRequireApproval}
                 />
               </TabsContent>
             </Tabs>

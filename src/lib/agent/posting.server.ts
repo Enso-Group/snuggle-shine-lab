@@ -733,10 +733,10 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     }
     const bodyForRecord = [final, poll ? pollAsHistoryText(poll) : ""].filter(Boolean).join("\n\n");
 
-    // Approval gate — the GROUP's toggle is the only thing that matters for
-    // this group; the global setting applies only when the group never set one.
+    // Approval gate — the GROUP's own toggle is the ONLY thing that matters
+    // for a group; the global setting covers 1-on-1 chats exclusively.
     const { groupRequiresApproval } = await import("./groups.server");
-    if (groupRequiresApproval(profile, settings)) {
+    if (groupRequiresApproval(profile)) {
       const { data: adminRole } = await supabase
         .from("user_roles")
         .select("user_id")

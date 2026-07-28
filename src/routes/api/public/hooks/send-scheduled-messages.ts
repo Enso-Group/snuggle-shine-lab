@@ -207,7 +207,29 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
               }
 
               // last_sent_at was already stamped by the claim above.
-              if (r.require_approval || globalApproval) {
+              // Approval rule (2026-07-28): the GLOBAL toggle covers private
+              // chats only; a group target follows the group's own toggle.
+              const targetIsGroup = String(r.target_chat_id ?? "").endsWith("@g.us");
+              let needsApproval = !!r.require_approval;
+              if (!needsApproval) {
+                if (targetIsGroup) {
+                  try {
+                    const { data: gp } = await supabase
+                      .from("group_profiles")
+                      .select("require_approval" as never)
+                      .eq("chat_id", r.target_chat_id)
+                      .maybeSingle();
+                    needsApproval =
+                      (gp as { require_approval?: boolean | null } | null)?.require_approval ===
+                      true;
+                  } catch {
+                    needsApproval = false;
+                  }
+                } else {
+                  needsApproval = globalApproval;
+                }
+              }
+              if (needsApproval) {
                 await supabase.from("scheduled_approvals").insert({
                   scheduled_message_id: r.id,
                   user_id: r.user_id,

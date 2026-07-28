@@ -255,11 +255,37 @@ async function sendPermanentFailureFallback(deps: AgentDeps, job: BotJob): Promi
     // kill switch (it may have been flipped off mid-retries).
     const { data: settings } = await deps.supabase
       .from("bot_settings")
-      .select("enabled, bot_name")
+      .select("enabled, bot_name, require_approval_all")
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (!settings?.enabled) return;
+
+    // Private-chat approval mode: even the canned never-silent line waits for
+    // a human — this path used deps.whapi.sendText directly and was one of
+    // the approval bypasses (rule 2026-07-28: EVERY unapproved DM send is
+    // blocked and queued at the send layer).
+    if (settings.require_approval_all) {
+      const { queueDmForApproval } = await import("./deliver.server");
+      const approvalId = await queueDmForApproval(deps.supabase, {
+        conversationId: job.conversation_id,
+        chatId: job.chat_id,
+        targetName: p.sender_name || p.chat_name || null,
+        body: PERMANENT_FAILURE_FALLBACK_LINE,
+        whapi: deps.whapi,
+      });
+      logDecision(deps.supabase, {
+        job_id: job.id,
+        conversation_id: job.conversation_id,
+        chat_id: job.chat_id,
+        trigger: deps.trigger,
+        stage: "queued_approval",
+        summary:
+          "Reply job exhausted every attempt — the fallback line was QUEUED for approval (private-chat approval mode is on)",
+        data: { fallback: "permanent_failure", approval_id: approvalId },
+      });
+      return;
+    }
 
     // Crash-retry dedup, CORRELATED: only this job's own attempted text (the
     // deliver marker) or a previous fallback line proves "some attempt DID
