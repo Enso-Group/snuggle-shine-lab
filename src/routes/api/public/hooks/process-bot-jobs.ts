@@ -1404,6 +1404,63 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             return { ran: true as const, results };
           });
 
+          // One-shot revive (2026-07-28, Itamar's blog-post test): put the
+          // newest failed Glidai blog-campaign post back to 'planned' so the
+          // engine reruns it through the NEW article-retrieval path — real
+          // article, Hebrew summary, direct link. Exactly once (marker);
+          // deliberately ONE post, not all seven (newest-wins would cancel
+          // the rest anyway, and a catch-up blast reads as spam).
+          const blogPostRevive = await guarded("blog-post-revive", async () => {
+            const MARKER = "Glidai blog revive v1";
+            const { data: done } = await supabase
+              .from("bot_decisions")
+              .select("id")
+              .eq("stage", "config")
+              .like("summary", `${MARKER}%`)
+              .limit(1)
+              .maybeSingle();
+            if (done) return { ran: false as const, reason: "already revived" };
+            const { data: failedPost } = await supabase
+              .from("planned_posts")
+              .select("id, group_chat_id, engagement, prompt")
+              .eq("status", "failed")
+              .ilike("prompt", "%glidaiproperties%")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (!failedPost) return { ran: false as const, reason: "no failed glidai post found" };
+            // Marker FIRST (awaited) — a wall-kill must never revive twice.
+            const { error: markerErr } = await supabase.from("bot_decisions").insert({
+              trigger: "scheduled",
+              stage: "config",
+              status: "ok",
+              summary: `${MARKER}: re-planned post ${String(failedPost.id).slice(0, 8)} for the article-retrieval test`,
+              data: { planned_post_id: failedPost.id, chat_id: failedPost.group_chat_id },
+            });
+            if (markerErr) throw new Error(`marker insert failed: ${markerErr.message}`);
+            const {
+              draft: _d,
+              gen_attempts: _a,
+              gen_lease_until: _l,
+              gen_started_at: _s,
+              ...engagement
+            } = (failedPost.engagement ?? {}) as Record<string, unknown>;
+            const now = new Date().toISOString();
+            await supabase
+              .from("planned_posts")
+              .update({
+                status: "planned",
+                reasoning: null,
+                engagement: engagement as never,
+                created_at: now,
+                scheduled_for: now,
+                updated_at: now,
+              })
+              .eq("id", failedPost.id)
+              .eq("status", "failed");
+            return { ran: true as const, planned_post_id: failedPost.id };
+          });
+
           // The group engine runs FIRST after the job drain: the sweep request
           // only survives ~a minute of wall clock (2026-07-24 evidence:
           // LLM-drafting posts died mid-fetch with their failure handlers
@@ -1460,6 +1517,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
             channel,
             dedupe,
             approval_restore: approvalRestore,
+            blog_post_revive: blogPostRevive,
             demo_wipe: demoWipe,
             model_pin: modelPin,
           });

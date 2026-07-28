@@ -525,6 +525,86 @@ async function generateAndSendPost(
       reviewNote = "recovered draft from an interrupted attempt";
     }
 
+    // --- ARTICLE MODE: the prompt references a site URL → the post MUST be
+    // grounded in ONE real article from there (discover → rotate past
+    // already-posted URLs → fetch + extract the text). HARD RULE: retrieval
+    // failure fails the post VISIBLY — a generic "safe" post about the blog
+    // is exactly the bug this exists to kill (live 2026-07-28, Glidai).
+    const { extractSourceUrl } = await import("./article-source.server");
+    const sourceUrl = extractSourceUrl(post.prompt);
+    let article: { url: string; title: string | null; text: string } | null = null;
+    if (sourceUrl && !storedDraft) {
+      // A previous attempt's pick survives the retry (wall-kill safe).
+      const cachedArticle = (
+        attempt.prior as { article?: { url?: string; title?: string | null; text?: string } }
+      ).article;
+      if (cachedArticle?.url && cachedArticle.text) {
+        article = {
+          url: String(cachedArticle.url),
+          title: cachedArticle.title ?? null,
+          text: String(cachedArticle.text),
+        };
+      } else {
+        try {
+          const { pickFreshArticle } = await import("./article-source.server");
+          const picked = await pickFreshArticle(supabase, profile.chat_id, sourceUrl);
+          article = { url: picked.url, title: picked.title, text: picked.text };
+          logDecision(supabase, {
+            chat_id: profile.chat_id,
+            trigger: "scheduled",
+            stage: "post",
+            status: "ok",
+            summary: `Article picked for the post: "${(picked.title ?? picked.url).slice(0, 120)}" (${picked.discovered} discovered, unused ones rotated)`,
+            data: { planned_post_id: post.id, article_url: picked.url },
+          });
+          // Persist the pick + text NOW (rides on the live lease): a killed
+          // request must not re-pick a different article on retry.
+          owned = {
+            ...owned,
+            article: { url: article.url, title: article.title, text: article.text.slice(0, 6000) },
+          };
+          await supabase
+            .from("planned_posts")
+            .update({ engagement: owned as Json, updated_at: new Date().toISOString() })
+            .eq("id", post.id);
+        } catch (e) {
+          const reason = String((e as Error)?.message ?? e).slice(0, 400);
+          await supabase
+            .from("planned_posts")
+            .update({
+              status: "failed",
+              reasoning: `Article retrieval failed — NO post was sent (hard rule: no specific article, no post). ${reason}`,
+              engagement: releaseLease(owned) as Json,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", post.id);
+          logDecision(supabase, {
+            chat_id: profile.chat_id,
+            trigger: "scheduled",
+            stage: "error",
+            status: "error",
+            summary: `Blog-article post skipped for ${profile.name ?? profile.chat_id}: ${reason}`,
+            data: { planned_post_id: post.id, source_url: sourceUrl },
+          });
+          return "failed";
+        }
+      }
+    }
+    const articleBlock = article
+      ? `
+
+המאמר שנבחר לפוסט הזה (חובה לבסס את הפוסט אך ורק עליו):
+כותרת: ${article.title ?? "(ללא כותרת)"}
+קישור: ${article.url}
+תוכן המאמר:
+"""${article.text.slice(0, 5000)}"""
+
+חוקי פוסט-מאמר (מחייבים, גוברים על כל הנחיה כללית):
+- כתוב תקציר קצר בעברית (2-4 משפטים) של המאמר הזה בלבד — רק עובדות שמופיעות בתוכן למעלה.
+- חובה לכלול בפוסט את הקישור המדויק ${article.url} — מועתק אות באות, בלי לקצר.
+- אסור פוסט כללי על הבלוג או על הנושא — הפוסט הוא על המאמר הספציפי הזה.`
+      : "";
+
     const { latestRecommendationsBlock } = await import("./analytics.server");
     const [activity, insights, pastPosts, kb, memoBlock] = await Promise.all([
       recentGroupActivity(deps, profile.chat_id),
@@ -542,6 +622,7 @@ async function generateAndSendPost(
       groupPromptBlock(profile) +
       memoBlock +
       (kb.count ? `\n\nמאגר ידע מאומת (עובדות עסקיות מותרות רק מכאן):\n${kb.block}` : "") +
+      articleBlock +
       `
 
 משימה: כתוב פוסט אחד לקבוצה, בשפה ${profile.language}.
@@ -645,6 +726,11 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       }
     final = sanitizeParts([final]).parts[0] ?? "";
     if (!final && !poll) throw new Error("post generation returned neither text nor poll");
+    // Deterministic link guarantee for article posts: whatever the models did,
+    // the post that reaches the group carries the exact article URL.
+    if (article && final && !final.includes(article.url)) {
+      final = `${final}\n\n${article.url}`;
+    }
     const bodyForRecord = [final, poll ? pollAsHistoryText(poll) : ""].filter(Boolean).join("\n\n");
 
     // Approval gate — the GROUP's toggle is the only thing that matters for

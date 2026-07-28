@@ -296,25 +296,18 @@ function CommandCenter() {
                           {g.chat_id}
                         </p>
                       </div>
-                      {(g.profile?.require_approval ?? globalRequireApproval) && (
-                        <Badge
-                          className="shrink-0 bg-amber-500/15 px-1.5 text-[10px] text-amber-600 dark:text-amber-400"
-                          variant="secondary"
-                          title="Everything the bot sends to this group waits for approval"
-                        >
-                          approval
-                        </Badge>
-                      )}
+                      {/* The ONLY status on a row is the autonomy state —
+                          approval state lives inside the group's editor. */}
                       {g.profile?.enabled ? (
                         <Badge
                           className="shrink-0 bg-emerald-500/15 px-1.5 text-[10px] text-emerald-600 dark:text-emerald-400"
                           variant="secondary"
                         >
-                          autonomous
+                          Autonomous
                         </Badge>
                       ) : g.profile ? (
                         <Badge variant="outline" className="shrink-0 px-1.5 text-[10px]">
-                          off
+                          Off
                         </Badge>
                       ) : null}
                     </button>
