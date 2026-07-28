@@ -312,7 +312,7 @@ function buildTools(
       function: {
         name: "update_group_profile",
         description:
-          "Apply changes to a group's management profile. Pass ONLY the fields to change. Allowed fields: enabled, instructions, purpose, audience, tone, language, content_pillars (string[]), posting_schedule ([{day:0-6|null,time:'HH:MM',pillar?,prompt?}]), rules (string[]), forbidden_topics (string[]), moderation ({enabled,delete_violations,warn_limit,remove_limit}), welcome ({enabled,hint}), reply_when_mentioned, reply_to_questions, allow_reactive_posts, require_approval (per-group approval toggle — overrides the global setting), escalation_rules, kpis.",
+          "Apply changes to a group's management profile. Pass ONLY the fields to change. Allowed fields: enabled, instructions, purpose, audience, tone, language, content_pillars (string[]), posting_schedule ([{day:0-6|null,time:'HH:MM',pillar?,prompt?}]), rules (string[]), forbidden_topics (string[]), moderation ({enabled,delete_violations,warn_limit,remove_limit}), welcome ({enabled,hint}), reply_enabled (MASTER reply switch — false means the bot never replies in this group), reply_when_mentioned, reply_to_questions, allow_reactive_posts, require_approval (per-group approval toggle — overrides the global setting), escalation_rules, kpis.",
         parameters: {
           type: "object",
           properties: {

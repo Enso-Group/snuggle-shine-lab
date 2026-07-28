@@ -27,7 +27,7 @@ const BUDGET_MS = 50_000;
 // gpt-image-1-mini are the GPT-family image models. Gemini stays ONLY as the
 // last-resort emergency fallback, because the DM contract ("a real image or
 // a retry, never silence") outranks model preference when OpenAI is down.
-const IMAGE_MODEL_CANDIDATES: Array<{ model: string; endpoint: "chat" | "images" }> = [
+export const IMAGE_MODEL_CANDIDATES: Array<{ model: string; endpoint: "chat" | "images" }> = [
   { model: "openai/gpt-image-2", endpoint: "images" },
   { model: "openai/gpt-image-1-mini", endpoint: "images" },
   { model: "google/gemini-3.1-flash-image", endpoint: "chat" },

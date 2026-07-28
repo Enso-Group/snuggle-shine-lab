@@ -147,7 +147,15 @@ export async function decideGroupReply(
   });
 
   let decision: GateDecision;
-  if (signal !== "none") {
+  if (profile && profile.reply_enabled === false) {
+    // MASTER switch: replies for this group are off — nothing gets through,
+    // not even a direct @-mention. This outranks every other rule.
+    decision = {
+      respond: false,
+      signal: "replies_off",
+      reason: 'Group replies are turned OFF for this group (the "Replies in this group" toggle)',
+    };
+  } else if (signal !== "none") {
     if (profile && !profile.reply_when_mentioned) {
       decision = {
         respond: false,
@@ -162,7 +170,9 @@ export async function decideGroupReply(
       };
       decision = { respond: true, signal, reason: labels[signal] ?? signal };
     }
-  } else if (profile?.enabled && profile.reply_to_questions && looksLikeQuestion(m.body)) {
+  } else if (profile?.reply_to_questions && looksLikeQuestion(m.body)) {
+    // Owned-question replies follow the REPLY settings, not the autonomy
+    // (posting) toggle — replying and posting are independent controls now.
     decision = await ownedQuestionCheck(
       { supabase: deps.supabase, settings, profile },
       m,

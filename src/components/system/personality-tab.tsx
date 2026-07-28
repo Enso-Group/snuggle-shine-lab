@@ -11,9 +11,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Bot, Cpu, Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Bot, Cpu, ListTree, Save } from "lucide-react";
 import { getBotSettings, updateBotSettings } from "@/lib/bot.functions";
 import { getAgentConfig, saveAgentConfig, type AgentConfigView } from "@/lib/brain.functions";
+import { getModelInventory, type ModelInventory } from "@/lib/models.functions";
 
 export function PersonalityTab() {
   const qc = useQueryClient();
@@ -27,6 +29,12 @@ export function PersonalityTab() {
     queryFn: () => getFn(),
   });
   const { data: cfg } = useQuery({ queryKey: ["agent-config"], queryFn: () => getCfgFn() });
+  const inventoryFn = useServerFn(getModelInventory);
+  const { data: inventory } = useQuery({
+    queryKey: ["model-inventory"],
+    queryFn: () => inventoryFn() as Promise<ModelInventory>,
+    staleTime: 30_000,
+  });
 
   const [systemPrompt, setSystemPrompt] = useState("");
   const [botName, setBotName] = useState("");
@@ -204,6 +212,76 @@ export function PersonalityTab() {
         <Save className="size-4" />
         {save.isPending ? "Saving…" : "Save all"}
       </Button>
+
+      {inventory && (
+        <Card>
+          <CardContent className="space-y-4 p-5">
+            <div className="flex items-center gap-2">
+              <ListTree className="size-4 text-primary" />
+              <h3 className="text-sm font-semibold">Models in use (live)</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Resolved from the running configuration right now — the first model in each row is the
+              primary; the rest are automatic fallbacks the system tries in order.
+            </p>
+            {(() => {
+              const areas = [...new Set(inventory.stages.map((s) => s.area))];
+              return areas.map((area) => (
+                <div key={area} className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground">{area}</p>
+                  <div className="space-y-1">
+                    {inventory.stages
+                      .filter((s) => s.area === area)
+                      .map((s) => (
+                        <div
+                          key={`${s.area}:${s.stage}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5"
+                        >
+                          <span className="text-xs">
+                            {s.stage}
+                            {s.note && (
+                              <span className="ms-1 text-[11px] text-muted-foreground">
+                                — {s.note}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex flex-wrap items-center gap-1">
+                            {s.models.map((m, i) => (
+                              <Badge
+                                key={m}
+                                variant={i === 0 ? "default" : "outline"}
+                                className="font-mono text-[10px]"
+                              >
+                                {m}
+                              </Badge>
+                            ))}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ));
+            })()}
+            <div className="space-y-1.5 border-t pt-3">
+              <p className="text-xs font-semibold text-muted-foreground">Research tools</p>
+              {inventory.research_tools.map((t) => (
+                <div
+                  key={t.name}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5"
+                >
+                  <span className="text-xs">{t.name}</span>
+                  <Badge variant={t.configured ? "default" : "destructive"} className="text-[10px]">
+                    {t.configured ? "connected" : "not connected"}
+                  </Badge>
+                  {!t.configured && (
+                    <p className="w-full text-[11px] text-muted-foreground">{t.detail}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

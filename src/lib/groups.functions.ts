@@ -28,6 +28,8 @@ export type GroupProfileRow = {
   reply_when_mentioned: boolean;
   reply_to_questions: boolean;
   allow_reactive_posts: boolean;
+  /** Master reply switch; null/absent = legacy default (replies allowed). */
+  reply_enabled?: boolean | null;
   /** Per-group approval override; null/absent = follow the global setting. */
   require_approval?: boolean | null;
   escalation_rules: string | null;
@@ -138,6 +140,8 @@ export const saveGroupProfile = createServerFn({ method: "POST" })
         reply_when_mentioned: z.boolean().default(true),
         reply_to_questions: z.boolean().default(false),
         allow_reactive_posts: z.boolean().default(false),
+        /** Master reply switch; omitted = leave as-is. */
+        reply_enabled: z.boolean().optional(),
         /** Per-group approval override; omitted = leave as-is. */
         require_approval: z.boolean().optional(),
         escalation_rules: z.string().max(2000).optional(),
@@ -177,23 +181,124 @@ export const saveGroupProfile = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
-    // Per-group approval toggle — separate FENCED write (the column arrives
-    // with the 20260727 migration; a missing column must not fail the save).
-    if (typeof data.require_approval === "boolean") {
-      const { error: apprErr } = await supabaseAdmin
-        .from("group_profiles")
-        .update({ require_approval: data.require_approval } as never)
-        .eq("chat_id", data.chat_id);
-      if (apprErr) {
-        if (/require_approval/.test(apprErr.message) && /column/i.test(apprErr.message)) {
-          throw new Error(
-            "The per-group approval toggle needs the migration — apply supabase/migrations/20260727090000_group_require_approval.sql in Lovable first.",
-          );
-        }
-        throw new Error(apprErr.message);
-      }
-      (row as unknown as Record<string, unknown>).require_approval = data.require_approval;
+    // Late-migration columns — separate FENCED writes (a missing column must
+    // not fail the whole save; it throws an instructive message instead).
+    await writeFencedColumn(
+      supabaseAdmin,
+      data.chat_id,
+      "require_approval",
+      data.require_approval,
+      {
+        migration: "20260727090000_group_require_approval.sql",
+        row: row as unknown as Record<string, unknown>,
+      },
+    );
+    await writeFencedColumn(supabaseAdmin, data.chat_id, "reply_enabled", data.reply_enabled, {
+      migration: "20260728120000_group_reply_enabled.sql",
+      row: row as unknown as Record<string, unknown>,
+    });
+    return row as unknown as GroupProfileRow;
+  });
+
+/**
+ * Write one late-migration boolean column, translating a missing-column error
+ * into an instruction naming the exact migration to apply. Mirrors the saved
+ * value onto `row` so callers return the up-to-date shape.
+ */
+async function writeFencedColumn(
+  supabaseAdmin: Awaited<typeof import("@/integrations/supabase/client.server")>["supabaseAdmin"],
+  chatId: string,
+  column: "require_approval" | "reply_enabled",
+  value: boolean | undefined,
+  opts: { migration: string; row: Record<string, unknown> },
+): Promise<void> {
+  if (typeof value !== "boolean") return;
+  const { error } = await supabaseAdmin
+    .from("group_profiles")
+    .update({ [column]: value } as never)
+    .eq("chat_id", chatId);
+  if (error) {
+    if (new RegExp(column).test(error.message) && /column/i.test(error.message)) {
+      throw new Error(
+        `The "${column}" toggle needs a migration — apply supabase/migrations/${opts.migration} in Lovable first.`,
+      );
     }
+    throw new Error(error.message);
+  }
+  opts.row[column] = value;
+}
+
+/**
+ * Instant persistence for the editor's toggle switches: saves ONLY the flags
+ * provided, immediately, without touching the rest of the profile (so a
+ * toggle flip can never be lost by navigating away before "Save", and never
+ * clobbers half-edited text fields). Creates the profile row if the group
+ * was never taught.
+ */
+export const setGroupProfileFlags = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAdmin])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        chat_id: z.string().min(5).endsWith("@g.us"),
+        name: z.string().max(200).optional(),
+        enabled: z.boolean().optional(),
+        reply_when_mentioned: z.boolean().optional(),
+        reply_to_questions: z.boolean().optional(),
+        allow_reactive_posts: z.boolean().optional(),
+        reply_enabled: z.boolean().optional(),
+        require_approval: z.boolean().optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }): Promise<GroupProfileRow> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const plain: Record<string, unknown> = {
+      chat_id: data.chat_id,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.name?.trim()) plain.name = data.name.trim();
+    for (const key of [
+      "enabled",
+      "reply_when_mentioned",
+      "reply_to_questions",
+      "allow_reactive_posts",
+    ] as const) {
+      if (typeof data[key] === "boolean") plain[key] = data[key];
+    }
+    const { data: row, error } = await supabaseAdmin
+      .from("group_profiles")
+      .upsert(plain as never, { onConflict: "chat_id" })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    await writeFencedColumn(
+      supabaseAdmin,
+      data.chat_id,
+      "require_approval",
+      data.require_approval,
+      {
+        migration: "20260727090000_group_require_approval.sql",
+        row: row as unknown as Record<string, unknown>,
+      },
+    );
+    await writeFencedColumn(supabaseAdmin, data.chat_id, "reply_enabled", data.reply_enabled, {
+      migration: "20260728120000_group_reply_enabled.sql",
+      row: row as unknown as Record<string, unknown>,
+    });
+    // The change trail: which flag was flipped, by the dashboard, to what.
+    const { logDecision } = await import("@/lib/agent/decisions.server");
+    logDecision(supabaseAdmin, {
+      chat_id: data.chat_id,
+      trigger: "scheduled",
+      stage: "config",
+      status: "ok",
+      summary: `Group toggle saved from the dashboard: ${Object.entries(data)
+        .filter(([k, v]) => k !== "chat_id" && k !== "name" && typeof v === "boolean")
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")}`,
+      data: { chat_id: data.chat_id },
+    });
     return row as unknown as GroupProfileRow;
   });
 

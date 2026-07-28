@@ -221,10 +221,15 @@ export async function drainPlannedPosts(
 ): Promise<Array<{ group: string; status: string }>> {
   const settings = await loadAgentSettings(deps.supabase);
   if (!settings?.enabled) return [];
-  const profiles = await listEnabledGroupProfiles(deps.supabase);
-  // No enabled profiles must mean "do nothing", not "fail every planned
-  // post through the missing-profile path below".
-  if (!profiles.length) return [];
+  // ALL profiles, not just enabled ones: a manager-requested campaign post
+  // sends regardless of the group's autonomy toggle (live 2026-07-28: seven
+  // Glidai campaign posts were failed "profile disabled or missing" because
+  // the group's Autonomous-management toggle was off — but the manager had
+  // explicitly asked for those posts). null = the profile QUERY failed; do
+  // nothing this tick rather than mis-fail every post over a transient blip.
+  const { listAllGroupProfiles, fallbackGroupProfile } = await import("./groups.server");
+  const profiles = await listAllGroupProfiles(deps.supabase);
+  if (profiles === null) return [];
   const posted: Array<{ group: string; status: string }> = [];
 
   // A backlog can pile up while generation is broken (schedule slots keep
@@ -288,17 +293,27 @@ export async function drainPlannedPosts(
       posted.push({ group: post.group_chat_id, status: "leased" });
       continue;
     }
-    const profile = profiles.find((p) => p.chat_id === post.group_chat_id);
-    if (!profile) {
-      // The group was disabled or its profile deleted after the post was
-      // planned. Skipping silently would leave the row 'planned' forever
-      // (shown as "generating" on the dashboard) — fail it visibly instead.
+    const stored = profiles.find((p) => p.chat_id === post.group_chat_id) ?? null;
+    // A CAMPAIGN post is an explicit manager request ("post X to group Y") —
+    // it sends even when the group's autonomy toggle is off or the group was
+    // never taught (a minimal stand-in profile carries it; approval falls
+    // back to the global setting). Only AUTONOMOUS posts (schedule slots,
+    // reactive) require the enabled profile — running a group on its own is
+    // exactly what that toggle governs.
+    const isCampaign = post.source === "campaign";
+    const profile = stored ?? (isCampaign ? fallbackGroupProfile(post.group_chat_id) : null);
+    if (!profile || (!profile.enabled && !isCampaign)) {
+      // Skipping silently would leave the row 'planned' forever (shown as
+      // "generating" on the dashboard) — fail it visibly, and say exactly
+      // which switch to flip.
+      const reason = stored
+        ? `Autonomous posting is OFF for this group — scheduled/reactive posts only send when "Autonomous management" is on. Turn it on in Command Center → this group (the toggle now saves immediately) and press Retry.`
+        : `This group has no profile yet — scheduled/reactive posts need one. Open the group in Command Center, turn on "Autonomous management", then press Retry.`;
       await deps.supabase
         .from("planned_posts")
         .update({
           status: "failed",
-          reasoning:
-            "Group profile disabled or missing — enable the group in Command Center and re-plan the post",
+          reasoning: reason,
           updated_at: new Date().toISOString(),
         })
         .eq("id", post.id);
@@ -307,7 +322,7 @@ export async function drainPlannedPosts(
         trigger: "scheduled",
         stage: "error",
         status: "error",
-        summary: `Planned post failed: group profile for ${post.group_chat_id} is disabled or missing`,
+        summary: `Planned ${post.source} post failed: group ${post.group_chat_id} ${stored ? "has autonomous posting off" : "has no profile"}`,
         data: { planned_post_id: post.id },
       });
       posted.push({ group: post.group_chat_id, status: "failed" });
@@ -705,16 +720,17 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         try {
           const { isDemoTarget } = await import("@/lib/whapi.server");
           const { notifyWaAdmins } = await import("./admin-notify.server");
-          if (!isDemoTarget(profile.chat_id)) await notifyWaAdmins(
-            supabase,
-            [
-              `🕓 פוסט חדש ממתין לאישור`,
-              `קבוצה: ${profile.name ?? profile.chat_id}`,
-              `תוכן: ${(final || poll?.question || "").slice(0, 250)}`,
-              `אפשר לאשר או לדחות כאן — פשוט תכתוב לי.`,
-            ].join("\n"),
-            { whapi: deps.whapi },
-          );
+          if (!isDemoTarget(profile.chat_id))
+            await notifyWaAdmins(
+              supabase,
+              [
+                `🕓 פוסט חדש ממתין לאישור`,
+                `קבוצה: ${profile.name ?? profile.chat_id}`,
+                `תוכן: ${(final || poll?.question || "").slice(0, 250)}`,
+                `אפשר לאשר או לדחות כאן — פשוט תכתוב לי.`,
+              ].join("\n"),
+              { whapi: deps.whapi },
+            );
         } catch (e) {
           console.warn("[posting] admin approval notify failed:", e);
         }

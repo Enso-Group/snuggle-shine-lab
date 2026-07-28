@@ -61,3 +61,14 @@ describe("sanitizeProfilePatch", () => {
     expect(sanitizeProfilePatch("junk")).toEqual({ patch: {}, applied: [], rejected: [] });
   });
 });
+
+describe("reply_enabled (master reply switch)", () => {
+  it("accepts booleans and rejects non-booleans", () => {
+    const ok = sanitizeProfilePatch({ reply_enabled: false });
+    expect(ok.patch.reply_enabled).toBe(false);
+    expect(ok.applied).toContain("reply_enabled");
+    const bad = sanitizeProfilePatch({ reply_enabled: "off" });
+    expect(bad.patch.reply_enabled).toBeUndefined();
+    expect(bad.rejected).toContain("reply_enabled");
+  });
+});

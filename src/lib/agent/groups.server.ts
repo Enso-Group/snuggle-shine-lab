@@ -40,6 +40,12 @@ export type GroupProfile = {
   reply_to_questions: boolean;
   allow_reactive_posts: boolean;
   /**
+   * Per-group MASTER reply switch. false = the bot never replies in this
+   * group; true = replies allowed via the smart addressing gate; null =
+   * never set (or column not migrated yet) → legacy default, allowed.
+   */
+  reply_enabled: boolean | null;
+  /**
    * Per-group approval override. true = every send to this group waits for
    * approval; false = sends go out immediately; null = never set (or column
    * not migrated yet) → the global require_approval_all applies. An explicit
@@ -89,6 +95,7 @@ function rowToProfile(data: Record<string, unknown>): GroupProfile {
     reply_when_mentioned: data.reply_when_mentioned !== false,
     reply_to_questions: data.reply_to_questions === true,
     allow_reactive_posts: data.allow_reactive_posts === true,
+    reply_enabled: typeof data.reply_enabled === "boolean" ? data.reply_enabled : null,
     require_approval: typeof data.require_approval === "boolean" ? data.require_approval : null,
     escalation_rules: (data.escalation_rules as string) ?? null,
     kpis: (data.kpis as string) ?? null,
@@ -129,6 +136,60 @@ export async function listEnabledGroupProfiles(supabase: Supa): Promise<GroupPro
   } catch {
     return [];
   }
+}
+
+/**
+ * ALL group profiles, enabled or not — the post drain needs the disabled ones
+ * too (a manager-requested campaign post sends regardless of the autonomy
+ * toggle). Returns null on a LOAD ERROR so the caller can tell "no profiles
+ * exist" (proceed) apart from "the query failed" (do nothing this tick —
+ * failing every planned post over a transient DB blip is the bug this
+ * distinction prevents).
+ */
+export async function listAllGroupProfiles(supabase: Supa): Promise<GroupProfile[] | null> {
+  try {
+    const { data, error } = await supabase.from("group_profiles").select("*");
+    if (error) {
+      console.warn("[groups] list-all failed:", error.message);
+      return null;
+    }
+    return (data ?? []).map((d) => rowToProfile(d as Record<string, unknown>));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Minimal stand-in profile for a group that has none — lets an explicit
+ * campaign post generate and send without requiring the manager to "teach"
+ * the group first. Not persisted; approval falls back to the global setting.
+ */
+export function fallbackGroupProfile(chatId: string, name?: string | null): GroupProfile {
+  return {
+    id: "",
+    chat_id: chatId,
+    name: name ?? null,
+    enabled: false,
+    instructions: null,
+    purpose: null,
+    audience: null,
+    tone: null,
+    language: "he",
+    content_pillars: [],
+    posting_schedule: [],
+    rules: [],
+    forbidden_topics: [],
+    moderation: {},
+    welcome: {},
+    reply_when_mentioned: true,
+    reply_to_questions: false,
+    allow_reactive_posts: false,
+    reply_enabled: null,
+    require_approval: null,
+    escalation_rules: null,
+    kpis: null,
+    owner_dm: null,
+  };
 }
 
 /** The group's "who we are and how we behave here" block for drafting prompts. */

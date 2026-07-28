@@ -16,8 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { CalendarClock, Plus, Save, Shield, Trash2 } from "lucide-react";
-import { saveGroupProfile, type GroupProfileRow } from "@/lib/groups.functions";
+import { CalendarClock, MessageCircle, Plus, Save, Shield, Trash2 } from "lucide-react";
+import {
+  saveGroupProfile,
+  setGroupProfileFlags,
+  type GroupProfileRow,
+} from "@/lib/groups.functions";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -26,6 +30,7 @@ type Slot = { day: number | null; time: string; pillar?: string; prompt?: string
 type FormState = {
   enabled: boolean;
   requireApproval: boolean;
+  replyEnabled: boolean;
   instructions: string;
   purpose: string;
   audience: string;
@@ -55,6 +60,8 @@ function profileToForm(p: GroupProfileRow | null, globalRequireApproval: boolean
     // The group's own toggle wins; a group that never set one starts from the
     // global setting (and saving makes it explicit from then on).
     requireApproval: p?.require_approval ?? globalRequireApproval,
+    // null/absent = legacy default: replies allowed (smart-gated).
+    replyEnabled: p?.reply_enabled ?? true,
     instructions: p?.instructions ?? "",
     purpose: p?.purpose ?? "",
     audience: p?.audience ?? "",
@@ -100,12 +107,17 @@ export function GroupProfileEditor({
 }) {
   const qc = useQueryClient();
   const saveFn = useServerFn(saveGroupProfile);
+  const flagsFn = useServerFn(setGroupProfileFlags);
   const [form, setForm] = useState<FormState>(() => profileToForm(profile, globalRequireApproval));
 
+  // Re-seed the form when SWITCHING groups, or when the profile first arrives
+  // for this group (list query resolving after mount). Deliberately NOT on
+  // every updated_at bump — an instant toggle save refetches the list, and
+  // re-seeding then would clobber text the manager is mid-typing.
   useEffect(() => {
     setForm(profileToForm(profile, globalRequireApproval));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, profile?.updated_at]);
+  }, [chatId, profile === null]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -133,6 +145,7 @@ export function GroupProfileEditor({
           reply_when_mentioned: form.replyWhenMentioned,
           reply_to_questions: form.replyToQuestions,
           allow_reactive_posts: form.allowReactive,
+          reply_enabled: form.replyEnabled,
           require_approval: form.requireApproval,
           escalation_rules: form.escalationRules,
           kpis: form.kpis,
@@ -149,6 +162,42 @@ export function GroupProfileEditor({
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  // Toggles persist IMMEDIATELY — no "Save" click needed, so a flip can never
+  // be lost by navigating away (live 2026-07-28: approval/autonomy toggles
+  // reverted because they only lived in local state until Save). On failure
+  // the switch snaps back and the error explains why.
+  const saveFlags = useMutation({
+    mutationFn: (patch: {
+      enabled?: boolean;
+      require_approval?: boolean;
+      reply_enabled?: boolean;
+      reply_when_mentioned?: boolean;
+      reply_to_questions?: boolean;
+      allow_reactive_posts?: boolean;
+    }) => flagsFn({ data: { chat_id: chatId, name: whatsappName, ...patch } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["managed-groups"] });
+      toast.success("Saved");
+    },
+    onError: (e: Error) => toast.error(`Toggle NOT saved: ${e.message}`),
+  });
+  const toggleAndSave = (
+    key: keyof FormState,
+    column:
+      | "enabled"
+      | "require_approval"
+      | "reply_enabled"
+      | "reply_when_mentioned"
+      | "reply_to_questions"
+      | "allow_reactive_posts",
+  ) => {
+    return (v: boolean) => {
+      const previous = form[key];
+      set(key, v as FormState[typeof key]);
+      saveFlags.mutate({ [column]: v }, { onError: () => set(key, previous) });
+    };
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -159,10 +208,11 @@ export function GroupProfileEditor({
                 {whatsappName}
               </h2>
               <p className="text-xs text-muted-foreground">
-                Autonomous management {form.enabled ? "ON — the bot runs this group" : "OFF"}
+                Autonomous management {form.enabled ? "ON — the bot runs this group" : "OFF"} ·
+                saves instantly
               </p>
             </div>
-            <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} />
+            <Switch checked={form.enabled} onCheckedChange={toggleAndSave("enabled", "enabled")} />
           </div>
 
           <div className="flex items-center justify-between rounded-md border bg-muted/20 p-3">
@@ -172,12 +222,31 @@ export function GroupProfileEditor({
                 {form.requireApproval
                   ? "ON — everything the bot sends to this group waits for your approval first."
                   : "OFF — messages to this group send immediately."}{" "}
-                This toggle overrides the global approval setting for this group.
+                Overrides the global approval setting for this group · saves instantly.
               </p>
             </div>
             <Switch
               checked={form.requireApproval}
-              onCheckedChange={(v) => set("requireApproval", v)}
+              onCheckedChange={toggleAndSave("requireApproval", "require_approval")}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border bg-muted/20 p-3">
+            <div className="flex items-start gap-2">
+              <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div>
+                <p className="text-sm font-medium">Replies in this group</p>
+                <p className="text-xs text-muted-foreground">
+                  {form.replyEnabled
+                    ? "ON — the bot replies only to messages directed at it: @-mentions, replies to its messages, its name, or questions it owns. Never random chatter."
+                    : "OFF — the bot never replies in this group, not even when mentioned."}{" "}
+                  Saves instantly.
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={form.replyEnabled}
+              onCheckedChange={toggleAndSave("replyEnabled", "reply_enabled")}
             />
           </div>
 
@@ -330,7 +399,10 @@ export function GroupProfileEditor({
                 Join hot discussions on its own (max once per 12h)
               </p>
             </div>
-            <Switch checked={form.allowReactive} onCheckedChange={(v) => set("allowReactive", v)} />
+            <Switch
+              checked={form.allowReactive}
+              onCheckedChange={toggleAndSave("allowReactive", "allow_reactive_posts")}
+            />
           </div>
         </CardContent>
       </Card>
@@ -372,18 +444,24 @@ export function GroupProfileEditor({
                 onChange={(e) => set("removeLimit", Number(e.target.value) || 4)}
               />
             </label>
-            <label className="flex items-center justify-between gap-2 text-xs">
+            <label
+              className={`flex items-center justify-between gap-2 text-xs ${form.replyEnabled ? "" : "opacity-50"}`}
+            >
               Reply when the bot is mentioned
               <Switch
                 checked={form.replyWhenMentioned}
-                onCheckedChange={(v) => set("replyWhenMentioned", v)}
+                disabled={!form.replyEnabled}
+                onCheckedChange={toggleAndSave("replyWhenMentioned", "reply_when_mentioned")}
               />
             </label>
-            <label className="flex items-center justify-between gap-2 text-xs">
+            <label
+              className={`flex items-center justify-between gap-2 text-xs ${form.replyEnabled ? "" : "opacity-50"}`}
+            >
               Answer open questions in the group
               <Switch
                 checked={form.replyToQuestions}
-                onCheckedChange={(v) => set("replyToQuestions", v)}
+                disabled={!form.replyEnabled}
+                onCheckedChange={toggleAndSave("replyToQuestions", "reply_to_questions")}
               />
             </label>
             <label className="flex items-center justify-between gap-2 text-xs">
