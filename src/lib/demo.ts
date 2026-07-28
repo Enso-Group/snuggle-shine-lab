@@ -14,7 +14,7 @@
 // Nothing here writes to the DB or calls any external service.
 // ---------------------------------------------------------------------------
 
-export const DEMO_MODE = false;
+export const DEMO_MODE = true;
 
 // --- relative timestamps so the data always looks fresh -----------------------
 const now = Date.now();
