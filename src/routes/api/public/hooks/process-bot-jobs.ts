@@ -81,11 +81,10 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           // own chat (message-yourself). Marker-gated per version — repeated
           // calls return the stored trace instead of spending credits/sends.
           if (probeParam === "dmimage") {
-            // v3: re-armed 2026-07-28 — v2 proved gpt-image-2 alone times out
-            // past 30s; this run uses the DM pipeline's real shape (20s per
-            // candidate) so the chain must produce an image via a GPT-family
-            // model within the budget.
-            const MARKER = "DM image self-test v3";
+            // v4: re-armed 2026-07-28 — v2/v3 measured BOTH GPT image models
+            // >20s at medium quality. This run mirrors the DM pipeline
+            // exactly: 20s per candidate at quality "low".
+            const MARKER = "DM image self-test v4";
             try {
               const { data: done } = await supabase
                 .from("bot_decisions")
@@ -123,11 +122,17 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                   });
                   const generated = await step("2_generate", async () => {
                     const { generateImage } = await import("@/lib/image-gen.server");
-                    // Same shape as the DM pipeline: 20s per candidate so a
-                    // stalling lead model hands over to the next GPT model.
+                    // Same shape as the DM pipeline: 20s per candidate at
+                    // quality "low" so a stalling lead model hands over to
+                    // the next GPT model.
                     return generateImage(
                       "A cozy, photorealistic golden retriever puppy sitting in a sunlit garden, shallow depth of field, no text or letters in the image.",
-                      { source: "dm_image_selftest", timeoutMs: 20_000, budgetMs: 45_000 },
+                      {
+                        source: "dm_image_selftest",
+                        timeoutMs: 20_000,
+                        budgetMs: 45_000,
+                        quality: "low",
+                      },
                     );
                   });
                   trace["2_generate"] = {

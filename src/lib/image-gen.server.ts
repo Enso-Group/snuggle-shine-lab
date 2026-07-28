@@ -93,7 +93,18 @@ export function splitDataUrl(dataUrl: string): { mime: string; base64: string } 
  */
 export async function generateImage(
   prompt: string,
-  opts: { source?: string; timeoutMs?: number; budgetMs?: number } = {},
+  opts: {
+    source?: string;
+    timeoutMs?: number;
+    budgetMs?: number;
+    /**
+     * openai/gpt-image-* rendering quality (images endpoint only). "medium"
+     * default; the DM pipeline passes "low" — measured 2026-07-28: both GPT
+     * image models exceed 20s at medium, which does not fit the DM reply's
+     * slice of the ~60s request wall. Low renders in a fraction of the time.
+     */
+    quality?: "low" | "medium" | "high";
+  } = {},
 ): Promise<GeneratedImage> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
@@ -124,7 +135,7 @@ export async function generateImage(
         headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
         body: JSON.stringify(
           endpoint === "images"
-            ? { model, prompt, quality: "medium" }
+            ? { model, prompt, quality: opts.quality ?? "medium" }
             : {
                 model,
                 messages: [{ role: "user", content: prompt }],

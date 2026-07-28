@@ -529,10 +529,13 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
       // 20s per CANDIDATE, not per call: gpt-image-2 measured >30s on this
       // gateway (probe 2026-07-28) — a bounded slice makes the chain's next
       // GPT model (gpt-image-1-mini) a real fallback inside one attempt.
+      // quality "low": at medium BOTH GPT image models exceed 20s (probe v3);
+      // low is the only rendering tier that fits the DM latency envelope.
       const generated = await generateImage(imageRequest, {
         source: "dm_image_gen",
         timeoutMs: 20_000,
         budgetMs: genBudgetMs,
+        quality: "low",
       });
       imageMedia = generated.attachment;
       imageGenMs = Date.now() - t;
