@@ -503,13 +503,14 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     isDmChatId(job.chat_id) &&
     deps.trigger !== "simulation"
   ) {
-    // Wall guard: generation legitimately takes 10-30s. When this attempt has
-    // already burned most of the request wall (slow draft, research round), a
+    // Wall guard: generation gets whatever honestly remains of the ~60s
+    // request wall (minus room for the send). Too little left → defer: a
     // generation started now dies wall-killed with NO catch path — the job
     // rots under its claim lock and fails 3/3 as "worker lock expired" (live
-    // 2026-07-26). Defer instead: the attempt is refunded and the next tick
-    // reruns the cycle with a fresh wall.
-    if (Date.now() - processStartAt > 28_000) {
+    // 2026-07-26). The attempt is refunded and the next tick reruns the
+    // cycle with a fresh wall.
+    const genBudgetMs = Math.min(42_000, 55_000 - (Date.now() - processStartAt));
+    if (genBudgetMs < 20_000) {
       logDecision(supabase, {
         ...base,
         stage: "image",
@@ -525,10 +526,13 @@ export async function processInboundJob(deps: AgentDeps, job: BotJob): Promise<P
     t = Date.now();
     try {
       const { generateImage } = await import("@/lib/image-gen.server");
+      // 20s per CANDIDATE, not per call: gpt-image-2 measured >30s on this
+      // gateway (probe 2026-07-28) — a bounded slice makes the chain's next
+      // GPT model (gpt-image-1-mini) a real fallback inside one attempt.
       const generated = await generateImage(imageRequest, {
         source: "dm_image_gen",
-        timeoutMs: 25_000,
-        budgetMs: 30_000,
+        timeoutMs: 20_000,
+        budgetMs: genBudgetMs,
       });
       imageMedia = generated.attachment;
       imageGenMs = Date.now() - t;
