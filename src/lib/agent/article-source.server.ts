@@ -240,13 +240,15 @@ export async function pickFreshArticle(
 ): Promise<FetchedArticle & { discovered: number }> {
   const articles = await discoverBlogArticles(blogRoot);
 
-  // Everything this group already posted — URLs in sent bodies plus the
-  // explicit engagement.article.url bookkeeping.
+  // Everything this group already posted or PICKED — URLs in bodies plus the
+  // explicit engagement.article.url bookkeeping, across ALL statuses:
+  // a cancelled/failed row may still represent a send that happened
+  // unrecorded (live 2026-07-28, the Bluewaters double-send), so an article
+  // once picked is burned for rotation purposes.
   const { data: sentRows } = await supabase
     .from("planned_posts")
     .select("body, engagement")
     .eq("group_chat_id", groupChatId)
-    .in("status", ["sent", "queued_approval", "planned"])
     .order("created_at", { ascending: false })
     .limit(200);
   const used = new Set<string>();

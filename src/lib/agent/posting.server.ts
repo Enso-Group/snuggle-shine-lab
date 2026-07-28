@@ -434,6 +434,53 @@ async function recentPostBodies(deps: AgentDeps, chatId: string): Promise<string
   return (data ?? []).map((p) => String(p.body ?? "")).filter(Boolean);
 }
 
+/**
+ * Anything near-identical delivered to this chat in the last hour — sent
+ * planned_posts plus the conversation's outbound mirror (which also catches
+ * sends whose post row was lost). Returns where/when the match was found.
+ */
+export async function findRecentNearDuplicate(
+  supabase: AgentDeps["supabase"],
+  chatId: string,
+  candidateBody: string,
+): Promise<{ at: string; source: string } | null> {
+  if (!candidateBody.trim()) return null;
+  const { isNearDuplicateText } = await import("./dedupe");
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data: sentPosts } = await supabase
+    .from("planned_posts")
+    .select("body, sent_at")
+    .eq("group_chat_id", chatId)
+    .eq("status", "sent")
+    .gte("sent_at", hourAgo)
+    .limit(30);
+  for (const p of sentPosts ?? []) {
+    if (p.body && isNearDuplicateText(candidateBody, String(p.body))) {
+      return { at: String(p.sent_at ?? ""), source: "sent post" };
+    }
+  }
+  const { data: conv } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("whapi_chat_id", chatId)
+    .maybeSingle();
+  if (conv) {
+    const { data: msgs } = await supabase
+      .from("messages")
+      .select("body, created_at")
+      .eq("conversation_id", conv.id)
+      .eq("direction", "outbound")
+      .gte("created_at", hourAgo)
+      .limit(30);
+    for (const m of msgs ?? []) {
+      if (m.body && isNearDuplicateText(candidateBody, String(m.body))) {
+        return { at: String(m.created_at ?? ""), source: "outbound message" };
+      }
+    }
+  }
+  return null;
+}
+
 async function generateAndSendPost(
   deps: AgentDeps,
   settings: AgentSettings,
@@ -510,6 +557,38 @@ async function generateAndSendPost(
     .eq("updated_at", post.updated_at)
     .select("id");
   if (claimErr || !claimed?.length) return "lost_claim";
+
+  // IDEMPOTENT SENDS: a previous attempt persisted this marker immediately
+  // before its WhatsApp send and then died before recording (a wall-kill has
+  // no catch path). The message very likely reached the group — live
+  // 2026-07-28: the Bluewaters post went out 13:32 unrecorded and the retry
+  // re-sent a near-identical draft at 13:33. NEVER send again: record the
+  // row as sent (flagged unconfirmed) and stop.
+  const priorSend = attempt.prior as { send_started_at?: string; send_body?: string };
+  if (priorSend.send_started_at) {
+    const { draft: _recoveredDraft, ...recoveredEngagement } = releaseLease(owned);
+    await supabase
+      .from("planned_posts")
+      .update({
+        body: priorSend.send_body || storedDraft?.post || post.prompt || "",
+        status: "sent",
+        sent_at: priorSend.send_started_at,
+        reasoning:
+          "Recovered: a previous attempt reached the WhatsApp send and died before recording — marked sent WITHOUT resending (delivery unconfirmed; check the chat)",
+        engagement: recoveredEngagement as Json,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", post.id);
+    logDecision(supabase, {
+      chat_id: profile.chat_id,
+      trigger: "scheduled",
+      stage: "post",
+      status: "ok",
+      summary: `Recovered an unrecorded send in ${profile.name ?? profile.chat_id} — marked sent without resending (idempotency marker from ${priorSend.send_started_at})`,
+      data: { planned_post_id: post.id, send_started_at: priorSend.send_started_at },
+    });
+    return "recovered_sent";
+  }
 
   try {
     const { normalizePoll, pollCount, pollAsHistoryText } = await import("./poll");
@@ -846,6 +925,55 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       return "cancelled_midflight";
     }
 
+    // DUPLICATE GUARD: never send content near-identical to something this
+    // chat already received in the last hour (same URL, or ≥60% token
+    // overlap). This is the deterministic net under the idempotency marker —
+    // whatever path produced the duplicate, it dies here, visibly.
+    {
+      const candidateBody = [final, poll ? pollAsHistoryText(poll) : ""]
+        .filter(Boolean)
+        .join("\n\n");
+      const recentDupe = await findRecentNearDuplicate(supabase, profile.chat_id, candidateBody);
+      if (recentDupe) {
+        const { send_started_at: _g1, send_body: _g2, ...guardEngagement } = releaseLease(owned);
+        await supabase
+          .from("planned_posts")
+          .update({
+            status: "failed",
+            reasoning: `Duplicate guard blocked the send: near-identical to a message delivered to this chat at ${recentDupe.at} (${recentDupe.source}). Nothing was sent.`,
+            engagement: guardEngagement as Json,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", post.id);
+        logDecision(supabase, {
+          chat_id: profile.chat_id,
+          trigger: "scheduled",
+          stage: "error",
+          status: "error",
+          summary: `Duplicate guard blocked a ${post.source} post to ${profile.name ?? profile.chat_id} — near-identical content was sent at ${recentDupe.at}`,
+          data: { planned_post_id: post.id, matched_at: recentDupe.at, source: recentDupe.source },
+        });
+        return "duplicate_blocked";
+      }
+    }
+
+    // SEND MARKER, awaited, BEFORE anything leaves for WhatsApp: if this
+    // request dies between the send and the record there is no catch path —
+    // this marker is what tells the next attempt "a send may have happened;
+    // record it, never resend" (the idempotency check at the top).
+    owned = {
+      ...owned,
+      send_started_at: new Date().toISOString(),
+      send_body: [final, poll ? pollAsHistoryText(poll) : ""]
+        .filter(Boolean)
+        .join("\n\n")
+        .slice(0, 1500),
+    };
+    await supabase
+      .from("planned_posts")
+      .update({ engagement: owned as Json, updated_at: new Date().toISOString() })
+      .eq("id", post.id);
+
     // Send: media-with-caption when the post carries an attachment (one
     // WhatsApp message), else text — then the native tappable poll. The drain
     // query deliberately omits the media column (it may predate its
@@ -910,10 +1038,15 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     ]
       .filter(Boolean)
       .join("\n\n");
-    // The stored draft has served its purpose — drop it, and release the
-    // lease, so the engagement jsonb goes back to holding only stats
-    // (gen_attempts and gen_last_model kept for the record).
-    const { draft: _sentDraft, ...doneEngagement } = releaseLease(owned);
+    // The stored draft and the send marker have served their purpose — drop
+    // them, and release the lease, so the engagement jsonb goes back to
+    // holding only stats (gen_attempts and gen_last_model kept for record).
+    const {
+      draft: _sentDraft,
+      send_started_at: _sentMarker,
+      send_body: _sentMarkerBody,
+      ...doneEngagement
+    } = releaseLease(owned);
     // Conditional on 'planned': a cancel that slipped between the ownership
     // check and the send must keep its terminal status — the delivery is then
     // recorded via the conversation mirror + an error decision only.
@@ -934,13 +1067,28 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       .eq("status", "planned")
       .select("id");
     if (!sentRows?.length) {
+      // NO INVISIBLE SENDS: the row was cancelled concurrently, but the
+      // message HAS been delivered — the Sent list must show it anyway.
+      await supabase
+        .from("planned_posts")
+        .update({
+          body: sentBody,
+          status: "sent",
+          sent_at: new Date().toISOString(),
+          whapi_message_id: textSendId ?? pollSendId,
+          reasoning:
+            "Was cancelled concurrently, but the message had ALREADY been delivered — recorded as sent",
+          engagement: doneEngagement as Json,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", post.id);
       logDecision(supabase, {
         chat_id: profile.chat_id,
         trigger: "scheduled",
         stage: "error",
         status: "error",
         summary:
-          "Post was delivered but its row had been cancelled concurrently — delivery recorded in the conversation only",
+          "Post was cancelled concurrently but had already been delivered — forced the row to 'sent' so the send stays visible",
         data: { planned_post_id: post.id, whapi_message_id: textSendId ?? pollSendId },
       });
     }
@@ -995,6 +1143,16 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     // Transient errors below the attempt cap keep status 'planned' so the
     // next tick retries; gen_attempts (already bumped) bounds the retries.
     const retryable = isTransientGenError(msg) && attempt.attempts < MAX_GEN_ATTEMPTS;
+    // Send-marker hygiene on a CAUGHT error: a definite failure clears the
+    // marker so the retry may genuinely resend; a TIMEOUT does not — Whapi
+    // may still deliver after the timeout (approvals learned this live), and
+    // the marker then makes the retry record instead of double-sending.
+    const sendMayHaveLanded = /took too long|timed out/i.test(msg);
+    const caughtEngagement = releaseLease(owned);
+    if (!sendMayHaveLanded) {
+      delete caughtEngagement.send_started_at;
+      delete caughtEngagement.send_body;
+    }
     await supabase
       .from("planned_posts")
       .update({
@@ -1003,7 +1161,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         // Release the lease on the way out: a CAUGHT failure should retry on
         // the very next tick, not wait out GEN_LEASE_MS. A draft persisted
         // before the error survives inside `owned` for that retry to send.
-        engagement: releaseLease(owned) as Json,
+        engagement: caughtEngagement as Json,
         updated_at: new Date().toISOString(),
       })
       .eq("id", post.id);
