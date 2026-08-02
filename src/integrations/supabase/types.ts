@@ -438,9 +438,9 @@ export type Database = {
       }
       group_daily_stats: {
         Row: {
-          channel_phone: string | null
           active_members: number
           bot_posts: number
+          channel_phone: string | null
           created_at: string
           date: string
           group_chat_id: string
@@ -452,9 +452,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          channel_phone?: string | null
           active_members?: number
           bot_posts?: number
+          channel_phone?: string | null
           created_at?: string
           date: string
           group_chat_id: string
@@ -466,9 +466,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          channel_phone?: string | null
           active_members?: number
           bot_posts?: number
+          channel_phone?: string | null
           created_at?: string
           date?: string
           group_chat_id?: string
@@ -737,8 +737,8 @@ export type Database = {
       }
       moderation_actions: {
         Row: {
-          channel_phone: string | null
           action: string
+          channel_phone: string | null
           created_at: string
           error: string | null
           group_chat_id: string
@@ -751,8 +751,8 @@ export type Database = {
           whapi_message_id: string | null
         }
         Insert: {
-          channel_phone?: string | null
           action: string
+          channel_phone?: string | null
           created_at?: string
           error?: string | null
           group_chat_id: string
@@ -765,8 +765,8 @@ export type Database = {
           whapi_message_id?: string | null
         }
         Update: {
-          channel_phone?: string | null
           action?: string
+          channel_phone?: string | null
           created_at?: string
           error?: string | null
           group_chat_id?: string
@@ -830,8 +830,8 @@ export type Database = {
       }
       planned_posts: {
         Row: {
-          channel_phone: string | null
           body: string | null
+          channel_phone: string | null
           created_at: string
           engagement: Json
           group_chat_id: string
@@ -849,8 +849,8 @@ export type Database = {
           whapi_message_id: string | null
         }
         Insert: {
-          channel_phone?: string | null
           body?: string | null
+          channel_phone?: string | null
           created_at?: string
           engagement?: Json
           group_chat_id: string
@@ -868,8 +868,8 @@ export type Database = {
           whapi_message_id?: string | null
         }
         Update: {
-          channel_phone?: string | null
           body?: string | null
+          channel_phone?: string | null
           created_at?: string
           engagement?: Json
           group_chat_id?: string
@@ -890,8 +890,8 @@ export type Database = {
       }
       scheduled_approvals: {
         Row: {
-          channel_phone: string | null
           body: string
+          channel_phone: string | null
           conversation_id: string | null
           created_at: string
           decided_at: string | null
@@ -907,8 +907,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          channel_phone?: string | null
           body: string
+          channel_phone?: string | null
           conversation_id?: string | null
           created_at?: string
           decided_at?: string | null
@@ -924,8 +924,8 @@ export type Database = {
           user_id: string
         }
         Update: {
-          channel_phone?: string | null
           body?: string
+          channel_phone?: string | null
           conversation_id?: string | null
           created_at?: string
           decided_at?: string | null
@@ -1071,10 +1071,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      backfill_channel_scope: {
-        Args: { p_phone: string }
-        Returns: undefined
-      }
+      backfill_channel_scope: { Args: { p_phone: string }; Returns: undefined }
       claim_bot_jobs: {
         Args: { p_chat?: string; p_limit?: number; p_worker: string }
         Returns: {
