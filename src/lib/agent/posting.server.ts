@@ -180,10 +180,13 @@ export async function runGroupEngine(deps: AgentDeps): Promise<PostingRunResult>
 
   // 1) Claim due schedule slots.
   const now = new Date();
+  const { channelStamp } = await import("./channel.server");
+  const stamp = await channelStamp(deps.supabase);
   for (const profile of profiles) {
     for (const due of computeDueSlots(profile.posting_schedule, now)) {
       const { error } = await deps.supabase.from("planned_posts").insert({
         group_chat_id: profile.chat_id,
+        ...stamp,
         source: "schedule",
         slot_key: due.slotKey,
         pillar: due.slot.pillar ?? null,
@@ -669,18 +672,26 @@ async function generateAndSendPost(
         }
       }
     }
+    // The link humans SEE: decoded Hebrew (never a %D7%… wall), shortened when
+    // even the decoded form is long. engagement.article.url keeps the raw URL
+    // so rotation dedupe (urlKey) is unaffected.
+    let articleLink: string | null = null;
+    if (article) {
+      const { formatUrlForMessage } = await import("./url-display.server");
+      articleLink = await formatUrlForMessage(article.url);
+    }
     const articleBlock = article
       ? `
 
 המאמר שנבחר לפוסט הזה (חובה לבסס את הפוסט אך ורק עליו):
 כותרת: ${article.title ?? "(ללא כותרת)"}
-קישור: ${article.url}
+קישור: ${articleLink}
 תוכן המאמר:
 """${article.text.slice(0, 5000)}"""
 
 חוקי פוסט-מאמר (מחייבים, גוברים על כל הנחיה כללית):
 - כתוב תקציר קצר בעברית (2-4 משפטים) של המאמר הזה בלבד — רק עובדות שמופיעות בתוכן למעלה.
-- חובה לכלול בפוסט את הקישור המדויק ${article.url} — מועתק אות באות, בלי לקצר.
+- חובה לכלול בפוסט את הקישור המדויק ${articleLink} — מועתק אות באות, בלי לשנות אותו.
 - אסור פוסט כללי על הבלוג או על הנושא — הפוסט הוא על המאמר הספציפי הזה.`
       : "";
 
@@ -806,9 +817,12 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
     final = sanitizeParts([final]).parts[0] ?? "";
     if (!final && !poll) throw new Error("post generation returned neither text nor poll");
     // Deterministic link guarantee for article posts: whatever the models did,
-    // the post that reaches the group carries the exact article URL.
-    if (article && final && !final.includes(article.url)) {
-      final = `${final}\n\n${article.url}`;
+    // the post that reaches the group carries the clean article link — and
+    // never the raw percent-encoded URL (the model can copy it out of the
+    // article text even when the prompt only showed the clean one).
+    if (article && articleLink && final) {
+      if (articleLink !== article.url) final = final.split(article.url).join(articleLink);
+      if (!final.includes(articleLink)) final = `${final}\n\n${articleLink}`;
     }
     const bodyForRecord = [final, poll ? pollAsHistoryText(poll) : ""].filter(Boolean).join("\n\n");
 
@@ -836,6 +850,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
       const approvalMedia = parseApprovalMedia(
         (freshMediaRow as { media?: unknown } | null)?.media,
       );
+      const { channelStamp: approvalStamp } = await import("./channel.server");
       const approvalRow = {
         user_id: adminRole.user_id,
         target_chat_id: profile.chat_id,
@@ -843,6 +858,7 @@ ${pastPosts.map((p, i) => `[${i + 1}] ${p.slice(0, 150)}`).join("\n") || "(אי�
         body: final || poll!.question,
         source: "group_post",
         status: "pending",
+        ...(await approvalStamp(supabase)),
         ...(approvalMedia ? { media: approvalMedia } : {}),
       };
       const { error: apprErr } = await supabase
@@ -1214,8 +1230,10 @@ async function maybeRefreshInsights(
   const perDay = Math.round((inbound.length / 7) * 10) / 10;
   const activeMembers = new Set(inbound.map((m) => m.sender_id)).size;
 
+  const { channelStamp: insightStamp } = await import("./channel.server");
   await supabase.from("group_insights").insert({
     group_chat_id: profile.chat_id,
+    ...(await insightStamp(supabase)),
     kind: "activity",
     content: `Last 7 days: ${inbound.length} messages (${perDay}/day average) from ${activeMembers} active members.`,
     data: { messages_7d: inbound.length, per_day: perDay, active_members: activeMembers },
@@ -1270,6 +1288,7 @@ async function maybeRefreshInsights(
       if (parsed.topics) {
         await supabase.from("group_insights").insert({
           group_chat_id: profile.chat_id,
+          ...(await insightStamp(supabase)),
           kind: "topics",
           content: String(parsed.topics),
           data: { hot_topic: parsed.hot_topic ?? null },
@@ -1289,6 +1308,7 @@ async function maybeRefreshInsights(
         if (Date.now() - lastSent > REACTIVE_MIN_GAP_MS) {
           await supabase.from("planned_posts").insert({
             group_chat_id: profile.chat_id,
+            ...(await insightStamp(supabase)),
             source: "reactive",
             prompt: `תגובה לנושא חם שעולה עכשיו בקבוצה: ${parsed.hot_topic}. הצטרף לשיחה בצורה שמוסיפה ערך.`,
           });

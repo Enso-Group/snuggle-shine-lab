@@ -110,9 +110,10 @@ export async function loadOrCreatePerson(
         });
       return rowToPerson(data);
     }
+    const { channelStamp } = await import("./channel.server");
     const { data: ins, error: insErr } = await supabase
       .from("people")
-      .insert({ wa_id: canon, display_name: displayName || null })
+      .insert({ wa_id: canon, ...(await channelStamp(supabase)), display_name: displayName || null })
       .select(
         "id, wa_id, display_name, language, sentiment, funnel_stage, facts, tags, last_seen_at",
       )

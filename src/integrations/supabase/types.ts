@@ -73,6 +73,7 @@ export type Database = {
       }
       bot_decisions: {
         Row: {
+          channel_phone: string | null
           chat_id: string | null
           conversation_id: string | null
           created_at: string
@@ -86,6 +87,7 @@ export type Database = {
           trigger: string
         }
         Insert: {
+          channel_phone?: string | null
           chat_id?: string | null
           conversation_id?: string | null
           created_at?: string
@@ -99,6 +101,7 @@ export type Database = {
           trigger: string
         }
         Update: {
+          channel_phone?: string | null
           chat_id?: string | null
           conversation_id?: string | null
           created_at?: string
@@ -289,6 +292,7 @@ export type Database = {
       }
       commands_log: {
         Row: {
+          channel_phone: string | null
           created_at: string
           id: string
           prompt: string
@@ -299,6 +303,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          channel_phone?: string | null
           created_at?: string
           id?: string
           prompt: string
@@ -309,6 +314,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          channel_phone?: string | null
           created_at?: string
           id?: string
           prompt?: string
@@ -432,6 +438,7 @@ export type Database = {
       }
       group_daily_stats: {
         Row: {
+          channel_phone: string | null
           active_members: number
           bot_posts: number
           created_at: string
@@ -445,6 +452,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          channel_phone?: string | null
           active_members?: number
           bot_posts?: number
           created_at?: string
@@ -458,6 +466,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          channel_phone?: string | null
           active_members?: number
           bot_posts?: number
           created_at?: string
@@ -474,6 +483,7 @@ export type Database = {
       }
       group_insights: {
         Row: {
+          channel_phone: string | null
           content: string
           created_at: string
           data: Json
@@ -482,6 +492,7 @@ export type Database = {
           kind: string
         }
         Insert: {
+          channel_phone?: string | null
           content: string
           created_at?: string
           data?: Json
@@ -490,6 +501,7 @@ export type Database = {
           kind?: string
         }
         Update: {
+          channel_phone?: string | null
           content?: string
           created_at?: string
           data?: Json
@@ -725,6 +737,7 @@ export type Database = {
       }
       moderation_actions: {
         Row: {
+          channel_phone: string | null
           action: string
           created_at: string
           error: string | null
@@ -738,6 +751,7 @@ export type Database = {
           whapi_message_id: string | null
         }
         Insert: {
+          channel_phone?: string | null
           action: string
           created_at?: string
           error?: string | null
@@ -751,6 +765,7 @@ export type Database = {
           whapi_message_id?: string | null
         }
         Update: {
+          channel_phone?: string | null
           action?: string
           created_at?: string
           error?: string | null
@@ -815,6 +830,7 @@ export type Database = {
       }
       planned_posts: {
         Row: {
+          channel_phone: string | null
           body: string | null
           created_at: string
           engagement: Json
@@ -833,6 +849,7 @@ export type Database = {
           whapi_message_id: string | null
         }
         Insert: {
+          channel_phone?: string | null
           body?: string | null
           created_at?: string
           engagement?: Json
@@ -851,6 +868,7 @@ export type Database = {
           whapi_message_id?: string | null
         }
         Update: {
+          channel_phone?: string | null
           body?: string | null
           created_at?: string
           engagement?: Json
@@ -872,6 +890,7 @@ export type Database = {
       }
       scheduled_approvals: {
         Row: {
+          channel_phone: string | null
           body: string
           conversation_id: string | null
           created_at: string
@@ -888,6 +907,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          channel_phone?: string | null
           body: string
           conversation_id?: string | null
           created_at?: string
@@ -904,6 +924,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          channel_phone?: string | null
           body?: string
           conversation_id?: string | null
           created_at?: string
@@ -996,6 +1017,7 @@ export type Database = {
       }
       strategy_memos: {
         Row: {
+          channel_phone: string | null
           created_at: string
           group_chat_id: string
           id: string
@@ -1004,6 +1026,7 @@ export type Database = {
           week_start: string
         }
         Insert: {
+          channel_phone?: string | null
           created_at?: string
           group_chat_id: string
           id?: string
@@ -1012,6 +1035,7 @@ export type Database = {
           week_start: string
         }
         Update: {
+          channel_phone?: string | null
           created_at?: string
           group_chat_id?: string
           id?: string
@@ -1047,6 +1071,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      backfill_channel_scope: {
+        Args: { p_phone: string }
+        Returns: undefined
+      }
       claim_bot_jobs: {
         Args: { p_chat?: string; p_limit?: number; p_worker: string }
         Returns: {

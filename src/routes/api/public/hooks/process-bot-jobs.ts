@@ -234,7 +234,7 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
                   const sendRes = (await sendMediaMessage(
                     `${ch.phone}@s.whatsapp.net`,
                     stored.attachment,
-                    `🧪 Research-media self-test — a REAL image found by web search, validated and re-sent.\nמקור: ${stored.sourceUrl}`,
+                    `🧪 Research-media self-test — a REAL image found by web search, validated and re-sent.\nמקור: ${(await import("@/lib/agent/url-display")).prettyUrl(stored.sourceUrl)}`,
                   )) as { message?: { id?: string } };
                   trace.send = {
                     ok: true,

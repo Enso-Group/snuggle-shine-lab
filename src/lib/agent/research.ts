@@ -4,6 +4,7 @@
 // engine lives in research.server.ts.
 import type { XSearchOutcome } from "@/lib/apify-x.server";
 import type { TavilySearchOutcome } from "@/lib/tavily.server";
+import { prettyUrl } from "./url-display";
 
 export const RESEARCH_JOB_KIND = "research_answer";
 
@@ -225,7 +226,7 @@ export function buildResearchBlock(search: TavilySearchOutcome | null): string {
   if (!search || (!search.answer && !search.results.length)) return "";
   const results = search.results
     .slice(0, 5)
-    .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content.slice(0, 600)}`)
+    .map((r, i) => `[${i + 1}] ${r.title}\n${prettyUrl(r.url)}\n${r.content.slice(0, 600)}`)
     .join("\n\n");
   return `
 
@@ -252,7 +253,7 @@ export function buildXBlock(x: XSearchOutcome | null): string {
         t.likes != null || t.retweets != null
           ? ` · ${t.likes ?? 0} likes, ${t.retweets ?? 0} reposts`
           : "";
-      return `- ${t.author}${when}${engagement}\n  "${t.text.slice(0, 280)}"\n  ${t.url}`;
+      return `- ${t.author}${when}${engagement}\n  "${t.text.slice(0, 280)}"\n  ${prettyUrl(t.url)}`;
     })
     .join("\n");
   return `

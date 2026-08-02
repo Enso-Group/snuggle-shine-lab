@@ -88,9 +88,29 @@ export const commandChat = createServerFn({ method: "POST" })
     const { callLLM } = await import("@/lib/llm.server");
     const { logDecision } = await import("@/lib/agent/decisions.server");
     const { sanitizeProfilePatch } = await import("@/lib/agent/profile-patch");
+    const { getChannelScope, channelStamp } = await import("@/lib/agent/channel.server");
 
     const chatId = data.groupChatId;
     const actions: CommandAction[] = [];
+
+    // Account isolation: steering requires a connected account, and the group
+    // must not belong to a different one (demo fixtures excepted).
+    const scope = await getChannelScope(supabaseAdmin);
+    if (!chatId.startsWith("demo-")) {
+      if (scope.mode === "disconnected") {
+        throw new Error("No WhatsApp account is connected");
+      }
+      if (scope.mode === "scoped") {
+        const { data: existing } = await supabaseAdmin
+          .from("group_profiles")
+          .select("channel_phone")
+          .eq("chat_id", chatId)
+          .maybeSingle();
+        if (existing?.channel_phone && existing.channel_phone !== scope.phone) {
+          throw new Error("This group belongs to a different WhatsApp account");
+        }
+      }
+    }
 
     async function getGroupStatus(): Promise<string> {
       const [profileRes, statsRes, memoRes, postsRes, actionsRes] = await Promise.all([
@@ -142,6 +162,7 @@ export const commandChat = createServerFn({ method: "POST" })
       const { error } = await supabaseAdmin.from("group_profiles").upsert(
         {
           chat_id: chatId,
+          ...(await channelStamp(supabaseAdmin)),
           ...(data.groupName ? { name: data.groupName } : {}),
           ...(patch as Record<string, Json>),
           updated_at: new Date().toISOString(),
@@ -164,6 +185,7 @@ export const commandChat = createServerFn({ method: "POST" })
     async function planPost(prompt: string, pillar?: string): Promise<string> {
       const { error } = await supabaseAdmin.from("planned_posts").insert({
         group_chat_id: chatId,
+        ...(await channelStamp(supabaseAdmin)),
         source: "campaign",
         prompt: prompt.slice(0, 1000),
         pillar: pillar?.slice(0, 120) ?? null,

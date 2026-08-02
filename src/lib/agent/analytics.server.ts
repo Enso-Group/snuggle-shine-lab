@@ -121,9 +121,11 @@ async function rollupGroupDaily(supabase: Supa, profile: GroupProfile): Promise<
       .gte("left_at", `${day.date}T00:00:00Z`)
       .lte("left_at", `${day.date}T23:59:59Z`);
 
+    const { channelStamp } = await import("./channel.server");
     await supabase.from("group_daily_stats").upsert(
       {
         group_chat_id: profile.chat_id,
+        ...(await channelStamp(supabase)),
         date: day.date,
         messages: day.messages,
         active_members: day.active_members,
@@ -224,8 +226,10 @@ ${postLines.join("\n") || "(אין פוסטים עדיין)"}`,
     if (!memo) return false;
     const recommendations: StrategyRecommendations = parseRecommendations(parsed.recommendations);
 
+    const { channelStamp } = await import("./channel.server");
     const { error } = await supabase.from("strategy_memos").insert({
       group_chat_id: profile.chat_id,
+      ...(await channelStamp(supabase)),
       week_start: thisWeek,
       memo,
       recommendations,

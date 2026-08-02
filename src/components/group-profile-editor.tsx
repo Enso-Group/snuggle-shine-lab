@@ -106,15 +106,26 @@ export function GroupProfileEditor({
   const saveFn = useServerFn(saveGroupProfile);
   const flagsFn = useServerFn(setGroupProfileFlags);
   const [form, setForm] = useState<FormState>(() => profileToForm(profile));
+  // Set once the manager touches any field; cleared on save / group switch.
+  // Guards the re-seed below from clobbering text being typed.
+  const [dirty, setDirty] = useState(false);
 
-  // Re-seed the form when SWITCHING groups, or when the profile first arrives
-  // for this group (list query resolving after mount). Deliberately NOT on
-  // every updated_at bump — an instant toggle save refetches the list, and
-  // re-seeding then would clobber text the manager is mid-typing.
+  // Re-seed the form when SWITCHING groups — always.
   useEffect(() => {
     setForm(profileToForm(profile));
+    setDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, profile === null]);
+  }, [chatId]);
+
+  // Re-seed when fresher profile data arrives (list query resolving after
+  // mount, or edits made through the Command Center chat / the WhatsApp admin
+  // command) — but never over unsaved manual edits. Without this the box kept
+  // showing the sparse snapshot from mount while the bot already followed a
+  // much fuller profile, and Save would overwrite the full profile with it.
+  useEffect(() => {
+    if (!dirty) setForm(profileToForm(profile));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile === null, profile?.updated_at]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -150,14 +161,17 @@ export function GroupProfileEditor({
         },
       }),
     onSuccess: () => {
+      setDirty(false);
       qc.invalidateQueries({ queryKey: ["managed-groups"] });
       toast.success("Group profile saved — the bot follows it from now on");
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setDirty(true);
     setForm((f) => ({ ...f, [key]: value }));
+  };
 
   // Toggles persist IMMEDIATELY — no "Save" click needed, so a flip can never
   // be lost by navigating away (live 2026-07-28: approval/autonomy toggles
@@ -357,7 +371,7 @@ export function GroupProfileEditor({
               />
               <Input
                 className="min-w-32 flex-1"
-                placeholder="Content pillar / post prompt (optional)"
+                placeholder="Content pillar (optional)"
                 dir="auto"
                 value={slot.pillar ?? ""}
                 onChange={(e) =>
@@ -380,6 +394,19 @@ export function GroupProfileEditor({
               >
                 <Trash2 className="size-4" />
               </Button>
+              <Textarea
+                className="w-full"
+                rows={2}
+                placeholder="Post prompt for this slot — what the bot should write about (optional; also editable from the Command Center chat)"
+                dir="auto"
+                value={slot.prompt ?? ""}
+                onChange={(e) =>
+                  set(
+                    "schedule",
+                    form.schedule.map((s, j) => (j === i ? { ...s, prompt: e.target.value } : s)),
+                  )
+                }
+              />
             </div>
           ))}
           <Button

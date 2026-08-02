@@ -21,12 +21,11 @@ export const listPeople = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAdmin])
   .handler(async (): Promise<PersonListItem[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
-    const { channelOrFilter } = await import("@/lib/agent/channel");
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
     // No connected WhatsApp → show nothing (never surface a previous session's
     // contacts).
-    const { connected, phone } = await getConnectedChannel();
-    if (!connected || !phone) return [];
+    const scope = await getChannelScope(supabaseAdmin);
+    if (scope.mode === "disconnected") return [];
 
     let q = supabaseAdmin
       .from("people")
@@ -40,8 +39,10 @@ export const listPeople = createServerFn({ method: "GET" })
     const { isDemoViewOn } = await import("./demo-seed");
     if (await isDemoViewOn(supabaseAdmin as never)) {
       q = q.like("wa_id", "demo-%");
-    } else if (await channelScopeReady(supabaseAdmin)) {
-      q = q.or(channelOrFilter(phone));
+    } else if (scope.mode === "scoped") {
+      // STRICT — a contact stamped for another number (or not yet stamped) is
+      // not this account's data.
+      q = q.eq("channel_phone", scope.phone);
     }
     const { data, error } = await q;
     if (error) throw new Error(error.message);
@@ -100,14 +101,27 @@ export const getPersonDetail = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ personId: z.string().uuid() }).parse(d))
   .handler(async ({ data }): Promise<PersonDetail> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
+    // Account isolation: no connection → no person data; connected → only a
+    // contact of THIS account may be opened (demo fixtures excepted).
+    const scope = await getChannelScope(supabaseAdmin);
     const { data: person, error } = await supabaseAdmin
       .from("people")
       .select(
-        "id, wa_id, display_name, language, sentiment, funnel_stage, facts, last_seen_at, first_seen_at",
+        "id, wa_id, display_name, language, sentiment, funnel_stage, facts, last_seen_at, first_seen_at, channel_phone",
       )
       .eq("id", data.personId)
       .single();
     if (error) throw new Error(error.message);
+    const isDemoPerson = person.wa_id.startsWith("demo-");
+    if (!isDemoPerson) {
+      if (scope.mode === "disconnected") {
+        throw new Error("No WhatsApp account is connected");
+      }
+      if (scope.mode === "scoped" && person.channel_phone !== scope.phone) {
+        throw new Error("This contact belongs to a different WhatsApp account");
+      }
+    }
 
     // Their 1:1 conversation. people.wa_id converges on the canonical digits
     // (see agent/wa-id.ts) while conversations/bot_decisions/group_members
@@ -119,17 +133,14 @@ export const getPersonDetail = createServerFn({ method: "GET" })
     // Digits usable in a `<digits>@%` pattern — null for '@lid'/'@simulation'
     // identities, which only ever match their exact raw spelling.
     const phoneDigits = personCanon && !personCanon.includes("@") ? personCanon : null;
-    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
-    const { channelOrFilter } = await import("@/lib/agent/channel");
-    const { phone: channelPhone } = await getConnectedChannel();
     let convQuery = supabaseAdmin
       .from("conversations")
       .select("id, whapi_chat_id")
       .eq("is_group", false)
       .or(`whapi_chat_id.eq.${person.wa_id},whapi_chat_id.like.${barePhone}@%`)
       .limit(1);
-    if (channelPhone && (await channelScopeReady(supabaseAdmin))) {
-      convQuery = convQuery.or(channelOrFilter(channelPhone));
+    if (scope.mode === "scoped" && !isDemoPerson) {
+      convQuery = convQuery.eq("channel_phone", scope.phone);
     }
     const { data: convs } = await convQuery;
     const conv = convs?.[0] ?? null;
@@ -187,7 +198,7 @@ export const getPersonDetail = createServerFn({ method: "GET" })
     });
 
     return {
-      person: person as PersonListItem,
+      person: person as unknown as PersonListItem,
       timeline: ((timelineRes.data ?? []) as TimelineMessage[]).filter((m) => m.body).reverse(),
       intents,
       groups,

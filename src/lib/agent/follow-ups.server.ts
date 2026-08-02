@@ -203,7 +203,9 @@ async function sendOneFollowUp(
       .limit(1)
       .maybeSingle();
     if (!adminRole?.user_id) throw new Error("no approval owner for follow-up");
+    const { channelStamp } = await import("./channel.server");
     await supabase.from("scheduled_approvals").insert({
+      ...(await channelStamp(supabase)),
       user_id: adminRole.user_id,
       conversation_id: row.conversation_id,
       target_chat_id: row.chat_id,

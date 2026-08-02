@@ -120,10 +120,12 @@ export async function handleInboundMessage(
         .eq("id", convId);
       return convId;
     }
+    const { channelStamp } = await import("./channel.server");
     const { data: ins } = await supabase
       .from("conversations")
       .insert({
         whapi_chat_id: m.chatId,
+        ...(await channelStamp(supabase)),
         name: m.chatName || m.senderName || m.chatId,
         is_group: m.isGroup,
         last_message_at: new Date(m.ts).toISOString(),

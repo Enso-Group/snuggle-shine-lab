@@ -50,8 +50,7 @@ export const listManagedGroups = createServerFn({ method: "GET" })
   .handler(async (): Promise<ManagedGroup[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { listGroups } = await import("@/lib/whapi.server");
-    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
-    const { channelOrFilter } = await import("@/lib/agent/channel");
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
 
     // Presentation mode: while demo data is seeded, the list shows ONLY the
     // demo group — no real group name may appear in a recording.
@@ -69,12 +68,15 @@ export const listManagedGroups = createServerFn({ method: "GET" })
     }
 
     // Disconnected → no groups at all (the live list needs the account anyway).
-    const { connected, phone } = await getConnectedChannel();
-    if (!connected || !phone) return [];
+    const scope = await getChannelScope(supabaseAdmin);
+    if (scope.mode === "disconnected") return [];
 
+    // STRICT equality — a profile stamped for another number (or not yet
+    // stamped) is not this account's data. The sweeper adopts legacy NULLs
+    // within a minute, and inbound events re-stamp live groups.
     let profilesQuery = supabaseAdmin.from("group_profiles").select("*");
-    if (await channelScopeReady(supabaseAdmin)) {
-      profilesQuery = profilesQuery.or(channelOrFilter(phone));
+    if (scope.mode === "scoped") {
+      profilesQuery = profilesQuery.eq("channel_phone", scope.phone);
     }
     const [waGroups, { data: profiles }] = await Promise.all([
       listGroups().catch(() => [] as Array<{ id: string; name: string }>),
@@ -152,7 +154,9 @@ export const saveGroupProfile = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<GroupProfileRow> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { channelStamp } = await import("@/lib/agent/channel.server");
     const patch = {
+      ...(await channelStamp(supabaseAdmin)),
       chat_id: data.chat_id,
       name: data.name?.trim() || null,
       enabled: data.enabled,
@@ -253,7 +257,9 @@ export const setGroupProfileFlags = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<GroupProfileRow> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { channelStamp } = await import("@/lib/agent/channel.server");
     const plain: Record<string, unknown> = {
+      ...(await channelStamp(supabaseAdmin)),
       chat_id: data.chat_id,
       updated_at: new Date().toISOString(),
     };
@@ -308,6 +314,16 @@ export const getGroupActivity = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ chat_id: z.string().min(5) }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
+    // Account isolation: no connection → no activity at all; connected → only
+    // rows stamped for THIS account (demo groups excepted — they are fixtures
+    // with no account).
+    const scope = await getChannelScope(supabaseAdmin);
+    const isDemoChat = data.chat_id.startsWith("demo-");
+    if (scope.mode === "disconnected" && !isDemoChat) {
+      return { posts: [], actions: [], insights: [], stats: [], memo: null };
+    }
+    const scopePhone = scope.mode === "scoped" && !isDemoChat ? scope.phone : null;
     // media is fetched tolerantly: the column arrives with the 20260726
     // migration, and the page must keep working before it is applied. The
     // typed client can't know about the not-yet-migrated column, so the
@@ -328,55 +344,70 @@ export const getGroupActivity = createServerFn({ method: "GET" })
     };
     type PostsResult = { data: PostRow[] | null; error: { message: string } | null };
     const fetchPosts = async (): Promise<PostsResult> => {
-      const withMedia = (await supabaseAdmin
+      let q1 = supabaseAdmin
         .from("planned_posts")
         .select(
           "id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, media, created_at",
         )
-        .eq("group_chat_id", data.chat_id)
+        .eq("group_chat_id", data.chat_id);
+      if (scopePhone) q1 = q1.eq("channel_phone", scopePhone);
+      const withMedia = (await q1
         .order("created_at", { ascending: false })
         // 30, not 10 — the Command Center splits posts into three columns
         // (not sent / in progress / sent) and each needs enough rows to be useful.
         .limit(30)) as unknown as PostsResult;
       if (!withMedia.error) return withMedia;
-      return (await supabaseAdmin
+      let q2 = supabaseAdmin
         .from("planned_posts")
         .select(
           "id, source, pillar, prompt, body, status, reasoning, sent_at, engagement, created_at",
         )
-        .eq("group_chat_id", data.chat_id)
+        .eq("group_chat_id", data.chat_id);
+      if (scopePhone) q2 = q2.eq("channel_phone", scopePhone);
+      return (await q2
         .order("created_at", { ascending: false })
         .limit(30)) as unknown as PostsResult;
     };
-    const [posts, actions, insights, stats, memo] = await Promise.all([
-      fetchPosts(),
-      supabaseAdmin
+    const fetchActions = () => {
+      let q = supabaseAdmin
         .from("moderation_actions")
         .select("id, action, target_name, rule_violated, reasoning, status, created_at")
-        .eq("group_chat_id", data.chat_id)
-        .order("created_at", { ascending: false })
-        .limit(10),
-      supabaseAdmin
+        .eq("group_chat_id", data.chat_id);
+      if (scopePhone) q = q.eq("channel_phone", scopePhone);
+      return q.order("created_at", { ascending: false }).limit(10);
+    };
+    const fetchInsights = () => {
+      let q = supabaseAdmin
         .from("group_insights")
         .select("id, kind, content, created_at")
-        .eq("group_chat_id", data.chat_id)
-        .order("created_at", { ascending: false })
-        .limit(6),
-      supabaseAdmin
+        .eq("group_chat_id", data.chat_id);
+      if (scopePhone) q = q.eq("channel_phone", scopePhone);
+      return q.order("created_at", { ascending: false }).limit(6);
+    };
+    const fetchStats = () => {
+      let q = supabaseAdmin
         .from("group_daily_stats")
         .select(
           "date, messages, active_members, bot_posts, post_replies, new_members, left_members",
         )
-        .eq("group_chat_id", data.chat_id)
-        .order("date", { ascending: false })
-        .limit(7),
-      supabaseAdmin
+        .eq("group_chat_id", data.chat_id);
+      if (scopePhone) q = q.eq("channel_phone", scopePhone);
+      return q.order("date", { ascending: false }).limit(7);
+    };
+    const fetchMemo = () => {
+      let q = supabaseAdmin
         .from("strategy_memos")
         .select("week_start, memo, recommendations, created_at")
-        .eq("group_chat_id", data.chat_id)
-        .order("week_start", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+        .eq("group_chat_id", data.chat_id);
+      if (scopePhone) q = q.eq("channel_phone", scopePhone);
+      return q.order("week_start", { ascending: false }).limit(1).maybeSingle();
+    };
+    const [posts, actions, insights, stats, memo] = await Promise.all([
+      fetchPosts(),
+      fetchActions(),
+      fetchInsights(),
+      fetchStats(),
+      fetchMemo(),
     ]);
     return {
       posts: posts.data ?? [],
@@ -402,6 +433,20 @@ export const retryPlannedPost = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!post) throw new Error("Planned post not found");
+    // Account isolation: never operate on another account's post. Checked via
+    // a separate scoped existence probe so this keeps working before the
+    // isolation migration lands (getChannelScope reports "unscoped" then).
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
+    const scope = await getChannelScope(supabaseAdmin);
+    if (scope.mode === "scoped") {
+      const { data: mine } = await supabaseAdmin
+        .from("planned_posts")
+        .select("id")
+        .eq("id", data.post_id)
+        .or(`channel_phone.is.null,channel_phone.eq.${scope.phone}`)
+        .maybeSingle();
+      if (!mine) throw new Error("This post belongs to a different WhatsApp account");
+    }
     // Only terminal posts are retryable: re-planning a planned post would
     // double its attempt budget mid-run, and retrying a sent post would
     // post to the group twice.

@@ -57,6 +57,17 @@ export async function backfillChannelPhone(supabase: Supa): Promise<ChannelBackf
     // them NULL; provenance-tagged rows are already correctly scoped.
     if (!connected || !phone) return { ran: false, reason: "no connected account" };
 
+    // Full isolation sweep (20260802 migration): one SQL pass stamps EVERY
+    // dashboard table, deriving from parent group/conversation rows where
+    // possible. Falls back to the legacy 3-table fill when the function
+    // isn't deployed yet.
+    const { accountScopeReady } = await import("./channel.server");
+    if (await accountScopeReady(supabase)) {
+      const { error } = await supabase.rpc("backfill_channel_scope", { p_phone: phone });
+      if (!error) return { ran: true, conversations: 0, people: 0, groupProfiles: 0 };
+      console.error("[channel-backfill] backfill_channel_scope RPC failed", error);
+    }
+
     const conversations = await fillNulls(supabase, "conversations", phone);
     const people = await fillNulls(supabase, "people", phone);
     const groupProfiles = await fillNulls(supabase, "group_profiles", phone);

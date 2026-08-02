@@ -655,7 +655,10 @@ ${kb.block}`
       const top = search?.results.length
         ? [...search.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0]?.url
         : xResults?.results[0]?.url;
-      if (top) parts = [...parts, top];
+      if (top) {
+        const { formatUrlForMessage } = await import("./url-display.server");
+        parts = [...parts, await formatUrlForMessage(top)];
+      }
     }
 
     logDecision(supabase, {
@@ -713,8 +716,10 @@ ${kb.block}`
           // The source link is part of the honest caption — appended as its
           // own closing part unless the answer already carries it, and cached
           // WITH the answer so crash-retry dedup matches what was sent.
-          if (!parts.some((p) => p.includes(stored.sourceUrl))) {
-            parts = [...parts, stored.sourceUrl];
+          const { formatUrlForMessage } = await import("./url-display.server");
+          const sourceLink = await formatUrlForMessage(stored.sourceUrl);
+          if (!parts.some((p) => p.includes(sourceLink) || p.includes(stored.sourceUrl))) {
+            parts = [...parts, sourceLink];
           }
           payload.answer_parts = parts;
         }

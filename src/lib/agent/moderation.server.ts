@@ -141,8 +141,10 @@ async function recordAction(
   },
 ): Promise<void> {
   try {
+    const { channelStamp } = await import("./channel.server");
     await supabase.from("moderation_actions").insert({
       group_chat_id: args.groupChatId,
+      ...(await channelStamp(supabase)),
       target_wa_id: args.m.senderId,
       target_name: args.m.senderName || null,
       whapi_message_id: args.m.messageId || null,

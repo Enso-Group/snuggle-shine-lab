@@ -115,10 +115,12 @@ export const sendManualMessage = createServerFn({ method: "POST" })
     let conv = await loadConversationByChatId(supabaseAdmin, targetChatId);
     if (!conv) {
       const isGroup = targetChatId.endsWith("@g.us");
+      const { channelStamp } = await import("@/lib/agent/channel.server");
       const { data: created, error: convErr } = await supabaseAdmin
         .from("conversations")
         .insert({
           whapi_chat_id: targetChatId,
+          ...(await channelStamp(supabaseAdmin)),
           name: data.target_name ?? targetChatId,
           is_group: isGroup,
         })
@@ -133,9 +135,12 @@ export const sendManualMessage = createServerFn({ method: "POST" })
 
 
     // Log command (pending)
+    const { channelStamp: cmdStamp } = await import("@/lib/agent/channel.server");
+    const commandStamp = await cmdStamp(supabaseAdmin);
     const { data: log } = await context.supabase
       .from("commands_log")
       .insert({
+        ...commandStamp,
         user_id: context.userId,
         prompt: data.prompt,
         target_chat_id: targetChatId,
@@ -166,6 +171,7 @@ export const sendManualMessage = createServerFn({ method: "POST" })
       // AND manual sends all go through the approval queue).
       if (settings?.require_approval_all) {
         await context.supabase.from("scheduled_approvals").insert({
+          ...commandStamp,
           user_id: context.userId,
           conversation_id: conv.id,
           target_chat_id: targetChatId,

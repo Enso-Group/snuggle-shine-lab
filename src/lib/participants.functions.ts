@@ -66,12 +66,17 @@ export const getWhatsAppConnectionStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAdmin])
   .handler(async () => {
     const { checkHealth, getWhapiSettings } = await import("./whapi.server");
+    const { normalizeChannelPhone } = await import("@/lib/agent/channel");
     const [health, settings] = await Promise.all([checkHealth(), getWhapiSettings()]);
+    const connected = health.status === "AUTH";
     return {
       ok: health.ok,
       status: health.status ?? null,
-      connected: health.status === "AUTH",
+      connected,
       userName: health.userName ?? null,
+      // Digits-only id of the linked account — the client uses it to drop all
+      // cached dashboard data the moment a DIFFERENT account connects.
+      accountPhone: connected ? normalizeChannelPhone(health.userId) || null : null,
       fullHistory: settings?.full_history === true,
       error: health.error ?? null,
     };
@@ -647,9 +652,15 @@ export const syncDirectChatHistory = createServerFn({ method: "POST" })
           .eq("whapi_chat_id", chat.id)
           .maybeSingle();
         if (!conv) {
+          const { channelStamp } = await import("@/lib/agent/channel.server");
           const { data: created, error: convErr } = await supabaseAdmin
             .from("conversations")
-            .insert({ whapi_chat_id: chat.id, name: chat.name, is_group: false })
+            .insert({
+              whapi_chat_id: chat.id,
+              ...(await channelStamp(supabaseAdmin)),
+              name: chat.name,
+              is_group: false,
+            })
             .select("id, whapi_chat_id")
             .single();
           if (convErr) throw new Error(convErr.message);

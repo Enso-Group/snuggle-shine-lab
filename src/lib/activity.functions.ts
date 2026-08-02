@@ -94,12 +94,15 @@ export const listActivity = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }): Promise<ActivityResult> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { getConnectedChannel, channelScopeReady } = await import("@/lib/agent/channel.server");
-    const { channelOrFilter } = await import("@/lib/agent/channel");
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
     // Disconnected → no activity at all.
-    const { connected, phone } = await getConnectedChannel();
-    if (!connected || !phone) return { entries: [], counts: {} };
-    const scoped = await channelScopeReady(supabaseAdmin);
+    const scope = await getChannelScope(supabaseAdmin);
+    if (scope.mode === "disconnected") return { entries: [], counts: {} };
+    // Strict per-account scoping once the isolation migration is in. Fresh
+    // rows are stamped at insert; stragglers are adopted by the minutely
+    // sweeper, so at worst an entry appears with sub-minute delay.
+    const scoped = scope.mode === "scoped";
+    const phone = scope.phone;
     const since = new Date(Date.now() - RANGES_H[data.range] * 3600_000).toISOString();
     // Presentation mode: while demo data is seeded, the stream shows demo
     // entries only — no real chat id or contact appears in a recording.
@@ -113,7 +116,7 @@ export const listActivity = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(100);
     if (demoView) peopleQuery = peopleQuery.like("wa_id", "demo-%");
-    else if (scoped) peopleQuery = peopleQuery.or(channelOrFilter(phone));
+    else if (scoped) peopleQuery = peopleQuery.eq("channel_phone", phone);
 
     let decisionsQuery = supabaseAdmin
       .from("bot_decisions")
@@ -122,6 +125,7 @@ export const listActivity = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(600);
     if (demoView) decisionsQuery = decisionsQuery.like("chat_id", "demo-%");
+    else if (scoped) decisionsQuery = decisionsQuery.eq("channel_phone", phone);
 
     let alertsQuery = supabaseAdmin
       .from("commands_log")
@@ -131,6 +135,7 @@ export const listActivity = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(50);
     if (demoView) alertsQuery = alertsQuery.like("target_chat_id", "demo-%");
+    else if (scoped) alertsQuery = alertsQuery.eq("channel_phone", phone);
 
     const [decisionsRes, peopleRes, alertsRes] = await Promise.all([
       decisionsQuery,

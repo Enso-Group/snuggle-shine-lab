@@ -77,6 +77,13 @@ export const listPendingApprovals = createServerFn({ method: "GET" })
     const { isDemoViewOn } = await import("./demo-seed");
     if (await isDemoViewOn(context.supabase as never)) {
       q = q.like("target_chat_id", "demo-%");
+    } else {
+      // Account isolation: no WhatsApp connected → NO pending approvals shown;
+      // connected → only this account's (strict — NULL is not visible).
+      const { getChannelScope } = await import("@/lib/agent/channel.server");
+      const scope = await getChannelScope(context.supabase as never);
+      if (scope.mode === "disconnected") return [];
+      if (scope.mode === "scoped") q = q.eq("channel_phone", scope.phone);
     }
     const { data, error } = await q;
     if (error) throw new Error(error.message);
@@ -95,9 +102,29 @@ export const approvePending = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertApprovalIsOurs(data.id);
     const { approvePendingCore } = await import("./agent/approvals.server");
     return approvePendingCore(supabaseAdmin, { id: data.id, body: data.body });
   });
+
+/**
+ * Account-isolation guard for approval mutations: the row must belong to the
+ * connected account (approving would SEND through it). Legacy NULL rows pass —
+ * the sweeper stamps them within a minute of being written.
+ */
+async function assertApprovalIsOurs(id: string): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { getChannelScope } = await import("@/lib/agent/channel.server");
+  const scope = await getChannelScope(supabaseAdmin);
+  if (scope.mode !== "scoped") return;
+  const { data: row } = await supabaseAdmin
+    .from("scheduled_approvals")
+    .select("id")
+    .eq("id", id)
+    .or(`channel_phone.is.null,channel_phone.eq.${scope.phone},target_chat_id.like.demo-%`)
+    .maybeSingle();
+  if (!row) throw new Error("This approval belongs to a different WhatsApp account");
+}
 
 export const updatePendingBody = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAdmin])
@@ -105,6 +132,7 @@ export const updatePendingBody = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), body: z.string().min(1).max(4000) }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertApprovalIsOurs(data.id);
     const { data: row, error } = await context.supabase
       .from("scheduled_approvals")
       .update({ body: data.body })
@@ -138,6 +166,7 @@ export const rejectPending = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertApprovalIsOurs(data.id);
     const { rejectPendingCore } = await import("./agent/approvals.server");
     await rejectPendingCore(supabaseAdmin, { id: data.id });
     return { ok: true };

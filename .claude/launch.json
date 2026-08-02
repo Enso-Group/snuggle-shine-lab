@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "snuggle-shine-dev",
+      "runtimeExecutable": "./start-dev.sh",
+      "runtimeArgs": [],
+      "port": 8081
+    },
+    {
       "name": "snuggle-shine-attach",
       "url": "http://localhost:8081",
       "port": 8081

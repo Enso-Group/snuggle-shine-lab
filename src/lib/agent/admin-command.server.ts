@@ -608,9 +608,11 @@ function buildTools(
         if (!applied.length) {
           return JSON.stringify({ ok: false, error: "no valid fields in patch", rejected });
         }
+        const { channelStamp } = await import("./channel.server");
         const { error } = await supabase.from("group_profiles").upsert(
           {
             chat_id: group.chat_id,
+            ...(await channelStamp(supabase)),
             ...(group.name ? { name: group.name } : {}),
             ...(patch as Record<string, Json>),
             updated_at: new Date().toISOString(),
@@ -631,8 +633,10 @@ function buildTools(
         if ("error" in group) return JSON.stringify(group);
         const prompt = String(args.prompt ?? "").slice(0, 1000);
         if (!prompt) return JSON.stringify({ ok: false, error: "empty prompt" });
+        const { channelStamp } = await import("./channel.server");
         const { error } = await supabase.from("planned_posts").insert({
           group_chat_id: group.chat_id,
+          ...(await channelStamp(supabase)),
           source: "campaign",
           prompt,
           pillar: args.pillar ? String(args.pillar).slice(0, 120) : null,
@@ -867,9 +871,13 @@ function buildTools(
         }
         // Attach to the post + mirror to its pending approval; append the
         // source link to the post body so the caption credits the origin.
+        const { formatUrlForMessage } = await import("./url-display.server");
+        const sourceLink = await formatUrlForMessage(stored.sourceUrl);
         const appendSource = (body: unknown) => {
           const b = String(body ?? "").trim();
-          return b && !b.includes(stored.sourceUrl) ? `${b}\n\nמקור: ${stored.sourceUrl}` : b;
+          return b && !b.includes(stored.sourceUrl) && !b.includes(sourceLink)
+            ? `${b}\n\nמקור: ${sourceLink}`
+            : b;
         };
         const { error } = await supabase
           .from("planned_posts")

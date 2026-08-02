@@ -205,7 +205,9 @@ export async function raiseAdminAlert(
       .limit(1)
       .maybeSingle();
     if (!admin?.user_id) return;
+    const { channelStamp } = await import("@/lib/agent/channel.server");
     await supabaseAdmin.from("commands_log").insert({
+      ...(await channelStamp(supabaseAdmin)),
       user_id: admin.user_id,
       prompt: "[ALERT] " + message.slice(0, 500),
       target_chat_id: "system",

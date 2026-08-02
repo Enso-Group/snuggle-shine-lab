@@ -109,8 +109,10 @@ export async function handleGroupEvent(
     if (welcome) {
       try {
         await deps.whapi.sendText(event.groupChatId, welcome);
+        const { channelStamp } = await import("./channel.server");
         await supabase.from("moderation_actions").insert({
           group_chat_id: event.groupChatId,
+          ...(await channelStamp(supabase)),
           target_wa_id: event.participants[0]?.id ?? null,
           target_name: names,
           action: "welcome",

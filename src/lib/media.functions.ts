@@ -40,6 +40,20 @@ export const setApprovalMedia = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const media = data.media ? parseMedia(data.media) : null;
     if (data.media && !media) throw new Error("Invalid attachment");
+    // Account isolation: never touch another account's approval row.
+    const { getChannelScope } = await import("@/lib/agent/channel.server");
+    const scope = await getChannelScope(context.supabase as never);
+    if (scope.mode === "scoped") {
+      const { data: mine } = await context.supabase
+        .from("scheduled_approvals")
+        .select("id")
+        .eq("id", data.id)
+        .or(
+          `channel_phone.is.null,channel_phone.eq.${scope.phone},target_chat_id.like.demo-%`,
+        )
+        .maybeSingle();
+      if (!mine) throw new Error("This approval belongs to a different WhatsApp account");
+    }
     const { data: updated, error } = await context.supabase
       .from("scheduled_approvals")
       .update({ media } as never)

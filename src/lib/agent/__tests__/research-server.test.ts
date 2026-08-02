@@ -126,6 +126,9 @@ function decisions(fake: FakeSupa): Row[] {
   return fake.inserts.bot_decisions ?? [];
 }
 
+// logDecision is fire-and-forget — let its queued inserts land before asserting.
+const flushLogs = () => new Promise((r) => setTimeout(r, 0));
+
 function jobRow(fake: FakeSupa): Row {
   return fake.state.bot_jobs.find((j) => j.id === "research-job-1")!;
 }
@@ -158,6 +161,7 @@ describe("processResearchJob", () => {
     const payload = jobRow(fake).payload as ResearchJobPayload;
     expect(payload.answer_parts).toEqual([ANSWER_TEXT]);
     // The deliver decision proves the deadline was met.
+    await flushLogs();
     const deliver = decisions(fake).find((d) => d.stage === "deliver");
     expect(deliver).toBeTruthy();
     expect((deliver!.data as { deadline_met: boolean }).deadline_met).toBe(true);
@@ -445,6 +449,7 @@ describe("processResearchJob", () => {
     expect(outcome.action).toBe("replied");
     expect(whapi.sends.map((s) => s.body)).toEqual([ANSWER_TEXT]);
     // Honest bookkeeping: the deadline was missed and the decision says so.
+    await flushLogs();
     const deliver = decisions(fake).find((d) => d.stage === "deliver");
     expect((deliver!.data as { deadline_met: boolean }).deadline_met).toBe(false);
   });

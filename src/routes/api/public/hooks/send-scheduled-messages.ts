@@ -230,7 +230,9 @@ export const Route = createFileRoute("/api/public/hooks/send-scheduled-messages"
                 }
               }
               if (needsApproval) {
+                const { channelStamp } = await import("@/lib/agent/channel.server");
                 await supabase.from("scheduled_approvals").insert({
+                  ...(await channelStamp(supabase)),
                   scheduled_message_id: r.id,
                   user_id: r.user_id,
                   target_chat_id: r.target_chat_id,

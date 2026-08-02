@@ -118,6 +118,25 @@ export async function loadGroupProfile(
       if (error) console.warn("[groups] profile load failed:", error.message);
       return null;
     }
+    // Self-heal account scoping: this load is event/chat-driven, so the group
+    // demonstrably belongs to the CURRENTLY connected account — restamp a row
+    // left tagged for a previously linked number (otherwise the bot keeps
+    // following a profile the dashboard can no longer show).
+    void (async () => {
+      try {
+        const { getChannelScope } = await import("./channel.server");
+        const scope = await getChannelScope(supabase);
+        const rowPhone = (data as { channel_phone?: string | null }).channel_phone ?? null;
+        if (scope.mode === "scoped" && rowPhone && rowPhone !== scope.phone) {
+          await supabase
+            .from("group_profiles")
+            .update({ channel_phone: scope.phone })
+            .eq("chat_id", chatId);
+        }
+      } catch {
+        /* scoping heal is best-effort */
+      }
+    })();
     return rowToProfile(data as Record<string, unknown>);
   } catch (e) {
     console.warn("[groups] profile load failed:", e);
@@ -127,7 +146,15 @@ export async function loadGroupProfile(
 
 export async function listEnabledGroupProfiles(supabase: Supa): Promise<GroupProfile[]> {
   try {
-    const { data, error } = await supabase.from("group_profiles").select("*").eq("enabled", true);
+    // Scoped to the connected account: after a number switch the bot must
+    // never keep posting to the previous account's groups. While the health
+    // check can't identify an account (disconnected/transient), the list is
+    // left unfiltered — a truly disconnected token can't send anyway.
+    const { getChannelScope } = await import("./channel.server");
+    const scope = await getChannelScope(supabase);
+    let q = supabase.from("group_profiles").select("*").eq("enabled", true);
+    if (scope.mode === "scoped") q = q.eq("channel_phone", scope.phone);
+    const { data, error } = await q;
     if (error) {
       console.warn("[groups] list failed:", error.message);
       return [];
@@ -148,7 +175,13 @@ export async function listEnabledGroupProfiles(supabase: Supa): Promise<GroupPro
  */
 export async function listAllGroupProfiles(supabase: Supa): Promise<GroupProfile[] | null> {
   try {
-    const { data, error } = await supabase.from("group_profiles").select("*");
+    // Same account scoping as listEnabledGroupProfiles — a campaign post for
+    // another account's group must not send through this token.
+    const { getChannelScope } = await import("./channel.server");
+    const scope = await getChannelScope(supabase);
+    let q = supabase.from("group_profiles").select("*");
+    if (scope.mode === "scoped") q = q.eq("channel_phone", scope.phone);
+    const { data, error } = await q;
     if (error) {
       console.warn("[groups] list-all failed:", error.message);
       return null;
@@ -208,6 +241,8 @@ export function groupPromptBlock(profile: GroupProfile | null | undefined): stri
     lines.push(
       `- נושאים אסורים (אל תעסוק בהם ואל תעודד אותם): ${profile.forbidden_topics.join(", ")}`,
     );
+  if (profile.content_pillars.length)
+    lines.push(`- עמודי התוכן של הקבוצה: ${profile.content_pillars.join(", ")}`);
   if (profile.instructions) lines.push(`- הנחיות מהמנהל: ${profile.instructions}`);
   return lines.join("\n");
 }

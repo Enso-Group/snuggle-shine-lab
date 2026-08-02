@@ -2,6 +2,7 @@
 // its reasoning. This trail powers the dashboard activity log; it must never
 // break the pipeline, so writes are fire-and-forget.
 import type { Json } from "@/integrations/supabase/types";
+import { channelStamp } from "./channel.server";
 import type { Supa } from "./types";
 import type { AgentTrigger } from "./types";
 
@@ -40,6 +41,7 @@ export function logDecision(supabase: Supa, entry: DecisionEntry): void {
   void (async () => {
     try {
       await supabase.from("bot_decisions").insert({
+        ...(await channelStamp(supabase)),
         job_id: entry.job_id ?? null,
         conversation_id: entry.conversation_id ?? null,
         chat_id: entry.chat_id ?? null,
