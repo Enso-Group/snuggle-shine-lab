@@ -1064,7 +1064,26 @@ export const Route = createFileRoute("/api/public/hooks/process-bot-jobs")({
           );
         }
       },
-      POST: async ({ request }) => {
+      // DISCONNECTED (2026-08-17). WhatsApp moved to kindred-spirits. This
+      // cron endpoint is refused at the door rather than left to fail one job
+      // at a time: without this it would wake every minute, pull work, and
+      // burn each item against a guard it can never pass, turning a clean
+      // shutdown into a retry storm in the logs and the queue.
+      //
+      // The pg_cron schedules are unscheduled as well — this is the belt to
+      // that braces, so a schedule surviving anywhere still does nothing.
+      POST: async () =>
+        Response.json(
+          {
+            ok: false,
+            disconnected: true,
+            info: "WhatsApp is disconnected from this project; the bot runs in kindred-spirits.",
+          },
+          { status: 410 },
+        ),
+
+      /** The original handler, kept for the reconnect path. Unreachable today. */
+      _disabledPOST: async ({ request }: { request: Request }) => {
         const requestStartedAt = Date.now();
         try {
           const supabase = createClient(

@@ -15,9 +15,30 @@ export const Route = createFileRoute("/api/public/whapi-webhook")({
         Response.json({
           ok: true,
           info: "Whapi webhook endpoint",
-          rev: "2026-07-28-idempotent-sends",
+          rev: "2026-08-17-whatsapp-disconnected",
+          disconnected: true,
         }),
-      POST: async ({ request }) => {
+      // DISCONNECTED (2026-08-17). WhatsApp moved to kindred-spirits, which
+      // drives the same Whapi channel; two systems answering one account
+      // produced duplicate replies. Nothing here is parsed, stored or
+      // enqueued — the delivery is refused before it is even read.
+      //
+      // 410 GONE, not 200: this endpoint is retired rather than temporarily
+      // unavailable, and a permanent status is what tells Whapi (and anyone
+      // reading a log) that redelivery will never help. Stored history is
+      // untouched; only new traffic is refused.
+      POST: async () =>
+        Response.json(
+          {
+            ok: false,
+            disconnected: true,
+            info: "This project no longer receives WhatsApp. The bot runs in kindred-spirits.",
+          },
+          { status: 410 },
+        ),
+
+      /** The original handler, kept for the reconnect path. Unreachable today. */
+      _disabledPOST: async ({ request }: { request: Request }) => {
         const url = new URL(request.url);
         const secretParam =
           url.searchParams.get("secret") ?? request.headers.get("x-webhook-secret");

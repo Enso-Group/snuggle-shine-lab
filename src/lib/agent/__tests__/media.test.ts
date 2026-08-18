@@ -47,6 +47,11 @@ describe("whapi media senders", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubEnv("WHAPI_TOKEN", "test-token");
+    // This project is DISCONNECTED from WhatsApp (see whapi.server.ts). These
+    // tests cover the wire format, which still has to be right for the day
+    // somebody deliberately reconnects, so they opt in explicitly. The block
+    // itself is proved below.
+    vi.stubEnv("WHAPI_REENABLE", "true");
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ message: { id: "wamid-media-1" } }), { status: 200 }),
@@ -166,5 +171,55 @@ describe("demo wipe marker safety", () => {
     expect(ids("people")).toEqual(["p-real"]);
     expect(ids("planned_posts")).toEqual(["post-real"]);
     expect(ids("scheduled_approvals")).toEqual(["a-real"]);
+  });
+});
+
+describe("the WhatsApp disconnection", () => {
+  // The point of the guard: this project shares a Whapi channel with
+  // kindred-spirits, and two systems answering one WhatsApp account send
+  // duplicate replies. Nothing here may reach the network.
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubEnv("WHAPI_TOKEN", "test-token");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses to send, and never reaches the network", async () => {
+    const { sendTextMessage } = await import("@/lib/whapi.server");
+    await expect(sendTextMessage("972500000000@s.whatsapp.net", "hi")).rejects.toThrow(
+      /disconnected from this project/i,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses even the call that could re-point the webhook away from the new system", async () => {
+    const { resetWhapiPipeline } = await import("@/lib/whapi.server");
+    await expect(resetWhapiPipeline("https://example.test/hook")).rejects.toThrow(
+      /disconnected from this project/i,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses BEFORE reading the token — a stale credential cannot be used", async () => {
+    vi.stubEnv("WHAPI_TOKEN", "");
+    const { sendTextMessage } = await import("@/lib/whapi.server");
+    // Not "WHAPI_TOKEN is not configured": the guard runs first, so the
+    // refusal explains the disconnection rather than a missing secret.
+    await expect(sendTextMessage("972500000000@s.whatsapp.net", "hi")).rejects.toThrow(
+      /disconnected from this project/i,
+    );
+  });
+
+  it("reconnects only on an explicit opt-in", async () => {
+    vi.stubEnv("WHAPI_REENABLE", "true");
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(JSON.stringify({ message: { id: "wamid-1" } }), { status: 200 }),
+    );
+    const { sendTextMessage } = await import("@/lib/whapi.server");
+    await sendTextMessage("972500000000@s.whatsapp.net", "hi");
+    expect(fetch).toHaveBeenCalled();
   });
 });

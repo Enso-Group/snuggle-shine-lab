@@ -1,8 +1,49 @@
 // Whapi.Cloud API wrapper (server-only)
 // Docs: https://whapi.readme.io/reference
+//
+// ============================================================================
+// THIS PROJECT IS DISCONNECTED FROM WHATSAPP (2026-08-17).
+//
+// The WhatsApp side of this product moved to `kindred-spirits`, which drives
+// the same Whapi channel. Two systems answering one WhatsApp account means
+// duplicate replies and a webhook each one keeps taking back from the other,
+// so this project no longer touches WhatsApp at all.
+//
+// THE GUARD IS HERE BECAUSE THIS IS THE ONLY DOOR. Every outbound Whapi call
+// in this codebase — sending text, images, polls, reading groups and contacts,
+// and resetWhapiPipeline, which is what could re-point the webhook away from
+// the new system — goes through the single `whapi()` function below. Guarding
+// it disconnects the project in one place rather than in thirty call sites,
+// none of which can be missed.
+//
+// NOTHING WAS DELETED. Every message, group and contact this project stored is
+// untouched; the dashboard still reads its own history. What stopped is the
+// network call.
+//
+// TO RECONNECT, deliberately: set WHAPI_REENABLE=true in this project's
+// secrets and publish. It is an opt-in rather than a default so that restoring
+// service is a decision somebody makes, not something a redeploy does by
+// accident — and never while kindred-spirits holds the same channel.
+// ============================================================================
 
 const WHAPI_BASE = "https://gate.whapi.cloud";
 const WHAPI_TIMEOUT_MS = 20_000;
+
+/** Opt-in escape hatch; absent or anything but "true" means disconnected. */
+function whatsappReenabled(): boolean {
+  return String(process.env.WHAPI_REENABLE ?? "").trim().toLowerCase() === "true";
+}
+
+export class WhatsAppDisconnectedError extends Error {
+  override readonly name = "WhatsAppDisconnectedError";
+  constructor(path: string) {
+    super(
+      `WhatsApp is disconnected from this project (tried ${path}). ` +
+        "The WhatsApp bot now runs in kindred-spirits, which owns this Whapi channel. " +
+        "Nothing was sent. Set WHAPI_REENABLE=true here only if that is no longer true.",
+    );
+  }
+}
 
 function getToken(): string {
   const token = process.env.WHAPI_TOKEN;
@@ -11,6 +52,9 @@ function getToken(): string {
 }
 
 async function whapi<T = any>(path: string, init?: RequestInit): Promise<T> {
+  // BEFORE THE TOKEN IS EVEN READ. Refusing here means a stale credential
+  // cannot be used by any path, including one added after this guard.
+  if (!whatsappReenabled()) throw new WhatsAppDisconnectedError(path);
   const token = getToken();
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), WHAPI_TIMEOUT_MS);
